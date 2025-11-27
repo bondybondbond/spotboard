@@ -10,7 +10,52 @@ function generateSelector(element: HTMLElement): string {
     return `#${element.id}`;
   }
   
-  // Priority 2: Build tag + classes + data attributes
+  // Build base selector: tag + classes + data attributes
+  let baseSelector = buildBaseSelector(element);
+  
+  // Check if selector is unique on the page
+  const matches = document.querySelectorAll(baseSelector);
+  
+  if (matches.length === 1) {
+    console.log('🎯 Generated unique selector:', baseSelector);
+    return baseSelector;
+  }
+  
+  console.log(`⚠️ Selector "${baseSelector}" matches ${matches.length} elements, adding context...`);
+  
+  // Not unique - try adding nth-of-type
+  const parent = element.parentElement;
+  if (parent) {
+    const siblings = Array.from(parent.children).filter(
+      child => child.matches(baseSelector.split('[')[0]) // Match by tag.class without attrs
+    );
+    const index = siblings.indexOf(element) + 1;
+    
+    if (index > 0) {
+      const nthSelector = `${baseSelector}:nth-of-type(${index})`;
+      const nthMatches = document.querySelectorAll(nthSelector);
+      
+      if (nthMatches.length === 1) {
+        console.log('🎯 Generated unique selector with nth-of-type:', nthSelector);
+        return nthSelector;
+      }
+    }
+  }
+  
+  // Still not unique - build path from unique ancestor
+  const pathSelector = buildPathFromUniqueAncestor(element, baseSelector);
+  if (pathSelector) {
+    console.log('🎯 Generated unique selector with ancestor path:', pathSelector);
+    return pathSelector;
+  }
+  
+  // Last resort: return base selector (fingerprint will catch mismatches)
+  console.log('⚠️ Could not make selector unique, using:', baseSelector);
+  return baseSelector;
+}
+
+// Helper: Build base selector (tag + classes + data attrs)
+function buildBaseSelector(element: HTMLElement): string {
   let selector = element.tagName.toLowerCase();
   
   // Add classes (max 3 to avoid overly specific selectors)
@@ -24,7 +69,7 @@ function generateSelector(element: HTMLElement): string {
   }
   
   // Add key data attributes (very useful for modern sites like BBC)
-  const usefulAttrs = ['data-testid', 'data-component', 'data-section', 'data-module', 'data-type', 'role'];
+  const usefulAttrs = ['data-testid', 'data-component', 'data-section', 'data-module', 'data-type', 'data-t', 'role'];
   for (const attr of usefulAttrs) {
     if (element.hasAttribute(attr)) {
       const value = element.getAttribute(attr);
@@ -33,21 +78,57 @@ function generateSelector(element: HTMLElement): string {
     }
   }
   
-  // If still just a bare tag (no classes, no attrs), try parent context
-  if (selector === element.tagName.toLowerCase()) {
-    const parent = element.parentElement;
-    if (parent && parent.tagName !== 'BODY' && parent.tagName !== 'HTML') {
-      // Add simple parent context
-      const parentTag = parent.tagName.toLowerCase();
-      if (parent.classList.length > 0) {
-        const parentClass = parent.classList[0];
-        selector = `${parentTag}.${parentClass} > ${selector}`;
+  return selector;
+}
+
+// Helper: Walk up DOM to find unique ancestor, build path
+function buildPathFromUniqueAncestor(element: HTMLElement, baseSelector: string): string | null {
+  let current = element.parentElement;
+  const pathParts: string[] = [baseSelector];
+  
+  while (current && current.tagName !== 'BODY' && current.tagName !== 'HTML') {
+    // Check if this ancestor has an ID
+    if (current.id) {
+      pathParts.unshift(`#${current.id}`);
+      const fullPath = pathParts.join(' > ');
+      if (document.querySelectorAll(fullPath).length === 1) {
+        return fullPath;
       }
     }
+    
+    // Check for unique data attributes on ancestor
+    const usefulAttrs = ['data-testid', 'data-component', 'data-section', 'data-module', 'data-type'];
+    for (const attr of usefulAttrs) {
+      if (current.hasAttribute(attr)) {
+        const ancestorSelector = `${current.tagName.toLowerCase()}[${attr}="${current.getAttribute(attr)}"]`;
+        pathParts.unshift(ancestorSelector);
+        const fullPath = pathParts.join(' > ');
+        if (document.querySelectorAll(fullPath).length === 1) {
+          return fullPath;
+        }
+        pathParts.shift(); // Remove if not unique
+      }
+    }
+    
+    // Add parent to path and continue up
+    const parentSelector = buildBaseSelector(current);
+    pathParts.unshift(parentSelector);
+    
+    // Check if path is now unique
+    const fullPath = pathParts.join(' > ');
+    if (document.querySelectorAll(fullPath).length === 1) {
+      return fullPath;
+    }
+    
+    // Limit depth to avoid overly long selectors
+    if (pathParts.length > 4) {
+      break;
+    }
+    
+    current = current.parentElement;
   }
   
-  console.log('🎯 Generated selector:', selector);
-  return selector;
+  return null;
 }
 
 // 1. Hover Handler (The Red Box)

@@ -7,7 +7,7 @@
     "default_popup": "index.html",
     "default_title": "ComponentCanvas"
   },
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "host_permissions": ["<all_urls>"],
   "content_scripts": [
     {

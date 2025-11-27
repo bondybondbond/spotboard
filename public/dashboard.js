@@ -119,6 +119,89 @@ chrome.storage.local.get(['components'], (result) => {
 // REFRESH FUNCTIONALITY
 // ==========================================
 
+/**
+ * Extract a "fingerprint" from HTML to verify we're refreshing the correct element
+ * Looks for headings or strong text that identifies the component
+ */
+function extractFingerprint(html) {
+  if (!html) return null;
+  
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  
+  // Look for headings first (h1-h6)
+  const heading = doc.querySelector('h1, h2, h3, h4, h5, h6');
+  if (heading && heading.textContent.trim()) {
+    const text = heading.textContent.trim().substring(0, 50);
+    console.log(`🔍 Fingerprint (heading): "${text}"`);
+    return text;
+  }
+  
+  // Fall back to first strong/bold text
+  const strong = doc.querySelector('strong, b');
+  if (strong && strong.textContent.trim()) {
+    const text = strong.textContent.trim().substring(0, 50);
+    console.log(`🔍 Fingerprint (strong): "${text}"`);
+    return text;
+  }
+  
+  // Last resort: first text content over 10 chars
+  const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const text = walker.currentNode.textContent.trim();
+    if (text.length > 10) {
+      console.log(`🔍 Fingerprint (text): "${text.substring(0, 50)}"`);
+      return text.substring(0, 50);
+    }
+  }
+  
+  console.log(`⚠️ No fingerprint found`);
+  return null;
+}
+
+/**
+ * Tab-based refresh for JS-heavy sites
+ * Opens a background tab, waits for JS to load, extracts content
+ */
+async function tabBasedRefresh(url, selector) {
+  console.log(`🌐 Trying tab-based refresh for: ${url}`);
+  
+  try {
+    // Open background tab (not active)
+    const tab = await chrome.tabs.create({ url, active: false });
+    
+    // Wait for page + JS to load (5 seconds for complex sites like HotUKDeals)
+    await new Promise(r => setTimeout(r, 5000));
+    
+    // Extract the component using scripting API
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      args: [selector],
+      func: (sel) => {
+        const el = document.querySelector(sel);
+        return el ? el.outerHTML : null;
+      }
+    });
+    
+    // Close the tab
+    await chrome.tabs.remove(tab.id);
+    
+    const html = results[0]?.result;
+    
+    if (html) {
+      console.log(`✅ Tab-based refresh successful!`);
+      return html;
+    }
+    
+    console.warn(`⚠️ Tab-based refresh: selector not found`);
+    return null;
+    
+  } catch (error) {
+    console.error(`❌ Tab-based refresh failed:`, error);
+    return null;
+  }
+}
+
 async function refreshComponent(component) {
   try {
     console.log(`🔄 Refreshing: ${component.name} from ${component.url}`);
@@ -152,7 +235,36 @@ async function refreshComponent(component) {
                                    (extractedHtml.match(/skeleton/gi) || []).length > 2;
         
         if (isSkeletonContent) {
-          console.warn(`⚠️ Detected skeleton/loading content - keeping original`);
+          console.warn(`⚠️ Detected skeleton/loading content - trying tab-based refresh...`);
+          
+          // Try tab-based refresh as fallback
+          const tabHtml = await tabBasedRefresh(component.url, component.selector);
+          
+          if (tabHtml) {
+            // Verify we got the right element by checking fingerprint
+            const originalFingerprint = extractFingerprint(component.html_cache);
+            
+            if (originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
+              console.warn(`⚠️ Tab refresh returned wrong element (missing "${originalFingerprint}") - keeping original`);
+              return {
+                success: false,
+                error: 'Tab refresh returned different element',
+                keepOriginal: true
+              };
+            }
+            
+            // Tab refresh worked and verified!
+            console.log(`✅ Tab refresh verified - fingerprint "${originalFingerprint}" found`);
+            return {
+              success: true,
+              html_cache: tabHtml,
+              last_refresh: new Date().toISOString(),
+              status: 'active'
+            };
+          }
+          
+          // Tab refresh also failed - keep original
+          console.warn(`⚠️ Tab-based refresh also returned skeleton - keeping original`);
           return {
             success: false,
             error: 'Page returned skeleton content (JS not loaded)',
@@ -162,7 +274,34 @@ async function refreshComponent(component) {
         
         console.log(`✅ Successfully extracted component using selector: ${component.selector}`);
       } else {
-        console.warn(`⚠️ Selector "${component.selector}" not found on page`);
+        // Selector not found in fetched HTML - might need JS to run
+        console.warn(`⚠️ Selector "${component.selector}" not found in fetched HTML - trying tab-based refresh...`);
+        
+        const tabHtml = await tabBasedRefresh(component.url, component.selector);
+        
+        if (tabHtml) {
+          // Verify with fingerprint
+          const originalFingerprint = extractFingerprint(component.html_cache);
+          
+          if (originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
+            console.warn(`⚠️ Tab refresh returned wrong element (missing "${originalFingerprint}") - keeping original`);
+            return {
+              success: false,
+              error: 'Tab refresh returned different element',
+              keepOriginal: true
+            };
+          }
+          
+          console.log(`✅ Tab refresh successful and verified!`);
+          return {
+            success: true,
+            html_cache: tabHtml,
+            last_refresh: new Date().toISOString(),
+            status: 'active'
+          };
+        }
+        
+        console.warn(`⚠️ Tab-based refresh also failed to find selector`);
       }
     } else {
       console.warn(`⚠️ Generic selector "${component.selector}" - skipping extraction to avoid wrong content`);
