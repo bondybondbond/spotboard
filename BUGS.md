@@ -40,6 +40,14 @@ None needed - core functionality works.
 
 ## 🎯 Fixed Bugs (Archive)
 
+### ✅ Yahoo Fantasy Hockey Refresh Failure
+**Fixed:** 29 Nov 2025  
+**Solution:** 
+- Implemented dynamic ID detection to skip auto-generated IDs (yui_, react-, ember, UUIDs, timestamps)
+- Added universal consent dialog handler to auto-dismiss GDPR/cookie banners
+- Improved background tab refresh with proper wait times (2s + 3s + 3s = 8s)
+- Added comprehensive diagnostic logging for debugging refresh failures
+
 ### ✅ Links Going to Wrong URLs
 **Fixed:** 26 Nov 2025  
 **Solution:** Transform relative URLs to absolute when displaying

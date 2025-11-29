@@ -420,16 +420,112 @@ async function tabBasedRefresh(url, selector) {
   }
 }
 
+/**
+ * Handle consent/cookie dialogs automatically
+ * Returns true if consent was handled, false if none found
+ */
+async function handleConsentDialog(tabId) {
+  try {
+    const result = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        // Common consent button text patterns (case-insensitive)
+        const rejectPatterns = [
+          'reject all',
+          'reject',
+          'refuse all',
+          'continue without accepting',
+          'continue without',
+          'no thanks',
+          'decline',
+          'dismiss'
+        ];
+        
+        const acceptPatterns = [
+          'accept all',
+          'accept',
+          'agree',
+          'continue',
+          'i agree',
+          'got it',
+          'ok',
+          'close'
+        ];
+        
+        // Common consent container selectors
+        const containerSelectors = [
+          '#consent-page',
+          '[id*="cookie"]',
+          '[id*="consent"]',
+          '[id*="gdpr"]',
+          '[class*="cookie"]',
+          '[class*="consent"]',
+          '[class*="gdpr"]',
+          '[class*="privacy"]',
+          '[role="dialog"]',
+          '[aria-modal="true"]'
+        ];
+        
+        // Look for consent containers
+        let consentContainer = null;
+        for (const selector of containerSelectors) {
+          const element = document.querySelector(selector);
+          if (element && element.offsetParent !== null) { // visible check
+            consentContainer = element;
+            break;
+          }
+        }
+        
+        if (!consentContainer) {
+          return { found: false, action: 'none' };
+        }
+        
+        // Try to find reject button first (privacy-friendly)
+        const allButtons = Array.from(consentContainer.querySelectorAll('button, a'));
+        
+        // First pass: Look for reject/decline buttons
+        for (const btn of allButtons) {
+          const text = (btn.textContent || '').toLowerCase().trim();
+          if (rejectPatterns.some(pattern => text.includes(pattern))) {
+            btn.click();
+            return { found: true, action: 'rejected', text: btn.textContent };
+          }
+        }
+        
+        // Second pass: Fall back to accept/continue buttons
+        for (const btn of allButtons) {
+          const text = (btn.textContent || '').toLowerCase().trim();
+          if (acceptPatterns.some(pattern => text === pattern || text.includes(pattern))) {
+            btn.click();
+            return { found: true, action: 'accepted', text: btn.textContent };
+          }
+        }
+        
+        return { found: true, action: 'no_button' };
+      }
+    });
+    
+    return result[0]?.result || { found: false, action: 'none' };
+    
+  } catch (error) {
+    console.error('Consent handler error:', error);
+    return { found: false, action: 'error' };
+  }
+}
+
 // Try background tab with visibility spoof (seamless, no flash)
 async function tryBackgroundWithSpoof(url, selector) {
   const tab = await chrome.tabs.create({ url, active: false });
+  
+  console.log(`🔍 [Background] Starting refresh for selector: ${selector}`);
+  console.log(`🔍 [Background] URL: ${url}`);
   
   try {
     // CRITICAL: Inject spoof at document_start - BEFORE page scripts run
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: 'MAIN',
-      injectImmediately: true,  // Inject as early as possible
+      injectImmediately: true,
       func: () => {
         // Override BEFORE anything else runs
         Object.defineProperty(document, 'hidden', {
@@ -442,12 +538,50 @@ async function tryBackgroundWithSpoof(url, selector) {
         });
         // Fire event so listeners think page became visible
         document.dispatchEvent(new Event('visibilitychange'));
-
       }
     });
     
-    // Wait for JS to fully load (longer for complex sites)
-    await new Promise(r => setTimeout(r, 6000));
+    console.log(`✓ [Background] Visibility spoof injected`);
+    
+    // Wait 2s for initial page load
+    await new Promise(r => setTimeout(r, 2000));
+    console.log(`✓ [Background] Initial 2s wait complete`);
+    
+    // ✨ NEW: Handle consent dialog if present
+    const consentResult = await handleConsentDialog(tab.id);
+    if (consentResult.found) {
+      console.log(`✓ [Background] Consent dialog ${consentResult.action}`);
+      await new Promise(r => setTimeout(r, 3000));
+      console.log(`✓ [Background] Post-consent 3s wait complete`);
+    } else {
+      console.log(`✓ [Background] No consent dialog detected`);
+    }
+    
+    // DEBUG: Check page state before extraction
+    const pageState = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (sel) => {
+        const element = document.querySelector(sel);
+        return {
+          selectorFound: !!element,
+          elementHTML: element ? element.outerHTML.substring(0, 200) : null,
+          elementLength: element ? element.outerHTML.length : 0,
+          bodyLength: document.body.innerHTML.length,
+          title: document.title,
+          readyState: document.readyState,
+          // Check for common loading indicators
+          hasLoadingClass: document.body.className.includes('loading'),
+          hasSkeletonElements: document.querySelectorAll('[class*="skeleton"]').length
+        };
+      },
+      args: [selector]
+    });
+    
+    console.log(`🔍 [Background] Page state:`, pageState[0]?.result);
+    
+    // Wait additional time for JS to fully load (complex sites)
+    await new Promise(r => setTimeout(r, 3000));
+    console.log(`✓ [Background] Additional 3s wait complete (total ~8s)`);
     
     // Try to extract
     const results = await chrome.scripting.executeScript({
@@ -456,10 +590,20 @@ async function tryBackgroundWithSpoof(url, selector) {
       func: (sel) => document.querySelector(sel)?.outerHTML || null
     });
     
+    const html = results[0]?.result;
+    
+    if (html) {
+      console.log(`✅ [Background] Extracted HTML: ${html.length} chars`);
+      console.log(`🔍 [Background] First 200 chars: ${html.substring(0, 200)}`);
+    } else {
+      console.log(`❌ [Background] Extraction failed - selector not found`);
+    }
+    
     await chrome.tabs.remove(tab.id);
-    return results[0]?.result;
+    return html;
     
   } catch (error) {
+    console.error(`❌ [Background] Error:`, error);
     try { await chrome.tabs.remove(tab.id); } catch (e) {}
     return null;
   }
@@ -470,9 +614,61 @@ async function tryActiveTab(url, selector) {
   const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const tab = await chrome.tabs.create({ url, active: true });
   
+  console.log(`🔍 [Active Tab] Starting refresh for selector: ${selector}`);
+  console.log(`🔍 [Active Tab] URL: ${url}`);
+  
   try {
+    // Wait 2s for initial page load
+    await new Promise(r => setTimeout(r, 2000));
+    console.log(`✓ [Active Tab] Initial 2s wait complete`);
+    
+    // ✨ NEW: Handle consent dialog if present
+    const consentResult = await handleConsentDialog(tab.id);
+    if (consentResult.found) {
+      console.log(`✓ [Active Tab] Consent dialog ${consentResult.action}`);
+      await new Promise(r => setTimeout(r, 2000));
+      console.log(`✓ [Active Tab] Post-consent 2s wait complete`);
+    } else {
+      console.log(`✓ [Active Tab] No consent dialog detected`);
+    }
+    
+    // DEBUG: Check page state before final wait
+    const pageStateBefore = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (sel) => {
+        const element = document.querySelector(sel);
+        return {
+          selectorFound: !!element,
+          elementLength: element ? element.outerHTML.length : 0,
+          bodyLength: document.body.innerHTML.length,
+          title: document.title,
+          readyState: document.readyState
+        };
+      },
+      args: [selector]
+    });
+    
+    console.log(`🔍 [Active Tab] Page state (before final wait):`, pageStateBefore[0]?.result);
+    
     // Wait for JS to load
-    await new Promise(r => setTimeout(r, 5000));
+    await new Promise(r => setTimeout(r, 3000));
+    console.log(`✓ [Active Tab] Additional 3s wait complete (total ~7s)`);
+    
+    // DEBUG: Check if content changed during wait
+    const pageStateAfter = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (sel) => {
+        const element = document.querySelector(sel);
+        return {
+          selectorFound: !!element,
+          elementLength: element ? element.outerHTML.length : 0,
+          hasSkeletonElements: document.querySelectorAll('[class*="skeleton"]').length
+        };
+      },
+      args: [selector]
+    });
+    
+    console.log(`🔍 [Active Tab] Page state (after final wait):`, pageStateAfter[0]?.result);
     
     // Extract
     const results = await chrome.scripting.executeScript({
@@ -483,6 +679,13 @@ async function tryActiveTab(url, selector) {
     
     const html = results[0]?.result;
     
+    if (html) {
+      console.log(`✅ [Active Tab] Extracted HTML: ${html.length} chars`);
+      console.log(`🔍 [Active Tab] First 200 chars: ${html.substring(0, 200)}`);
+    } else {
+      console.log(`❌ [Active Tab] Extraction failed - selector not found`);
+    }
+    
     // Close and switch back
     await chrome.tabs.remove(tab.id);
     if (currentTab?.id) {
@@ -492,6 +695,7 @@ async function tryActiveTab(url, selector) {
     return html;
     
   } catch (error) {
+    console.error(`❌ [Active Tab] Error:`, error);
     try { await chrome.tabs.remove(tab.id); } catch (e) {}
     if (currentTab?.id) {
       try { await chrome.tabs.update(currentTab.id, { active: true }); } catch (e) {}
