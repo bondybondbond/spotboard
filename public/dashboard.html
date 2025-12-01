@@ -33,7 +33,26 @@
       border-radius: 8px;
       border: 1px solid #000;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      overflow: hidden;
+      
+      /* Safety valve: scroll instead of overflow */
+      max-height: 500px;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    
+    /* Styled scrollbar for cards */
+    .component-card::-webkit-scrollbar {
+      width: 6px;
+    }
+    .component-card::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .component-card::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 3px;
+    }
+    .component-card::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.3);
     }
     .component-card:hover {
       box-shadow: 0 2px 6px rgba(0,0,0,0.15);
@@ -60,6 +79,41 @@
     /* Only show pointer on actual links */
     .component-content a.canvas-link {
       cursor: pointer !important;
+    }
+    
+    /* ========================================
+       PRESENTATION ONLY - NO CONTENT FILTERING
+       ======================================== */
+    
+    /* Font Normalization */
+    .component-content,
+    .component-content li,
+    .component-content li span,
+    .component-content li p,
+    .component-content div,
+    .component-content p {
+      font-size: 14px !important;
+      font-weight: 400 !important;
+      line-height: 1.25 !important;
+    }
+    
+    /* Reduce spacing between list items */
+    .component-content li {
+      margin: 2px 0 !important;
+      padding: 0 !important;
+    }
+    
+    /* Preserve intentional styling */
+    .component-content strong,
+    .component-content b {
+      font-weight: 600 !important;
+    }
+    .component-content h1,
+    .component-content h2,
+    .component-content h3 {
+      font-weight: 600 !important;
+      font-size: 16px !important;
+      line-height: 1.3 !important;
     }
     .empty-state {
       text-align: center;
@@ -225,6 +279,11 @@
         left: 16px;
         right: 16px;
         max-width: none;
+      }
+      
+      /* Shorter cards on mobile */
+      .component-card {
+        max-height: 400px;
       }
     }
   </style>
