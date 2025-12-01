@@ -1,4 +1,30 @@
 // Fix relative URLs to absolute based on component origin
+/**
+ * 🎯 HIT LIST: Remove duplicate/hidden elements from captured HTML
+ * Fixes BBC's triple-text pattern (MobileValue, DesktopValue, visually-hidden)
+ */
+function cleanupDuplicates(html) {
+  if (!html) return html;
+  
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  
+  // Remove known duplicate/hidden elements
+  // Note: BBC uses CSS-in-JS class names like "ssrcss-xxx-MobileValue"
+  const duplicateSelectors = [
+    '.visually-hidden',           // Screen reader text
+    '.sr-only',                   // Bootstrap screen reader
+    '[class*="MobileValue"]',     // BBC mobile duplicate (partial match)
+    '[class*="VisuallyHidden"]'   // BBC visually hidden (partial match)
+  ];
+  
+  duplicateSelectors.forEach(selector => {
+    temp.querySelectorAll(selector).forEach(el => el.remove());
+  });
+  
+  return temp.innerHTML;
+}
+
 function fixRelativeUrls(container, sourceUrl) {
   try {
     const url = new URL(sourceUrl);
@@ -806,7 +832,7 @@ async function refreshComponent(component) {
             // Tab refresh worked and verified!
             return {
               success: true,
-              html_cache: tabHtml,
+              html_cache: cleanupDuplicates(tabHtml),
               last_refresh: new Date().toISOString(),
               status: 'active'
             };
@@ -836,7 +862,7 @@ async function refreshComponent(component) {
           }
           return {
             success: true,
-            html_cache: tabHtml,
+            html_cache: cleanupDuplicates(tabHtml),
             last_refresh: new Date().toISOString(),
             status: 'active'
           };
@@ -857,7 +883,7 @@ async function refreshComponent(component) {
     
     return {
       success: true,
-      html_cache: extractedHtml,
+      html_cache: cleanupDuplicates(extractedHtml),
       last_refresh: new Date().toISOString(),
       status: 'active'
     };

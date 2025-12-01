@@ -221,21 +221,79 @@ function handleExit(event: MouseEvent) {
 // 3. Click Handler (The Save)
 // Sanitize captured HTML - remove capture artifacts
 function sanitizeHTML(element: HTMLElement): string {
-  // Clone the element to avoid modifying the original
-  const clone = element.cloneNode(true) as HTMLElement;
+  // ✨ CRITICAL: Get computed styles BEFORE cloning (must be in DOM)
+  // Build a list of elements to remove based on their visibility
+  const elementsToRemove: Element[] = [];
   
-  // Remove all capture-related inline styles from clone and descendants
-  const allElements = [clone, ...Array.from(clone.querySelectorAll('*'))];
+  // Check the element itself and all descendants
+  const allElements = [element, ...Array.from(element.querySelectorAll('*'))];
   
   allElements.forEach(el => {
     if (el instanceof HTMLElement) {
-      // Remove cursor styles
+      const styles = window.getComputedStyle(el);
+      
+      // Extract values for cleaner checks
+      const display = styles.display;
+      const visibility = styles.visibility;
+      const opacity = parseFloat(styles.opacity);
+      const position = styles.position;
+      const clip = styles.clip;
+      const clipPath = styles.clipPath;
+      const height = styles.height;
+      const width = styles.width;
+      
+      // Check if element is hidden by CSS
+      const isHidden = 
+        display === 'none' ||
+        visibility === 'hidden' ||
+        opacity === 0 ||
+        el.hasAttribute('hidden') ||
+        (position === 'absolute' && (
+          clip.includes('rect(') ||
+          clipPath.includes('inset(') ||
+          clipPath.includes('circle(') ||
+          clipPath.includes('polygon(')
+        )) ||
+        (height === '0px' && width === '0px');
+      
+      if (isHidden && el !== element) { // Don't remove the root element
+        elementsToRemove.push(el);
+      }
+    }
+  });
+  
+  // Clone the element AFTER identifying what to remove
+  const clone = element.cloneNode(true) as HTMLElement;
+  
+  // Remove hidden elements from clone (using path to identify them)
+  elementsToRemove.forEach(originalEl => {
+    // Find corresponding element in clone by creating a unique selector
+    const path = getElementPath(originalEl, element);
+    const cloneEl = getElementByPath(clone, path);
+    if (cloneEl) {
+      cloneEl.remove();
+    }
+  });
+  
+  // 🎯 HIT LIST: Remove known duplicate/hidden elements by class name
+  // This fixes BBC's triple-text pattern (MobileValue, DesktopValue, visually-hidden)
+  // Note: BBC uses CSS-in-JS class names like "ssrcss-xxx-MobileValue", so we use partial match
+  const duplicateSelectors = [
+    '.visually-hidden',           // Screen reader text (exact class)
+    '.sr-only',                   // Bootstrap screen reader
+    '[class*="MobileValue"]',     // BBC mobile duplicate (partial match for CSS-in-JS)
+    '[class*="VisuallyHidden"]'   // BBC visually hidden (partial match)
+  ];
+  duplicateSelectors.forEach(selector => {
+    clone.querySelectorAll(selector).forEach(el => el.remove());
+  });
+
+  // Remove capture-related inline styles from clone
+  const cloneElements = [clone, ...Array.from(clone.querySelectorAll('*'))];
+  cloneElements.forEach(el => {
+    if (el instanceof HTMLElement) {
       el.style.removeProperty('cursor');
-      
-      // Remove outline styles (our capture indicators)
       el.style.removeProperty('outline');
-      
-      // Clean up empty style attributes
       if (el.style.length === 0) {
         el.removeAttribute('style');
       }
@@ -243,6 +301,35 @@ function sanitizeHTML(element: HTMLElement): string {
   });
   
   return clone.outerHTML;
+}
+
+// Helper: Get path from root to element
+function getElementPath(element: Element, root: Element): number[] {
+  const path: number[] = [];
+  let current = element;
+  
+  while (current && current !== root) {
+    const parent = current.parentElement;
+    if (!parent) break;
+    
+    const index = Array.from(parent.children).indexOf(current);
+    path.unshift(index);
+    current = parent;
+  }
+  
+  return path;
+}
+
+// Helper: Get element from clone using path
+function getElementByPath(root: Element, path: number[]): Element | null {
+  let current: Element | null = root;
+  
+  for (const index of path) {
+    if (!current) return null;
+    current = current.children[index] || null;
+  }
+  
+  return current;
 }
 
 function handleClick(event: MouseEvent) {
