@@ -209,7 +209,7 @@ function removeCleanupCSS() {
 }
 
 // Load and display components from storage
-chrome.storage.local.get(['components'], (result) => {
+chrome.storage.sync.get(['components'], (result) => {
   const container = document.getElementById('components-container');
   const components = Array.isArray(result.components) ? result.components : [];
   
@@ -312,6 +312,7 @@ chrome.storage.local.get(['components'], (result) => {
     card.innerHTML = `
       <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #f8f9fa; border-radius: 6px 6px 0 0; border-bottom: 1px solid #e9ecef;">
         <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #495057; min-width: 0; flex: 1;">
+          ${component.favicon ? `<img src="${component.favicon}" alt="" style="width: 16px; height: 16px; flex-shrink: 0;" />` : ''}
           <span class="editable-title" style="font-weight: 600; cursor: pointer; padding: 2px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="Click to edit label">
             ${component.customLabel || component.name || 'Unnamed'}
           </span>
@@ -342,7 +343,7 @@ chrome.storage.local.get(['components'], (result) => {
         // Remove this component from the array
         const updated = components.filter((c, i) => i !== index);
         // Save back to storage
-        chrome.storage.local.set({ components: updated }, () => {
+        chrome.storage.sync.set({ components: updated }, () => {
           // Remove card from DOM
           card.remove();
           // Show empty state if no components left
@@ -388,7 +389,7 @@ chrome.storage.local.get(['components'], (result) => {
           titleElement.textContent = newLabel;
           
           // Save to storage
-          chrome.storage.local.set({ components });
+          chrome.storage.sync.set({ components });
         }
       };
       
@@ -416,7 +417,60 @@ chrome.storage.local.get(['components'], (result) => {
     if (infoIcon) {
       infoIcon.addEventListener('click', (e) => {
         e.stopPropagation();
-        alert(`Full URL: ${component.url || 'No URL'}\n\nLast updated: ${timestampText}`);
+        
+        // Create custom modal with clickable URL
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          z-index: 10000;
+        `;
+        
+        const modalContent = document.createElement('div');
+        modalContent.style.cssText = `
+          background: #2d3748;
+          color: white;
+          padding: 20px;
+          border-radius: 8px;
+          max-width: 500px;
+          width: 90%;
+        `;
+        
+        modalContent.innerHTML = `
+          <div style="margin-bottom: 16px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">Full URL:</div>
+            <a href="${component.url || '#'}" 
+               target="_blank" 
+               rel="noopener noreferrer"
+               style="color: #63b3ed; text-decoration: none; word-break: break-all; display: block; padding: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px;">
+              ${component.url || 'No URL'}
+            </a>
+          </div>
+          <div style="margin-bottom: 20px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">Last updated:</div>
+            <div style="color: #cbd5e0;">${timestampText}</div>
+          </div>
+          <button id="closeInfoModal" style="width: 100%; padding: 10px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+            OK
+          </button>
+        `;
+        
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+        
+        // Close modal handlers
+        const closeBtn = modal.querySelector('#closeInfoModal');
+        closeBtn.addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) modal.remove();
+        });
       });
     }
     
@@ -1044,7 +1098,7 @@ async function refreshAll() {
   try {
     // Get current components
     const result = await new Promise(resolve => {
-      chrome.storage.local.get(['components'], resolve);
+      chrome.storage.sync.get(['components'], resolve);
     });
     
     const components = result.components || [];
@@ -1105,7 +1159,7 @@ async function refreshAll() {
     
     // Save updated components
     await new Promise(resolve => {
-      chrome.storage.local.set({ components: updatedComponents }, resolve);
+      chrome.storage.sync.set({ components: updatedComponents }, resolve);
     });
     
     // Show success toast
@@ -1150,7 +1204,7 @@ document.addEventListener('DOMContentLoaded', () => {
 const boardNameElement = document.getElementById('board-name');
 if (boardNameElement) {
   // Load saved board name
-  chrome.storage.local.get(['boardName'], (result) => {
+  chrome.storage.sync.get(['boardName'], (result) => {
     if (result.boardName) {
       boardNameElement.textContent = result.boardName;
     }
@@ -1174,7 +1228,7 @@ if (boardNameElement) {
       boardNameElement.textContent = newName;
       
       // Save to storage
-      chrome.storage.local.set({ boardName: newName });
+      chrome.storage.sync.set({ boardName: newName });
     };
     
     input.addEventListener('keypress', (e) => {

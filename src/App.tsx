@@ -6,6 +6,7 @@ interface Component {
   name: string;
   url: string;
   customLabel?: string; // User's custom label (optional)
+  favicon?: string; // Site favicon URL
 }
 
 function App() {
@@ -26,7 +27,7 @@ function App() {
     });
 
     // Load components
-    chrome.storage.local.get(['components'], (result) => {
+    chrome.storage.sync.get(['components'], (result) => {
       if (result.components) {
         setComponents(result.components as Component[]);
       }
@@ -46,7 +47,7 @@ function App() {
     // Find and remove the specific component from the full list
     const updated = components.filter((c) => !(c.url === component.url && c.name === component.name));
     setComponents(updated);
-    chrome.storage.local.set({ components: updated });
+    chrome.storage.sync.set({ components: updated });
   };
 
   const handleOpenCanvas = () => {
@@ -68,25 +69,67 @@ function App() {
 
   return (
     <div style={{ padding: '10px', minWidth: '300px' }}>
-      <button onClick={handleOpenCanvas} style={{ width: '100%', marginBottom: '10px' }}>
-        Open Canvas
+      <button 
+        onClick={handleOpenCanvas} 
+        style={{ 
+          width: '100%', 
+          marginBottom: '10px', 
+          padding: '12px',
+          background: 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '6px',
+          fontWeight: '600',
+          fontSize: '14px',
+          cursor: 'pointer'
+        }}
+      >
+        🖼️ Open Canvas
       </button>
-      <button onClick={handleToggleCapture} style={{ width: '100%', marginBottom: '10px' }}>
-        Start Capture
+      <button 
+        onClick={handleToggleCapture} 
+        style={{ 
+          width: '100%', 
+          marginBottom: '10px',
+          padding: '12px',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '6px',
+          fontWeight: '600',
+          fontSize: '14px',
+          cursor: 'pointer'
+        }}
+      >
+        ✂️ Start Capture
       </button>
       {currentDomain && (
-        <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
-          Showing components from: {currentDomain}
+        <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <img 
+            src={`https://www.google.com/s2/favicons?sz=64&domain=${currentDomain}`} 
+            alt="" 
+            style={{ width: '16px', height: '16px' }} 
+          />
+          <span>Showing components from: {currentDomain}</span>
         </div>
       )}
       <div>
         {filteredComponents.map((component: Component, index) => (
           <div key={index} style={{ border: '1px solid #ccc', padding: '10px', marginBottom: '10px' }}>
-            <h3>{component.customLabel || component.name}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              {component.favicon && (
+                <img 
+                  src={component.favicon} 
+                  alt="" 
+                  style={{ width: '16px', height: '16px', flexShrink: 0 }} 
+                />
+              )}
+              <h3 style={{ margin: 0, flex: 1 }}>{component.customLabel || component.name}</h3>
+              <button onClick={() => handleDelete(component)} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                Delete
+              </button>
+            </div>
             <small>URL: {component.url}</small>
-            <button onClick={() => handleDelete(component)} style={{ float: 'right' }}>
-              Delete
-            </button>
           </div>
         ))}
       </div>

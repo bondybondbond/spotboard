@@ -220,6 +220,56 @@ function handleExit(event: MouseEvent) {
 
 // 3. Click Handler (The Save)
 // Sanitize captured HTML - remove capture artifacts
+// Show styled notification modal instead of alert
+function showStyledNotification(message: string, type: 'success' | 'error' = 'success') {
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 999999;
+  `;
+  
+  const modalContent = document.createElement('div');
+  const bgColor = type === 'success' ? '#2d3748' : '#742a2a';
+  modalContent.style.cssText = `
+    background: ${bgColor};
+    color: white;
+    padding: 24px;
+    border-radius: 8px;
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+  `;
+  
+  modalContent.innerHTML = `
+    <div style="font-size: 16px; margin-bottom: 20px; line-height: 1.5;">
+      ${message}
+    </div>
+    <button id="closeNotification" style="width: 100%; padding: 12px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600;">
+      OK
+    </button>
+  `;
+  
+  modal.appendChild(modalContent);
+  document.body.appendChild(modal);
+  
+  // Close modal handlers
+  const closeBtn = modal.querySelector('#closeNotification');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => modal.remove());
+  }
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.remove();
+  });
+}
+
 function sanitizeHTML(element: HTMLElement): string {
   // ✨ CRITICAL: Get computed styles BEFORE cloning (must be in DOM)
   // Build a list of elements to remove based on their visibility
@@ -404,26 +454,31 @@ function handleClick(event: MouseEvent) {
   const cleanedHTML = sanitizeHTML(target);
   log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
   
+  // Extract domain for favicon
+  const domain = new URL(window.location.href).hostname;
+  const faviconUrl = `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
+  
   const component = {
     id: crypto.randomUUID(),
     url: window.location.href,
     selector: selector,
     name: name,
     html_cache: cleanedHTML,
-    last_refresh: new Date().toISOString()
+    last_refresh: new Date().toISOString(),
+    favicon: faviconUrl
   };
   
   log('📦 Component object created:', component.id);
 
   // Save
-  log('💾 Attempting to save to chrome.storage.local...');
-  chrome.storage.local.get(['components'], (result) => {
+  log('💾 Attempting to save to chrome.storage.sync...');
+  chrome.storage.sync.get(['components'], (result) => {
     const existingCount = (result.components as any[])?.length || 0;
     log('📥 Storage retrieved, existing components:', existingCount);
     
     if (chrome.runtime.lastError) {
       console.error('❌ Chrome storage error:', chrome.runtime.lastError);
-      alert(`❌ Save failed: ${chrome.runtime.lastError.message}`);
+      showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
       return;
     }
     
@@ -431,10 +486,10 @@ function handleClick(event: MouseEvent) {
     list.push(component);
     log('📝 Updated list length:', list.length);
     
-    chrome.storage.local.set({ components: list }, () => {
+    chrome.storage.sync.set({ components: list }, () => {
       if (chrome.runtime.lastError) {
         console.error('❌ Chrome storage set error:', chrome.runtime.lastError);
-        alert(`❌ Save failed: ${chrome.runtime.lastError.message}`);
+        showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
         return;
       }
       
@@ -444,7 +499,7 @@ function handleClick(event: MouseEvent) {
       target.style.outline = '';
       target.style.cursor = '';
       
-      alert(`✅ Saved: ${name}`);
+      showStyledNotification(`✅ Saved: ${name}`, 'success');
       toggleCapture(false); // Turn off after save
     });
   });
