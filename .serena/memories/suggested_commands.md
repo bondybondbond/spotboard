@@ -1,6 +1,6 @@
 # Suggested Commands for Development
 
-This document lists essential commands for developing within the 'component-canvas' project.
+This document lists essential commands for developing within the 'spotboard' project.
 
 ## Project-Specific Commands
 

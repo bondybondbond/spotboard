@@ -61,12 +61,13 @@ function App() {
     const updated = components.filter((c) => c.id !== component.id);
     setComponents(updated);
     
-    // Update sync storage (metadata only)
+    // Update sync storage (includes selector for cross-device refresh)
     const syncData = updated.map(c => ({
       id: c.id,
       name: c.name,
       url: c.url,
-      favicon: c.favicon
+      favicon: c.favicon,
+      selector: c.selector
     }));
     chrome.storage.sync.set({ components: syncData });
     

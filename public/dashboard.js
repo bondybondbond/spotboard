@@ -22,6 +22,11 @@ function cleanupDuplicates(html) {
     temp.querySelectorAll(selector).forEach(el => el.remove());
   });
   
+  // Remove broken SVG sprite references (prevents console errors)
+  temp.querySelectorAll('svg use[href*=".svg#"]').forEach(use => {
+    use.parentElement.remove(); // Remove the entire SVG element
+  });
+  
   return temp.innerHTML;
 }
 
@@ -289,7 +294,7 @@ chrome.storage.sync.get(['components'], (syncResult) => {
     }
     
     // Get just the relative time for compact view
-    let relativeTime = 'never';
+    let relativeTime = 'not yet';
     if (component.last_refresh) {
       const lastUpdate = new Date(component.last_refresh);
       const now = new Date();
@@ -332,7 +337,7 @@ chrome.storage.sync.get(['components'], (syncResult) => {
         <button class="delete-btn" style="padding: 4px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; margin-left: 8px; flex-shrink: 0;">Delete</button>
       </div>
       <div class="component-content" style="margin-top: 0; padding: 12px; background: #ffffff; border-radius: 0 0 6px 6px; max-height: 300px; overflow: auto;">
-        ${component.html_cache || 'No HTML captured'}
+        ${cleanupDuplicates(component.html_cache) || '<div style="color: #6c757d; text-align: center; padding: 20px;"><div style="font-size: 18px; margin-bottom: 8px;">📭</div><div style="font-weight: 600; margin-bottom: 4px;">No content yet</div><div style="font-size: 13px;">Click "Refresh All" to fetch latest content</div></div>'}
       </div>
     `;
     
@@ -351,13 +356,14 @@ chrome.storage.sync.get(['components'], (syncResult) => {
         // Remove from both storages
         const updated = components.filter((c, i) => i !== index);
         
-        // Update sync storage (metadata only)
+        // Update sync storage (metadata + selector for cross-device refresh)
         const syncData = updated.map(c => ({
           id: c.id,
           name: c.name,
           url: c.url,
           favicon: c.favicon,
-          customLabel: c.customLabel
+          customLabel: c.customLabel,
+          selector: c.selector
         }));
         chrome.storage.sync.set({ components: syncData });
         
@@ -411,13 +417,14 @@ chrome.storage.sync.get(['components'], (syncResult) => {
           component.customLabel = newLabel;
           titleElement.textContent = newLabel;
           
-          // Save only metadata to sync storage
+          // Save metadata to sync storage (includes selector for cross-device refresh)
           const syncData = components.map(c => ({
             id: c.id,
             name: c.name,
             url: c.url,
             favicon: c.favicon,
-            customLabel: c.customLabel
+            customLabel: c.customLabel,
+            selector: c.selector
           }));
           chrome.storage.sync.set({ components: syncData });
         }
@@ -1183,13 +1190,14 @@ async function refreshAll() {
     components.forEach((comp, index) => {
       const result = results[index];
       
-      // Always save metadata to sync
+      // Always save metadata to sync (includes selector for cross-device refresh)
       updatedMetadata.push({
         id: comp.id,
         name: comp.name,
         url: comp.url,
         favicon: comp.favicon,
-        customLabel: comp.customLabel
+        customLabel: comp.customLabel,
+        selector: comp.selector
       });
       
       // Save full data to local

@@ -1,4 +1,4 @@
-console.log("🚀 ComponentCanvas: Content Script Loaded");
+console.log("🚀 SpotBoard: Content Script Loaded");
 
 // Debug mode - set to true for detailed logging
 const DEBUG = false;
@@ -473,12 +473,13 @@ function handleClick(event: MouseEvent) {
   // Save with hybrid storage model
   log('💾 Attempting hybrid save (sync + local)...');
   
-  // Prepare lightweight metadata for sync storage (NO selector - too large!)
+  // Prepare metadata for sync storage (includes selector for cross-device refresh)
   const metadata = {
     id: component.id,
     url: component.url,
     name: component.name,
-    favicon: component.favicon
+    favicon: component.favicon,
+    selector: component.selector  // Essential for refresh on other devices
   };
   
   // Get existing sync data

@@ -21,7 +21,7 @@ Polish the dashboard UI to reduce wasted space and improve visual appeal.
 
 ### 3. Visual Enhancements
 - **Gradient header:** Purple gradient background (#667eea → #764ba2)
-- **Editable board name:** Click-to-edit after title separator (`ComponentCanvas | My Dashboard`)
+- **Editable board name:** Click-to-edit after title separator (`SpotBoard | My Dashboard`)
 - **Light blue canvas:** Changed from gray (#f5f5f5) to light blue (#e3f2fd)
 - **Black card borders:** 1px solid black for better separation
 - **Info icon:** Clickable ℹ️ shows alert with full URL + timestamp

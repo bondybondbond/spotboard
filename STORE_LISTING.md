@@ -3,7 +3,7 @@
 ## For the "Why does this extension need these permissions?" section:
 
 ### activeTab
-**Why needed:** To capture the specific webpage section you select. This permission allows ComponentCanvas to read the HTML content of the component you've chosen to save when you click the capture button.
+**Why needed:** To capture the specific webpage section you select. This permission allows SpotBoard to read the HTML content of the component you've chosen to save when you click the capture button.
 
 ### storage  
 **Why needed:** To save your captured components locally on your device. All data is stored in Chrome's local storage and never leaves your computer.
@@ -12,10 +12,10 @@
 **Why needed:** To inject the visual capture interface onto webpages, allowing you to select which component you want to capture.
 
 ### tabs
-**Why needed:** To refresh component content from their source websites when you click the refresh button in your dashboard. This allows ComponentCanvas to fetch updated content while minimizing background activity.
+**Why needed:** To refresh component content from their source websites when you click the refresh button in your dashboard. This allows SpotBoard to fetch updated content while minimizing background activity.
 
 ### <all_urls> (Host Permissions)
-**Why needed:** To capture content from any website you choose to visit. ComponentCanvas works with all websites, giving you the flexibility to capture components from any source you find useful.
+**Why needed:** To capture content from any website you choose to visit. SpotBoard works with all websites, giving you the flexibility to capture components from any source you find useful.
 
 ---
 
@@ -26,7 +26,7 @@ Capture specific sections from any website and display them in a synced dashboar
 
 **Detailed Description:**
 
-ComponentCanvas lets you capture and track specific sections of websites in a personal dashboard—without repeatedly visiting those sites.
+SpotBoard lets you capture and track specific sections of websites in a personal dashboard—without repeatedly visiting those sites.
 
 **Perfect for tracking:**
 - "Most read" articles on news sites
@@ -43,15 +43,15 @@ ComponentCanvas lets you capture and track specific sections of websites in a pe
 
 **Privacy-first design:**
 ✓ Syncs across your Chrome browsers (using Google's secure sync)
-✓ No ComponentCanvas servers or accounts required
+✓ No SpotBoard servers or accounts required
 ✓ No tracking or analytics from us
 ✓ Under 100KB storage limit
 ✓ Open source
 
-**Note:** Users are responsible for complying with the terms of service of websites they capture content from. ComponentCanvas fetches publicly accessible content only.
+**Note:** Users are responsible for complying with the terms of service of websites they capture content from. SpotBoard fetches publicly accessible content only.
 
 **Support:** bondybondbond@gmail.com  
-**Source Code:** https://github.com/bondybondbond/component-canvas
+**Source Code:** https://github.com/bondybondbond/spotboard
 
 ---
 

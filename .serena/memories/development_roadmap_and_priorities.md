@@ -1,4 +1,4 @@
-# ComponentCanvas Development Roadmap
+# SpotBoard Development Roadmap
 
 ## 🐛 BUGS TO FIX
 

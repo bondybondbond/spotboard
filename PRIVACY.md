@@ -1,13 +1,13 @@
-# ComponentCanvas Privacy Policy
+# SpotBoard Privacy Policy
 
 **Effective Date:** December 2, 2024  
 **Last Updated:** December 2, 2024
 
 ## Overview
-ComponentCanvas is a Chrome extension that allows you to capture specific sections of websites and display them in a personal dashboard. We are committed to protecting your privacy and being transparent about our data practices.
+SpotBoard is a Chrome extension that allows you to capture specific sections of websites and display them in a personal dashboard. We are committed to protecting your privacy and being transparent about our data practices.
 
 ## What We Collect
-ComponentCanvas collects only the information necessary to provide its core functionality:
+SpotBoard collects only the information necessary to provide its core functionality:
 
 - **HTML Content**: The specific webpage sections you choose to capture
 - **Website URLs**: The source URLs of captured components
@@ -20,8 +20,8 @@ ComponentCanvas collects only the information necessary to provide its core func
 - ✅ Syncs across your devices (if signed into Chrome)
 - ✅ Encrypted by Google during transmission
 - ✅ 100KB storage limit (sufficient for typical usage)
-- ✅ No ComponentCanvas servers or database
-- ✅ No account creation with ComponentCanvas required
+- ✅ No SpotBoard servers or database
+- ✅ No account creation with SpotBoard required
 - ⚠️ Data passes through Google's servers for syncing
 
 **What this means:**
@@ -44,7 +44,7 @@ ComponentCanvas collects only the information necessary to provide its core func
 - Analytics or usage statistics
 
 ## Permissions Explained
-ComponentCanvas requires the following Chrome permissions to function:
+SpotBoard requires the following Chrome permissions to function:
 
 - **`activeTab`**: Allows the extension to capture content from the webpage you're currently viewing when you click the capture button
 - **`storage`**: Enables saving your captured components locally on your device
@@ -62,18 +62,18 @@ You have complete control over your data:
 - **No Recovery**: Since we don't store your data on our servers, we cannot recover deleted components
 
 ## Third-Party Websites
-When you capture content from websites, you are responsible for complying with those websites' terms of service. ComponentCanvas fetches publicly accessible content from websites you visit, but we are not responsible for the content of third-party websites.
+When you capture content from websites, you are responsible for complying with those websites' terms of service. SpotBoard fetches publicly accessible content from websites you visit, but we are not responsible for the content of third-party websites.
 
 ## Changes to This Policy
-We may update this privacy policy from time to time. Any changes will be reflected in the "Last Updated" date above. Continued use of ComponentCanvas after changes constitutes acceptance of the updated policy.
+We may update this privacy policy from time to time. Any changes will be reflected in the "Last Updated" date above. Continued use of SpotBoard after changes constitutes acceptance of the updated policy.
 
 ## Contact
-If you have questions about this privacy policy or ComponentCanvas's data practices, please contact:
+If you have questions about this privacy policy or SpotBoard's data practices, please contact:
 
 **Email**: bondybondbond@gmail.com
 
-**GitHub**: https://github.com/bondybondbond/component-canvas
+**GitHub**: https://github.com/bondybondbond/spotboard
 
 ---
 
-**Summary**: ComponentCanvas stores everything locally on your device. We don't collect, transmit, or have access to any of your data. Period.
+**Summary**: SpotBoard stores everything locally on your device. We don't collect, transmit, or have access to any of your data. Period.

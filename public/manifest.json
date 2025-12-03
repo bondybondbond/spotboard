@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "ComponentCanvas",
+  "name": "SpotBoard",
   "version": "1.0.0",
   "description": "Capture web components from any site.",
   "action": {
     "default_popup": "index.html",
-    "default_title": "ComponentCanvas"
+    "default_title": "SpotBoard"
   },
   "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "host_permissions": ["<all_urls>"],
