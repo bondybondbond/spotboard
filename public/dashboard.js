@@ -87,35 +87,6 @@ function cleanupDuplicates(html) {
 }
 
 // Post-render cleanup removed - Guardian tab spacing is a known limitation
-  
-  // Get all meaningful content indicators
-  const links = contentDiv.querySelectorAll('a[href]');
-  const listItems = contentDiv.querySelectorAll('li');
-  const text = (contentDiv.textContent || '').replace(/\s+/g, ' ').trim();
-  const textLength = text.length;
-  
-  // DEBUG: Always log what we found
-  console.log('🔍 Card content check:', {
-    links: links.length,
-    listItems: listItems.length,
-    textLength: textLength,
-    textSample: text.slice(0, 100)
-  });
-  
-  // Note: List items already exist and have content
-  // The white space issue is CSS-based (excessive spacing), handled by injectCleanupCSS()
-  console.log(`  → Card has ${listItems.length} list items with proper content`);
-  
-  // Fallback: If no list items, check overall content
-  // Guardian's empty tab: No links, ~10-50 chars of labels only
-  // BBC's fixtures: Lots of links, substantial text (>100 chars)
-  if (links.length === 0 && textLength < 50) {
-    console.log(`🗑️ COLLAPSING empty content card: ${textLength} chars, 0 links`);
-    card.style.display = 'none';
-  } else {
-    console.log(`✓ Keeping card: ${links.length} links, ${textLength} chars`);
-  }
-}
 
 /**
  * Test if an SVG can render properly at 25px
