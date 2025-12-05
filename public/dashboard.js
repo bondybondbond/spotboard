@@ -1144,9 +1144,46 @@ async function tryActiveTab(url, selector) {
 
 async function refreshComponent(component) {
   try {
+    // Check if this site requires tab-based refresh (session-dependent content)
+    if (willNeedActiveTab(component.url)) {
+      const tabHtml = await tabBasedRefresh(component.url, component.selector);
+      
+      if (tabHtml) {
+        // Verify with fingerprint
+        const originalFingerprint = extractFingerprint(component.html_cache);
+        
+        if (originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
+          return {
+            success: false,
+            error: 'Tab refresh returned different element',
+            keepOriginal: true
+          };
+        }
+        
+        return {
+          success: true,
+          html_cache: cleanupDuplicates(tabHtml),
+          last_refresh: new Date().toISOString(),
+          status: 'active'
+        };
+      } else {
+        return {
+          success: false,
+          error: 'Tab-based refresh failed',
+          keepOriginal: true
+        };
+      }
+    }
     
     // Fetch fresh HTML from the source URL
-    const response = await fetch(component.url);
+    // Include credentials to maintain login sessions (e.g., Yahoo Finance, authenticated sites)
+    const response = await fetch(component.url, {
+      method: 'GET',
+      credentials: 'include', // Send cookies for session-dependent content
+      headers: {
+        'Cache-Control': 'no-cache' // Ensure fresh data
+      }
+    });
     
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
