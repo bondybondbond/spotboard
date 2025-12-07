@@ -137,7 +137,7 @@ function buildBaseSelector(element: HTMLElement): string {
   }
   
   // Add key data attributes (very useful for modern sites like BBC)
-  const usefulAttrs = ['data-testid', 'data-component', 'data-section', 'data-module', 'data-type', 'data-t', 'role'];
+  const usefulAttrs = ['data-testid', 'data-test', 'data-component', 'data-section', 'data-module', 'data-type', 'data-t', 'role'];
   for (const attr of usefulAttrs) {
     if (element.hasAttribute(attr)) {
       const value = element.getAttribute(attr);
@@ -295,6 +295,102 @@ function sanitizeHTML(element: HTMLElement): string {
       el.style.removeProperty('outline');
       if (el.style.length === 0) {
         el.removeAttribute('style');
+      }
+    }
+  });
+  
+  // 🎯 FIX PROGRESSIVE LOADING IMAGES: Remove loading artifacts
+  // Sites use progressive loading: blur filters, skeleton loaders, lazy loading
+  // These break in dashboard because JavaScript that removes them doesn't run
+  clone.querySelectorAll('img').forEach(img => {
+    // Remove lazy loading attribute
+    img.removeAttribute('loading');
+    
+    // Remove progressive loading classes that cause blur/skeleton effects
+    // SlotCatalog: .blurring (filter: blur(4px))
+    // Others: .skeleton, .loading, .placeholder, .lazy
+    const loadingClasses = ['blurring', 'skeleton', 'loading', 'placeholder', 'lazy', 'lazy-load'];
+    loadingClasses.forEach(cls => {
+      if (img.classList.contains(cls)) {
+        img.classList.remove(cls);
+      }
+    });
+  });
+  
+  // 🎯 FIX RELATIVE URLS: Convert ALL relative URLs to absolute
+  // Prevents resources from being resolved to chrome-extension:// origin
+  const pageUrl = window.location.href;
+  
+  // Fix image src attributes
+  clone.querySelectorAll('img[src]').forEach(img => {
+    const src = img.getAttribute('src');
+    if (src && !src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:')) {
+      try {
+        const absoluteUrl = new URL(src, pageUrl).href;
+        img.setAttribute('src', absoluteUrl);
+        console.log('  ✅ Fixed img src:', src, '→', absoluteUrl.substring(0, 80));
+      } catch (e) {
+        console.warn('  ⚠️ Could not fix img src:', src, e);
+      }
+    }
+  });
+  
+  // Fix image srcset attributes (for responsive images)
+  clone.querySelectorAll('img[srcset]').forEach(img => {
+    const srcset = img.getAttribute('srcset');
+    if (srcset) {
+      try {
+        const fixedSrcset = srcset.split(',').map(src => {
+          const parts = src.trim().split(/\s+/);
+          const url = parts[0];
+          if (url && !url.startsWith('http') && !url.startsWith('data:') && !url.startsWith('blob:')) {
+            const absoluteUrl = new URL(url, pageUrl).href;
+            parts[0] = absoluteUrl;
+          }
+          return parts.join(' ');
+        }).join(', ');
+        img.setAttribute('srcset', fixedSrcset);
+        console.log('  ✅ Fixed img srcset');
+      } catch (e) {
+        console.warn('  ⚠️ Could not fix img srcset:', e);
+      }
+    }
+  });
+  
+  // Fix link hrefs (so they stay clickable)
+  clone.querySelectorAll('a[href]').forEach(link => {
+    const href = link.getAttribute('href');
+    if (href && !href.startsWith('#') && !href.startsWith('javascript:') && !href.startsWith('mailto:') && !href.startsWith('tel:') && !href.startsWith('http')) {
+      try {
+        const absoluteUrl = new URL(href, pageUrl).href;
+        link.setAttribute('href', absoluteUrl);
+        console.log('  ✅ Fixed link href:', href.substring(0, 50), '→', absoluteUrl.substring(0, 80));
+      } catch (e) {
+        console.warn('  ⚠️ Could not fix link href:', href, e);
+      }
+    }
+  });
+  
+  // Fix CSS background images in inline styles
+  clone.querySelectorAll('[style]').forEach(el => {
+    const style = (el as HTMLElement).getAttribute('style');
+    if (style && style.includes('url(')) {
+      try {
+        const fixedStyle = style.replace(/url\(['"]?([^'"()]+)['"]?\)/g, (match, url) => {
+          if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http')) {
+            return match;
+          }
+          try {
+            const absoluteUrl = new URL(url, pageUrl).href;
+            console.log('  ✅ Fixed CSS bg-image:', url.substring(0, 40), '→', absoluteUrl.substring(0, 60));
+            return `url('${absoluteUrl}')`;
+          } catch (e) {
+            return match;
+          }
+        });
+        (el as HTMLElement).setAttribute('style', fixedStyle);
+      } catch (e) {
+        console.warn('  ⚠️ Could not fix CSS background:', e);
       }
     }
   });

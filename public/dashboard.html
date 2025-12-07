@@ -97,6 +97,11 @@
       line-height: 1.25 !important;
     }
     
+    /* 🛡️ PREVENT ELEMENTS ESCAPING CARD: Block fixed/sticky from CSS classes */
+    .component-content * {
+      position: static !important;
+    }
+    
     /* Reduce spacing between list items */
     .component-content li {
       margin: 4px 0 !important;

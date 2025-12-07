@@ -83,6 +83,37 @@ function cleanupDuplicates(html) {
     }
   });
   
+  // 🎯 FIX PROGRESSIVE LOADING IMAGES: Remove loading artifacts
+  // Sites use progressive loading: blur filters, skeleton loaders, lazy loading
+  // These break in dashboard because JavaScript that removes them doesn't run
+  temp.querySelectorAll('img').forEach(img => {
+    // Remove lazy loading attribute
+    img.removeAttribute('loading');
+    
+    // Remove progressive loading classes that cause blur/skeleton effects
+    // SlotCatalog: .blurring (filter: blur(4px))
+    // Others: .skeleton, .loading, .placeholder, .lazy
+    const loadingClasses = ['blurring', 'skeleton', 'loading', 'placeholder', 'lazy', 'lazy-load'];
+    loadingClasses.forEach(cls => {
+      if (img.classList.contains(cls)) {
+        console.log(`🗑️ Removed progressive loading class: ${cls}`);
+        img.classList.remove(cls);
+      }
+    });
+  });
+  
+  // 🎯 STRIP DANGEROUS POSITIONING: Remove position:fixed/sticky that escape card containers
+  temp.querySelectorAll('*').forEach(el => {
+    const styleAttr = el.getAttribute('style');
+    if (styleAttr && (styleAttr.includes('position:fixed') || styleAttr.includes('position: fixed') ||
+                      styleAttr.includes('position:sticky') || styleAttr.includes('position: sticky'))) {
+      console.log('🗑️ Stripped fixed/sticky positioning from:', el.tagName, el.className);
+      // Remove the position property instead of removing the whole element
+      const newStyle = styleAttr.replace(/position\s*:\s*(fixed|sticky)\s*;?/gi, '');
+      el.setAttribute('style', newStyle);
+    }
+  });
+  
   return temp.innerHTML;
 }
 
@@ -153,19 +184,78 @@ function fixRelativeUrls(container, sourceUrl) {
     const url = new URL(sourceUrl);
     const origin = url.origin; // e.g., "https://www.bbc.co.uk"
     
-    // Fix all anchor tags
+    // 🎯 FIX IMAGE SRC ATTRIBUTES
+    container.querySelectorAll('img[src]').forEach(img => {
+      const src = img.getAttribute('src');
+      if (src && !src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:')) {
+        if (src.startsWith('/')) {
+          // Absolute path: /img/logo.png → https://site.com/img/logo.png
+          img.src = origin + src;
+        } else if (src.startsWith('./') || src.startsWith('../')) {
+          // Relative path
+          const basePath = url.pathname.substring(0, url.pathname.lastIndexOf('/'));
+          img.src = origin + basePath + '/' + src.replace(/^\.\//, '');
+        } else {
+          // Relative path without ./
+          const basePath = url.pathname.substring(0, url.pathname.lastIndexOf('/'));
+          img.src = origin + basePath + '/' + src;
+        }
+      }
+    });
+    
+    // 🎯 FIX IMAGE SRCSET ATTRIBUTES (responsive images)
+    container.querySelectorAll('img[srcset]').forEach(img => {
+      const srcset = img.getAttribute('srcset');
+      if (srcset) {
+        const fixedSrcset = srcset.split(',').map(src => {
+          const parts = src.trim().split(/\s+/);
+          const imgUrl = parts[0];
+          if (imgUrl && !imgUrl.startsWith('http') && !imgUrl.startsWith('data:') && !imgUrl.startsWith('blob:')) {
+            if (imgUrl.startsWith('/')) {
+              parts[0] = origin + imgUrl;
+            } else {
+              const basePath = url.pathname.substring(0, url.pathname.lastIndexOf('/'));
+              parts[0] = origin + basePath + '/' + imgUrl.replace(/^\.\//, '');
+            }
+          }
+          return parts.join(' ');
+        }).join(', ');
+        img.setAttribute('srcset', fixedSrcset);
+      }
+    });
+    
+    // 🎯 FIX CSS BACKGROUND IMAGES
+    container.querySelectorAll('[style]').forEach(el => {
+      const style = el.getAttribute('style');
+      if (style && style.includes('url(')) {
+        const fixedStyle = style.replace(/url\(['"]?([^'"()]+)['"]?\)/g, (match, bgUrl) => {
+          if (bgUrl.startsWith('data:') || bgUrl.startsWith('blob:') || bgUrl.startsWith('http')) {
+            return match;
+          }
+          if (bgUrl.startsWith('/')) {
+            return `url('${origin}${bgUrl}')`;
+          }
+          const basePath = url.pathname.substring(0, url.pathname.lastIndexOf('/'));
+          return `url('${origin}${basePath}/${bgUrl.replace(/^\.\//, '')}')`;
+        });
+        el.setAttribute('style', fixedStyle);
+      }
+    });
+    
+    // 🎯 FIX LINK HREFS
     container.querySelectorAll('a[href]').forEach(link => {
       const href = link.getAttribute('href');
       
-      if (href.startsWith('/')) {
-        // Absolute path: /deals/123 → https://hotukdeals.com/deals/123
-        link.href = origin + href;
-      } else if (href.startsWith('./') || href.startsWith('../')) {
-        // Relative path: ./deals/123 → resolve relative to source path
-        const basePath = url.pathname.substring(0, url.pathname.lastIndexOf('/'));
-        link.href = origin + basePath + '/' + href.replace(/^\.\//, '');
+      if (href && !href.startsWith('#') && !href.startsWith('javascript:') && !href.startsWith('mailto:') && !href.startsWith('tel:') && !href.startsWith('http')) {
+        if (href.startsWith('/')) {
+          // Absolute path: /deals/123 → https://hotukdeals.com/deals/123
+          link.href = origin + href;
+        } else if (href.startsWith('./') || href.startsWith('../')) {
+          // Relative path: ./deals/123 → resolve relative to source path
+          const basePath = url.pathname.substring(0, url.pathname.lastIndexOf('/'));
+          link.href = origin + basePath + '/' + href.replace(/^\.\//, '');
+        }
       }
-      // If already absolute (https://) or hash (#), leave as-is
       
       // Ensure links open in new tab
       link.target = '_blank';
@@ -487,8 +577,14 @@ chrome.storage.sync.get(['components'], (syncResult) => {
     const deleteBtn = card.querySelector('.delete-btn');
     deleteBtn.addEventListener('click', () => {
       if (confirm(`Delete "${component.customLabel || component.name}"? This cannot be undone.`)) {
-        // Remove from both storages
-        const updated = components.filter((c, i) => i !== index);
+        // 🎯 FIX: Remove from in-memory array FIRST so subsequent deletes work correctly
+        // This prevents the bug where deleting multiple items quickly causes respawns
+        const componentId = component.id;
+        const updated = components.filter(c => c.id !== componentId);
+        
+        // Update the components array in place for subsequent deletes
+        components.length = 0;
+        components.push(...updated);
         
         // Update sync storage (metadata + selector for cross-device refresh)
         const syncData = updated.map(c => ({
@@ -504,7 +600,7 @@ chrome.storage.sync.get(['components'], (syncResult) => {
         // Update local storage (remove HTML data)
         chrome.storage.local.get(['componentsData'], (result) => {
           const localData = result.componentsData || {};
-          delete localData[component.id];
+          delete localData[componentId];
           chrome.storage.local.set({ componentsData: localData });
         });
         
@@ -833,8 +929,17 @@ const toastManager = new RefreshToastManager();
 
 // Check if URL will need active tab (known problematic sites)
 function willNeedActiveTab(url) {
-  const problematicDomains = ['hotukdeals.com'];
+  const problematicDomains = ['hotukdeals.com'];  // Only HotUKDeals needs tab-based refresh
   return problematicDomains.some(domain => url.includes(domain));
+}
+
+/**
+ * Check if site MUST use active visible tab (can't work in background at all)
+ * These sites have sophisticated Page Visibility API detection that blocks background loading
+ */
+function requiresVisibleTab(url) {
+  const visibilityCheckDomains = ['hotukdeals.com'];  // Removed producthunt.com - now has proper selector
+  return visibilityCheckDomains.some(domain => url.includes(domain));
 }
 
 /**
@@ -843,6 +948,13 @@ function willNeedActiveTab(url) {
  */
 async function tabBasedRefresh(url, selector) {
   try {
+    // Check if this site MUST be visible (Page Visibility API blocks background)
+    if (requiresVisibleTab(url)) {
+      // Skip background attempt - go straight to active tab
+      const result = await tryActiveTab(url, selector);
+      return result || null;
+    }
+    
     // ATTEMPT 1: Try background tab with visibility spoof
     const result = await tryBackgroundWithSpoof(url, selector);
     if (result) return result;
@@ -1341,7 +1453,7 @@ async function refreshAll() {
     for (let i = 0; i < components.length; i++) {
       const comp = components[i];
       const displayName = comp.customLabel || comp.name;
-      const needsActiveTab = willNeedActiveTab(comp.url);
+      const needsActiveTab = requiresVisibleTab(comp.url); // Only show "opening tab" for sites that MUST be visible
       
       // Update toast to show current component
       toastManager.updateProgress(displayName, needsActiveTab);
