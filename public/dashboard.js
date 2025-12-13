@@ -35,28 +35,10 @@ function cleanupDuplicates(html) {
     temp.querySelectorAll(selector).forEach(el => el.remove());
   });
 
-  // 🎯 Remove elements with display:none (catches CSS-based hidden duplicates)
-  // The Verge and other sites use CSS-in-JS where mobile/desktop versions
-  // are differentiated by computed display style rather than class keywords
-  // Must attach temp to DOM for getComputedStyle to work
-  temp.style.position = 'absolute';
-  temp.style.left = '-9999px';
-  temp.style.visibility = 'hidden';
-  document.body.appendChild(temp);
-  
-  // Check all descendants for display:none
-  const allElements = Array.from(temp.querySelectorAll('*'));
-  allElements.forEach(el => {
-    if (el instanceof HTMLElement) {
-      const computed = window.getComputedStyle(el);
-      if (computed.display === 'none') {
-        el.remove();
-      }
-    }
-  });
-  
-  // Detach temp from DOM
-  document.body.removeChild(temp);
+  // 🎯 REMOVED from cleanupDuplicates: display:none check causes false positives here
+  // This function is called on HTML WITHOUT its CSS loaded (dashboard display)
+  // Elements default to display:none when CSS isn't present
+  // We handle display:none during CAPTURE and TAB REFRESH where CSS IS loaded
   
   // Remove empty wrapper divs/spans that only add spacing
   temp.querySelectorAll('div, span').forEach(el => {
@@ -992,7 +974,12 @@ function willNeedActiveTab(url) {
  * These sites use IntersectionObserver or Page Visibility API that cannot be spoofed
  */
 function requiresVisibleTab(url) {
-  const visibilityCheckDomains = ['hotukdeals.com', 'premierleague.com'];
+  // Sites that block background tabs (Page Visibility API or bot detection)
+  const visibilityCheckDomains = [
+    'hotukdeals.com',     // Page Visibility API blocks background
+    'premierleague.com',  // Page Visibility API blocks background  
+    'ign.com'             // Bot detection shows error page in background
+  ];
   return visibilityCheckDomains.some(domain => url.includes(domain));
 }
 
@@ -1000,12 +987,12 @@ function requiresVisibleTab(url) {
  * Tab-based refresh for JS-heavy sites
  * Opens a background tab, waits for JS to load, extracts content
  */
-async function tabBasedRefresh(url, selector) {
+async function tabBasedRefresh(url, selector, fingerprint = null) {
   try {
     // Check if this site MUST be visible (Page Visibility API blocks background)
     if (requiresVisibleTab(url)) {
       // Skip background attempt - go straight to active tab
-      const result = await tryActiveTab(url, selector);
+      const result = await tryActiveTab(url, selector, fingerprint);
       return result || null;
     }
     
@@ -1014,7 +1001,7 @@ async function tabBasedRefresh(url, selector) {
     if (result) return result;
     
     // ATTEMPT 2: Fallback to active tab (guaranteed to work)
-    const fallbackResult = await tryActiveTab(url, selector);
+    const fallbackResult = await tryActiveTab(url, selector, fingerprint);
     if (fallbackResult) return fallbackResult;
     
     return null;
@@ -1243,7 +1230,7 @@ async function tryBackgroundWithSpoof(url, selector) {
 }
 
 // Fallback: Active tab (flashes briefly but guaranteed to work)
-async function tryActiveTab(url, selector) {
+async function tryActiveTab(url, selector, fingerprint = null) {
   const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const tab = await chrome.tabs.create({ url, active: true });
   
@@ -1263,11 +1250,39 @@ async function tryActiveTab(url, selector) {
     // Extract - WITH SANITIZATION IN THE TAB
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      args: [selector],
-      func: (sel) => {
-        const element = document.querySelector(sel);
-        if (!element) return null;
+      args: [selector, fingerprint],
+      func: (sel, fp) => {
+        // Find the correct element (by fingerprint if provided)
+        let element = null;
         
+        if (fp) {
+          const allMatches = document.querySelectorAll(sel);
+          console.log('[Active Tab] Found', allMatches.length, 'matching elements');
+          
+          for (const el of allMatches) {
+            const text = el.textContent || '';
+            if (text.toLowerCase().includes(fp.toLowerCase())) {
+              console.log('[Active Tab] Found element with fingerprint!');
+              element = el;
+              break;
+            }
+          }
+          
+          if (!element) {
+            console.warn('[Active Tab] No element matched fingerprint, using first match');
+            element = document.querySelector(sel);
+          }
+        } else {
+          // No fingerprint - just use first match
+          element = document.querySelector(sel);
+        }
+        
+        if (!element) {
+          console.error('[Active Tab] Element not found!');
+          return null;
+        }
+        
+        // Now sanitize and extract the found element
         // Mark hidden elements BEFORE cloning (while CSS is loaded)
         const allElements = [element, ...Array.from(element.querySelectorAll('*'))];
         const marked = [];
@@ -1387,8 +1402,40 @@ async function refreshComponent(component) {
     // Only try to extract if we have a specific selector
     // Generic selectors like "div" or "section" will match wrong elements
     if (component.selector && !['div', 'section', 'article', 'main', 'aside', 'header', 'footer', 'nav'].includes(component.selector.toLowerCase())) {
-      const element = doc.querySelector(component.selector);
-      if (element) {
+      // 🎯 FIX: Get ALL matching elements, not just first one
+      const matches = doc.querySelectorAll(component.selector);
+      
+      if (matches.length > 0) {
+        let element = null;
+        
+        // If multiple matches, use fingerprint to find the right one
+        if (matches.length > 1) {
+          const originalFingerprint = extractFingerprint(component.html_cache);
+          console.log(`🔍 Multiple matches (${matches.length}) for selector, using fingerprint: "${originalFingerprint}"`);
+          
+          // Try to find element whose fingerprint matches
+          for (const candidate of matches) {
+            const candidateHtml = candidate.outerHTML;
+            const candidateFingerprint = extractFingerprint(candidateHtml);
+            
+            if (originalFingerprint && candidateFingerprint && 
+                candidateFingerprint.toLowerCase().includes(originalFingerprint.toLowerCase())) {
+              element = candidate;
+              console.log(`✅ Found matching element with fingerprint: "${candidateFingerprint}"`);
+              break;
+            }
+          }
+          
+          // If no fingerprint match, fall back to first match (old behavior)
+          if (!element) {
+            console.log(`⚠️ No fingerprint match found, using first element`);
+            element = matches[0];
+          }
+        } else {
+          // Only one match - use it
+          element = matches[0];
+        }
+        
         extractedHtml = element.outerHTML;
         
         // Check if we got a skeleton/loading placeholder instead of real content
@@ -1405,6 +1452,18 @@ async function refreshComponent(component) {
         const linkCount = tempDiv.querySelectorAll('a').length;
         const articleCount = tempDiv.querySelectorAll('article, h5, [class*="article"]').length;
         const contentLength = tempDiv.textContent.trim().length;
+        
+        // 🎯 IGN PATTERN: Check for empty content containers (skeleton with structure but no text)
+        // IGN loads container divs like "item-details" but populates text via JavaScript
+        // Look for: has links/images BUT content containers are empty
+        const contentContainers = tempDiv.querySelectorAll('[class*="details"], [class*="content"], [class*="title"]:not(h1):not(h2):not(h3)');
+        const emptyContainers = Array.from(contentContainers).filter(el => {
+          const text = el.textContent.trim();
+          const hasChildren = el.children.length > 0;
+          // Container is empty if: no text AND no child elements
+          return text.length === 0 && !hasChildren;
+        });
+        const hasEmptyContainers = emptyContainers.length >= 2; // Need multiple to avoid false positives
         
         // Consider it a skeleton if it's EXTREMELY empty (MarketWatch pattern):
         // - Has heading (structure loaded)
@@ -1425,6 +1484,8 @@ async function refreshComponent(component) {
         console.log(`🔍 Skeleton check for ${component.name}:`, {
           isSkeletonContent,
           isEmptyContainer,
+          hasEmptyContainers,
+          emptyContainerCount: emptyContainers.length,
           hasDuplicates,
           duplicateCount,
           totalLinks: linkTexts.length,
@@ -1435,15 +1496,18 @@ async function refreshComponent(component) {
           contentLength
         });
         
-        if (isSkeletonContent || isEmptyContainer || hasDuplicates) {
+        if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates) {
+          // Extract fingerprint FIRST to pass to tab refresh
+          const originalFingerprint = extractFingerprint(component.html_cache);
+          
           // Try tab-based refresh as fallback
-          const tabHtml = await tabBasedRefresh(component.url, component.selector);
+          console.log('[Skeleton Fallback] Attempting tab refresh for', component.label, 'with fingerprint:', originalFingerprint);
+          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint);
           
           if (tabHtml) {
             // Verify we got the right element by checking fingerprint
-            const originalFingerprint = extractFingerprint(component.html_cache);
-            
             if (originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
+              console.warn('[Skeleton Fallback] Fingerprint mismatch - rejecting update');
               return {
                 success: false,
                 error: 'Tab refresh returned different element',
@@ -1469,11 +1533,11 @@ async function refreshComponent(component) {
         }
       } else {
         // Selector not found in fetched HTML - try tab-based refresh
-        const tabHtml = await tabBasedRefresh(component.url, component.selector);
+        const originalFingerprint = extractFingerprint(component.html_cache);
+        const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint);
         
         if (tabHtml) {
           // Verify with fingerprint
-          const originalFingerprint = extractFingerprint(component.html_cache);
           
           if (originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
             return {
