@@ -6,6 +6,7 @@ const log = (...args: any[]) => DEBUG && console.log(...args);
 
 let isCapturing = false;
 let lockedElement: HTMLElement | null = null; // Track element waiting for confirmation
+let excludedElements: HTMLElement[] = []; // Track child elements marked for exclusion (red)
 
 
 // Check if an ID looks auto-generated and should be avoided
@@ -203,23 +204,43 @@ function buildPathFromUniqueAncestor(element: HTMLElement, baseSelector: string)
 // 1. Hover Handler (The Red Box)
 function handleHover(event: MouseEvent) {
   if (!isCapturing) return;
-  console.log('DEBUG: handleHover - lockedElement:', lockedElement);
-  
-  if (lockedElement) {
-    console.log('DEBUG: Element is locked, skipping hover highlight');
-    // Keep green outline on locked element
-    lockedElement.style.setProperty('outline', '5px solid #00ff00', 'important');
-    return;
-  }
   
   const target = event.target as HTMLElement;
   
-  // Don't highlight modal
+  // FIRST: Don't touch modal at all - this must come before ANY other logic
   if (target.closest('#spotboard-capture-confirmation')) {
     return;
   }
   
-  // Visuals
+  console.log('DEBUG: handleHover - lockedElement:', lockedElement);
+  
+  if (lockedElement) {
+    console.log('DEBUG: Element is locked, checking if hovering child for exclusion preview');
+    
+    // Keep green outline on locked element
+    lockedElement.style.setProperty('outline', '5px solid #00ff00', 'important');
+    
+    // Check if hovering over a child of locked element (but not the locked element itself)
+    if (lockedElement.contains(target) && target !== lockedElement) {
+      // Check if this element is already excluded
+      const isAlreadyExcluded = excludedElements.includes(target);
+      
+      if (isAlreadyExcluded) {
+        // Keep the solid red styling for already-excluded elements
+        target.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
+        target.style.setProperty('outline', '2px solid #ff0000', 'important');
+      } else {
+        // Show dashed red border preview for potential exclusion
+        target.style.setProperty('outline', '2px dashed #ff0000', 'important');
+        target.style.setProperty('background', 'transparent', 'important');
+      }
+      target.style.cursor = 'pointer';
+    }
+    
+    return;
+  }
+  
+  // Normal capture mode: show red outline for element selection
   target.style.setProperty('outline', '5px solid red', 'important');
   target.style.cursor = 'crosshair';
   
@@ -230,6 +251,25 @@ function handleHover(event: MouseEvent) {
 function handleExit(event: MouseEvent) {
   if (!isCapturing) return;
   const target = event.target as HTMLElement;
+  
+  // FIRST: Don't touch modal at all
+  if (target.closest('#spotboard-capture-confirmation')) {
+    return;
+  }
+  
+  // If in exclusion mode (element locked)
+  if (lockedElement) {
+    // Don't clear styling from locked element or already-excluded elements
+    if (target === lockedElement || excludedElements.includes(target)) {
+      return;
+    }
+    // Clear preview styling from non-excluded children
+    target.style.removeProperty('outline');
+    target.style.removeProperty('background');
+    return;
+  }
+  
+  // Normal mode: clear hover styling
   target.style.outline = '';
 }
 
@@ -500,6 +540,41 @@ function getElementByPath(root: Element, path: number[]): Element | null {
   return current;
 }
 
+
+// Toggle exclusion marking on child element
+
+// Clear all exclusion markings and reset array
+function resetExclusions() {
+  // Remove red markings from all excluded elements
+  excludedElements.forEach(el => {
+    el.style.removeProperty('background');
+    el.style.removeProperty('outline');
+  });
+  // Clear the array
+  excludedElements = [];
+  log('🧹 All exclusions cleared');
+}
+
+function toggleExclusion(element: HTMLElement) {
+  const isExcluded = excludedElements.includes(element);
+  
+  if (isExcluded) {
+    // Remove from excluded list and remove red marking
+    excludedElements = excludedElements.filter(el => el !== element);
+    element.style.removeProperty('background');
+    element.style.removeProperty('outline');
+    log('✅ Element un-excluded:', element.tagName, element.className);
+  } else {
+    // Add to excluded list and mark with red
+    excludedElements.push(element);
+    element.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
+    element.style.setProperty('outline', '2px solid #ff0000', 'important');
+    log('❌ Element excluded:', element.tagName, element.className);
+  }
+  
+  console.log('DEBUG: excludedElements count:', excludedElements.length);
+}
+
 function handleClick(event: MouseEvent) {
   if (!isCapturing) return;
   
@@ -514,9 +589,20 @@ function handleClick(event: MouseEvent) {
     return;
   }
   
-  // If we already have a locked element, ignore other clicks
+  // If we already have a locked element, check if clicking child for exclusion
   if (lockedElement) {
-    console.log('DEBUG: Element already locked, ignoring new clicks');
+    console.log('DEBUG: Element already locked, checking if clicking child...');
+    
+    // Check if clicked element is a child of locked element (but not the locked element itself)
+    if (lockedElement.contains(target) && target !== lockedElement) {
+      console.log('DEBUG: Clicking child of locked element - toggling exclusion');
+      event.preventDefault();
+      event.stopPropagation();
+      toggleExclusion(target);
+      return;
+    }
+    
+    console.log('DEBUG: Click outside locked element, ignoring');
     return;
   }
   
@@ -723,6 +809,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                 target.style.outline = '';
                 target.style.cursor = '';
                 lockedElement = null;
+                resetExclusions();
                 console.log('DEBUG: lockedElement UNLOCKED (confirm)');
                 
                 showStyledNotification(`✅ Saved: ${name}`, 'success');
@@ -747,6 +834,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       target.style.outline = '';
       target.style.cursor = '';
       lockedElement = null;
+      resetExclusions();
       console.log('DEBUG: lockedElement UNLOCKED (cancel)');
       toggleCapture(false);
     }, true); // Use capture phase
@@ -760,6 +848,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       target.style.outline = '';
       target.style.cursor = '';
       lockedElement = null;
+      resetExclusions();
       console.log('DEBUG: lockedElement UNLOCKED (escape)');
       document.removeEventListener('keydown', escapeHandler);
     }

@@ -1,40 +1,68 @@
-# Exclusion Mode - Step 1: Confirmation Modal
+# Exclusion Mode - Steps 1-2 Complete: Hover Preview + Toggle
 
 ## Goal
-Enable users to exclude unwanted elements from captured DOMs before saving. First step: create confirmation workflow that locks capture and shows top-right modal.
+Enable users to exclude unwanted elements from captured DOMs before saving. Implementation complete through Step 2.
 
-## Implementation (Completed)
-- Moved confirmation modal from center to top-right corner (20px from top/right)
-- Purple background (#6b46c1) matching dashboard aesthetic
-- Two buttons: "Confirm Spot" (green #48bb78) and "Cancel" (red #f56565)
-- Element locking system prevents selecting other elements while confirming
+## Step 1: Confirmation Modal (✅ Complete)
+- Purple modal top-right (20px from edges)
+- Green "Confirm Spot" + Red "Cancel" buttons
+- Instructions: "Click elements inside the green box to exclude them. They'll turn red. Click again to undo."
+- Unlock triggers: Confirm/Cancel/Escape → all reset exclusions
 
-## Technical Details
+## Step 2: Click + Hover Preview (✅ Complete)
 
-**Lock State Management:**
-- Added `lockedElement: HTMLElement | null` variable to track captured element
-- Lock prevents hover highlights and new captures until user confirms/cancels
-- Green outline (#00ff00) applied and maintained on locked element
+**State Management:**
+- `excludedElements: HTMLElement[]` tracks red-marked children
+- `resetExclusions()` clears both visual marks and array
 
-**Event Handling Challenges:**
-- Button event listeners use capture phase `addEventListener('click', handler, true)` to fire BEFORE main handleClick
-- handleClick explicitly allows modal clicks through (early return on `closest('#spotboard-capture-confirmation')`)
-- handleHover reapplies green outline on every hover event to keep it visible
+**Visual States:**
+1. **Hover preview (not excluded):** 2px dashed red border (`outline: 2px dashed #ff0000`)
+2. **Excluded (clicked):** Light red fill (`rgba(255, 0, 0, 0.3)`) + solid 2px border
+3. **Hover over excluded:** Maintains solid red styling (no change)
+4. **Modal hover:** No styling applied (modal check is FIRST in handlers)
 
-**Unlock Triggers:**
-1. Confirm button → saves component → unlocks
-2. Cancel button → exits capture mode → unlocks  
-3. Escape key → closes modal → unlocks
+**Click Detection:**
+```typescript
+if (lockedElement.contains(target) && target !== lockedElement) {
+  toggleExclusion(target); // Add/remove from array + toggle red styling
+}
+```
+
+**Hover Logic:**
+```typescript
+// CRITICAL: Modal check must be FIRST before any other logic
+if (target.closest('#spotboard-capture-confirmation')) return;
+
+if (isAlreadyExcluded) {
+  // Keep solid red
+} else {
+  // Show dashed red preview
+}
+```
+
+**Key Learning:**
+- Modal check must be FIRST in both `handleHover()` and `handleExit()`
+- Without this, hover styling gets applied to modal buttons/background
+- Bug manifested as transparent modal when hovering
 
 ## Current Flow
-1. User clicks element → green outline locks on element
-2. Top-right modal appears immediately
-3. Hover other elements → nothing happens (locked)
-4. Click Confirm → waits 2s → sanitizes → saves → unlocks
-5. Click Cancel/Escape → unlocks → exits capture mode
+1. User clicks element → green lock + modal
+2. Hover child → dashed red preview appears
+3. Click child → solid red fill (excluded)
+4. Click again → remove red (un-excluded)
+5. Hover over modal → stays visible (no styling applied)
+6. Confirm/Cancel/Escape → saves/exits + resets all exclusions
 
-## Next Steps (Not Started)
-- Add exclusion functionality: clicking child elements marks them red
-- Track excluded elements in array
-- Sanitize HTML to remove excluded elements before saving
-- Toggle exclusion on/off (click again to undo red marking)
+## Next Steps (Pending)
+**Step 3:** Track excluded elements in save flow
+- Pass `excludedElements` to `sanitizeHTML()` function
+- Modify function signature to accept exclusions parameter
+
+**Step 4:** Remove excluded elements from HTML
+- Loop through `excludedElements` array before cloning
+- Remove each element from DOM
+- Verify excluded content not in saved HTML
+
+**Step 5:** Testing and refinement
+- Test various exclusion scenarios
+- Update PRD with exclusion mode feature
