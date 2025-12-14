@@ -11,6 +11,7 @@ interface Component {
   selector?: string; // From local storage
   html_cache?: string; // From local storage
   last_refresh?: string; // From local storage
+  excludedSelectors?: string[]; // 🎯 FIX: Add excluded element selectors
 }
 
 function App() {
@@ -67,7 +68,9 @@ function App() {
       name: c.name,
       url: c.url,
       favicon: c.favicon,
-      selector: c.selector
+      customLabel: c.customLabel,  // 🎯 FIX: Preserve custom label
+      selector: c.selector,
+      excludedSelectors: c.excludedSelectors || []  // 🎯 FIX: Preserve exclusions
     }));
     chrome.storage.sync.set({ components: syncData });
     

@@ -655,7 +655,8 @@ chrome.storage.sync.get(['components'], (syncResult) => {
           url: c.url,
           favicon: c.favicon,
           customLabel: c.customLabel,
-          selector: c.selector
+          selector: c.selector,
+          excludedSelectors: c.excludedSelectors || []  // 🎯 FIX: Include exclusions
         }));
         chrome.storage.sync.set({ components: syncData });
         
@@ -716,7 +717,8 @@ chrome.storage.sync.get(['components'], (syncResult) => {
             url: c.url,
             favicon: c.favicon,
             customLabel: c.customLabel,
-            selector: c.selector
+            selector: c.selector,
+            excludedSelectors: c.excludedSelectors || []  // 🎯 FIX: Include exclusions
           }));
           chrome.storage.sync.set({ components: syncData });
         }
