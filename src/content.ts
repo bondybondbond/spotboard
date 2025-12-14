@@ -5,6 +5,7 @@ const DEBUG = false;
 const log = (...args: any[]) => DEBUG && console.log(...args);
 
 let isCapturing = false;
+let lockedElement: HTMLElement | null = null; // Track element waiting for confirmation
 
 
 // Check if an ID looks auto-generated and should be avoided
@@ -202,7 +203,21 @@ function buildPathFromUniqueAncestor(element: HTMLElement, baseSelector: string)
 // 1. Hover Handler (The Red Box)
 function handleHover(event: MouseEvent) {
   if (!isCapturing) return;
+  console.log('DEBUG: handleHover - lockedElement:', lockedElement);
+  
+  if (lockedElement) {
+    console.log('DEBUG: Element is locked, skipping hover highlight');
+    // Keep green outline on locked element
+    lockedElement.style.setProperty('outline', '5px solid #00ff00', 'important');
+    return;
+  }
+  
   const target = event.target as HTMLElement;
+  
+  // Don't highlight modal
+  if (target.closest('#spotboard-capture-confirmation')) {
+    return;
+  }
   
   // Visuals
   target.style.setProperty('outline', '5px solid red', 'important');
@@ -489,14 +504,30 @@ function handleClick(event: MouseEvent) {
   if (!isCapturing) return;
   
   log('🖱️ Click detected on:', event.target);
+  console.log('DEBUG: lockedElement before click:', lockedElement);
+  
+  const target = event.target as HTMLElement;
+  
+  // If clicking on modal buttons, let them handle it (don't intercept)
+  if (target.closest('#spotboard-capture-confirmation')) {
+    console.log('DEBUG: Click is on modal, allowing button handlers to process');
+    return;
+  }
+  
+  // If we already have a locked element, ignore other clicks
+  if (lockedElement) {
+    console.log('DEBUG: Element already locked, ignoring new clicks');
+    return;
+  }
   
   event.preventDefault();
   event.stopPropagation();
   
-  const target = event.target as HTMLElement;
   log('🎯 Target element:', target.tagName, target.className);
   
-  // Green Flash
+  // Lock this element and set green outline
+  lockedElement = target;
+  console.log('DEBUG: lockedElement LOCKED:', lockedElement);
   target.style.setProperty('outline', '5px solid #00ff00', 'important');
   
   // Generate smart label using Option 1 strategy
@@ -550,101 +581,190 @@ function handleClick(event: MouseEvent) {
   
   log('🏷️ Final name:', name);
   
-  const selector = generateSelector(target); // Smart selector for refresh
+  const selector = generateSelector(target);
   log('🎯 Final selector:', selector);
   
-  // ⏳ WAIT 2 SECONDS FOR JS FRAMEWORKS TO RENDER
-  // Fixes React-heavy sites like Guardian where content loads after initial DOM
-  log('⏳ Waiting 2s for JavaScript to render...');
-  
-  setTimeout(() => {
-    // ✨ SANITIZE HTML BEFORE STORING (after JS renders)
-    const cleanedHTML = sanitizeHTML(target);
-    log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
-    
-    // Extract domain for favicon
-    const domain = new URL(window.location.href).hostname;
-    const faviconUrl = `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
-    
-    const component = {
-      id: crypto.randomUUID(),
-      url: window.location.href,
-      selector: selector,
-      name: name,
-      html_cache: cleanedHTML,
-      last_refresh: new Date().toISOString(),
-      favicon: faviconUrl
-    };
-    
-    log('📦 Component object created:', component.id);
+  // Show top-right confirmation modal
+  showCaptureConfirmation(target, name, selector);
+}
 
-    // Save with hybrid storage model
-    log('💾 Attempting hybrid save (sync + local)...');
-    
-    // Prepare metadata for sync storage (includes selector for cross-device refresh)
-    const metadata = {
-      id: component.id,
-      url: component.url,
-      name: component.name,
-      favicon: component.favicon,
-      selector: component.selector  // Essential for refresh on other devices
-    };
-    
-    // Get existing sync data
-    chrome.storage.sync.get(['components'], (result) => {
-      const existingCount = (result.components as any[])?.length || 0;
-      log('📥 Sync storage retrieved, existing components:', existingCount);
+function showCaptureConfirmation(target: HTMLElement, name: string, selector: string) {
+  // Create top-right confirmation modal
+  const modal = document.createElement('div');
+  modal.id = 'spotboard-capture-confirmation';
+  modal.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #6b46c1;
+    color: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    z-index: 999999;
+    min-width: 300px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  `;
+  
+  modal.innerHTML = `
+    <div style="margin-bottom: 16px;">
+      <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">
+        ✅ Captured: ${name}
+      </div>
+      <div style="font-size: 14px; opacity: 0.9;">
+        Click elements inside the green box to exclude them.<br>
+        They'll turn red. Click again to undo.
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button id="confirmSpot" style="flex: 1; padding: 12px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
+        Confirm Spot
+      </button>
+      <button id="cancelSpot" style="flex: 1; padding: 12px; background: #f56565; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
+        Cancel
+      </button>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  console.log('DEBUG: Modal created, lockedElement:', lockedElement);
+  
+  // Confirm button handler - use capture phase to ensure it fires first
+  const confirmBtn = modal.querySelector('#confirmSpot') as HTMLButtonElement;
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', (e) => {
+      console.log('DEBUG: Confirm clicked');
+      e.stopPropagation();
+      e.preventDefault();
+      modal.remove();
       
-      if (chrome.runtime.lastError) {
-        console.error('❌ Chrome storage error:', chrome.runtime.lastError);
-        showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
-        return;
-      }
+      // ⏳ WAIT 2 SECONDS FOR JS FRAMEWORKS TO RENDER
+      log('⏳ Waiting 2s for JavaScript to render...');
       
-      const metadataList = Array.isArray(result.components) ? result.components : [];
-      metadataList.push(metadata);
-      log('📝 Updated metadata list length:', metadataList.length);
-      
-      // Save metadata to sync storage
-      chrome.storage.sync.set({ components: metadataList }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('❌ Sync storage set error:', chrome.runtime.lastError);
-          showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
-          return;
-        }
+      setTimeout(() => {
+        // ✨ SANITIZE HTML BEFORE STORING (after JS renders)
+        const cleanedHTML = sanitizeHTML(target);
+        log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
         
-        log('✅ Metadata saved to sync storage');
+        // Extract domain for favicon
+        const domain = new URL(window.location.href).hostname;
+        const faviconUrl = `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
         
-        // Save full component data to local storage (including selector)
-        chrome.storage.local.get(['componentsData'], (localResult) => {
-          const localData: Record<string, any> = localResult.componentsData || {};
-          localData[component.id] = {
-            selector: component.selector,  // Needed for refresh
-            html_cache: component.html_cache,
-            last_refresh: component.last_refresh
-          };
+        const component = {
+          id: crypto.randomUUID(),
+          url: window.location.href,
+          selector: selector,
+          name: name,
+          html_cache: cleanedHTML,
+          last_refresh: new Date().toISOString(),
+          favicon: faviconUrl
+        };
+        
+        log('📦 Component object created:', component.id);
+
+        // Save with hybrid storage model
+        log('💾 Attempting hybrid save (sync + local)...');
+        
+        // Prepare metadata for sync storage (includes selector for cross-device refresh)
+        const metadata = {
+          id: component.id,
+          url: component.url,
+          name: component.name,
+          favicon: component.favicon,
+          selector: component.selector
+        };
+        
+        // Get existing sync data
+        chrome.storage.sync.get(['components'], (result) => {
+          const existingCount = (result.components as any[])?.length || 0;
+          log('📥 Sync storage retrieved, existing components:', existingCount);
           
-          chrome.storage.local.set({ componentsData: localData }, () => {
+          if (chrome.runtime.lastError) {
+            console.error('❌ Chrome storage error:', chrome.runtime.lastError);
+            showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
+            return;
+          }
+          
+          const metadataList = Array.isArray(result.components) ? result.components : [];
+          metadataList.push(metadata);
+          log('📝 Updated metadata list length:', metadataList.length);
+          
+          // Save metadata to sync storage
+          chrome.storage.sync.set({ components: metadataList }, () => {
             if (chrome.runtime.lastError) {
-              console.error('❌ Local storage set error:', chrome.runtime.lastError);
+              console.error('❌ Sync storage set error:', chrome.runtime.lastError);
               showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
               return;
             }
             
-            log('✅ Full data saved to local storage');
-            log('✅ Component saved successfully (hybrid)!');
+            log('✅ Metadata saved to sync storage');
             
-            // Clear green flash
-            target.style.outline = '';
-            target.style.cursor = '';
-            
-            showStyledNotification(`✅ Saved: ${name}`, 'success');
-            toggleCapture(false); // Turn off after save
+            // Save full component data to local storage (including selector)
+            chrome.storage.local.get(['componentsData'], (localResult) => {
+              const localData: Record<string, any> = localResult.componentsData || {};
+              localData[component.id] = {
+                selector: component.selector,
+                html_cache: component.html_cache,
+                last_refresh: component.last_refresh
+              };
+              
+              chrome.storage.local.set({ componentsData: localData }, () => {
+                if (chrome.runtime.lastError) {
+                  console.error('❌ Local storage set error:', chrome.runtime.lastError);
+                  showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
+                  return;
+                }
+                
+                log('✅ Full data saved to local storage');
+                log('✅ Component saved successfully (hybrid)!');
+                
+                // Clear green flash and unlock
+                target.style.outline = '';
+                target.style.cursor = '';
+                lockedElement = null;
+                console.log('DEBUG: lockedElement UNLOCKED (confirm)');
+                
+                showStyledNotification(`✅ Saved: ${name}`, 'success');
+                toggleCapture(false);
+              });
+            });
           });
         });
-      });
-    });
-  }, 2000); // 2-second delay for JS rendering
+      }, 2000);
+    }, true); // Use capture phase
+  }
+  
+  // Cancel button handler - use capture phase
+  const cancelBtn = modal.querySelector('#cancelSpot') as HTMLButtonElement;
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', (e) => {
+      console.log('DEBUG: Cancel clicked');
+      e.stopPropagation();
+      e.preventDefault();
+      modal.remove();
+      // Clear green flash and unlock
+      target.style.outline = '';
+      target.style.cursor = '';
+      lockedElement = null;
+      console.log('DEBUG: lockedElement UNLOCKED (cancel)');
+      toggleCapture(false);
+    }, true); // Use capture phase
+  }
+  
+  // Handle Escape key to close modal
+  const escapeHandler = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      console.log('DEBUG: Escape pressed, closing modal');
+      modal.remove();
+      target.style.outline = '';
+      target.style.cursor = '';
+      lockedElement = null;
+      console.log('DEBUG: lockedElement UNLOCKED (escape)');
+      document.removeEventListener('keydown', escapeHandler);
+    }
+  };
+  document.addEventListener('keydown', escapeHandler);
 }
 
 // 4. Escape Key Handler
