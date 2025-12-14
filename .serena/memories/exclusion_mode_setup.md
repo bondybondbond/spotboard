@@ -147,6 +147,42 @@ html_cache: cleanupDuplicates(applyExclusions(extractedHtml, component.excludedS
 **Defense in Depth:**
 Missing even ONE refresh path = excluded elements reappear in that scenario. All 4 paths required for reliability.
 
+## CRITICAL BUG FIX: Storage Persistence (✅ Fixed Dec 14)
+
+**Symptom:** Exclusions worked on first refresh, disappeared on second/third refresh
+
+**Root Cause (dashboard.js ~line 1678-1701):**
+- After each refresh, we updated storage with new HTML
+- But we FORGOT to save `excludedSelectors` back to storage
+- Result: Exclusions lived in memory (first refresh OK) then lost forever
+
+**The Fix:**
+Added `excludedSelectors` to BOTH storage locations during refresh cycle:
+
+```javascript
+// Sync storage (metadata)
+updatedMetadata.push({
+  id, name, url, favicon, customLabel, selector,
+  excludedSelectors: comp.excludedSelectors || []  // ADDED
+});
+
+// Local storage (full data)
+updatedLocalData[comp.id] = {
+  selector, html_cache, last_refresh,
+  excludedSelectors: comp.excludedSelectors || []  // ADDED (2 places: success + failure branches)
+};
+```
+
+**Why This Matters:**
+- Exclusions now persist across UNLIMITED refresh cycles
+- Without this, users had to re-exclude elements every single refresh
+- Classic "apply but don't save" bug pattern
+
+**Testing:**
+1. Exclude elements → First refresh ✅ (works from memory)
+2. Refresh again → Second refresh ✅ (works from storage)
+3. Refresh 5 more times → All persist ✅
+
 ## Next Steps (Optional Polish)
 **Step 5:** Drag box multi-select (for excluding 10+ elements efficiently)
 **Step 6:** Grow/Reduce buttons (Visualping-style expansion)

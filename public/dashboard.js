@@ -1682,7 +1682,8 @@ async function refreshAll() {
         url: comp.url,
         favicon: comp.favicon,
         customLabel: comp.customLabel,
-        selector: comp.selector
+        selector: comp.selector,
+        excludedSelectors: comp.excludedSelectors || []
       });
       
       // Save full data to local
@@ -1690,14 +1691,16 @@ async function refreshAll() {
         updatedLocalData[comp.id] = {
           selector: comp.selector,
           html_cache: result.html_cache,
-          last_refresh: result.last_refresh
+          last_refresh: result.last_refresh,
+          excludedSelectors: comp.excludedSelectors || []
         };
       } else {
         // Keep existing data if refresh failed
         updatedLocalData[comp.id] = {
           selector: comp.selector,
           html_cache: comp.html_cache,
-          last_refresh: comp.last_refresh
+          last_refresh: comp.last_refresh,
+          excludedSelectors: comp.excludedSelectors || []
         };
       }
     });
