@@ -3,6 +3,32 @@
  * 🎯 HIT LIST: Remove duplicate/hidden elements from captured HTML
  * Fixes BBC's triple-text pattern (MobileValue, DesktopValue, visually-hidden)
  */
+/**
+ * 🎯 BATCH 3: Apply user exclusions to HTML
+ * Removes elements that user excluded during capture
+ */
+function applyExclusions(html, excludedSelectors) {
+  if (!html || !excludedSelectors || excludedSelectors.length === 0) {
+    return html;
+  }
+  
+  console.log('🎯 Applying', excludedSelectors.length, 'exclusions during refresh');
+  
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = html;
+  
+  excludedSelectors.forEach(selector => {
+    try {
+      const excluded = tempDiv.querySelectorAll(selector);
+      excluded.forEach(el => el.remove());
+    } catch (e) {
+      console.warn('  ⚠️ Could not remove excluded element:', selector, e);
+    }
+  });
+  
+  return tempDiv.innerHTML;
+}
+
 function cleanupDuplicates(html) {
   if (!html) return html;
   
@@ -1364,7 +1390,7 @@ async function refreshComponent(component) {
         
         return {
           success: true,
-          html_cache: cleanupDuplicates(tabHtml),
+          html_cache: cleanupDuplicates(applyExclusions(tabHtml, component.excludedSelectors)),
           last_refresh: new Date().toISOString(),
           status: 'active'
         };
@@ -1518,7 +1544,7 @@ async function refreshComponent(component) {
             // Tab refresh worked and verified!
             return {
               success: true,
-              html_cache: cleanupDuplicates(tabHtml),
+              html_cache: cleanupDuplicates(applyExclusions(tabHtml, component.excludedSelectors)),
               last_refresh: new Date().toISOString(),
               status: 'active'
             };
@@ -1548,7 +1574,7 @@ async function refreshComponent(component) {
           }
           return {
             success: true,
-            html_cache: cleanupDuplicates(tabHtml),
+            html_cache: cleanupDuplicates(applyExclusions(tabHtml, component.excludedSelectors)),
             last_refresh: new Date().toISOString(),
             status: 'active'
           };
@@ -1569,7 +1595,7 @@ async function refreshComponent(component) {
     
     return {
       success: true,
-      html_cache: cleanupDuplicates(extractedHtml),
+      html_cache: cleanupDuplicates(applyExclusions(extractedHtml, component.excludedSelectors)),
       last_refresh: new Date().toISOString(),
       status: 'active'
     };

@@ -76,14 +76,79 @@ if (excludedElements.length > 0) {
 - Changed from: `sanitizeHTML(target)`
 - Changed to: `sanitizeHTML(target, excludedElements)`
 
-## Next Steps (Pending)
-**Step 4:** Testing and verification
+## Step 4: Persist Exclusions for Refresh (✅ Complete)
 
-**Step 4:** Remove excluded elements from HTML
-- Loop through `excludedElements` array before cloning
-- Remove each element from DOM
-- Verify excluded content not in saved HTML
+**Goal:** Excluded elements stay removed after dashboard refresh
 
-**Step 5:** Testing and refinement
-- Test various exclusion scenarios
-- Update PRD with exclusion mode feature
+**Pattern:** Store exclusions as CSS selectors, apply during all refresh paths
+
+**Implementation in 3 Batches:**
+
+**BATCH 1 - Generate Selectors (content.ts ~line 758):**
+```typescript
+const excludedSelectors: string[] = [];
+excludedElements.forEach(el => {
+  const selector = generateSelector(el);
+  excludedSelectors.push(selector);
+});
+console.log('🎯 Generated', excludedSelectors.length, 'exclusion selectors');
+```
+
+**BATCH 2 - Store in Metadata (content.ts ~line 790, 822):**
+```typescript
+// Sync storage (cross-device)
+const metadata = {
+  id, url, name, favicon, selector,
+  excludedSelectors: excludedSelectors  // NEW: Syncs to other devices
+};
+
+// Local storage
+localData[component.id] = {
+  selector, html_cache, last_refresh,
+  excludedSelectors: excludedSelectors  // NEW: Backup in local
+};
+```
+
+**BATCH 3 - Apply During Refresh (dashboard.js):**
+```javascript
+// Helper function (line ~6)
+function applyExclusions(html, excludedSelectors) {
+  if (!excludedSelectors?.length) return html;
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = html;
+  excludedSelectors.forEach(selector => {
+    tempDiv.querySelectorAll(selector).forEach(el => el.remove());
+  });
+  return tempDiv.innerHTML;
+}
+
+// Applied in 4 refresh code paths:
+html_cache: cleanupDuplicates(applyExclusions(extractedHtml, component.excludedSelectors))
+```
+
+**Critical Locations (dashboard.js):**
+1. Line ~1396: After willNeedActiveTab (session-dependent sites)
+2. Line ~1550: After skeleton fallback detection
+3. Line ~1580: After selector-not-found fallback
+4. Line ~1601: After direct fetch extraction success
+
+**Selector Persistence Pattern:**
+- **CRITICAL:** Store as selectors, NOT element references
+- Element references break when DOM is recreated during refresh
+- Selectors can be re-queried against fresh HTML
+- Storage cost: ~20-50 bytes per selector (minimal impact on 8KB sync limit)
+
+**Cross-Device Behavior:**
+- Device A: Captures + excludes → `excludedSelectors` syncs to cloud ✅
+- Device B: Opens dashboard → sees component list from synced metadata ✅
+- Device B: Clicks "Refresh All" → `applyExclusions()` runs automatically ✅
+- Result: Excluded elements stay gone on all devices after first refresh
+
+**Defense in Depth:**
+Missing even ONE refresh path = excluded elements reappear in that scenario. All 4 paths required for reliability.
+
+## Next Steps (Optional Polish)
+**Step 5:** Drag box multi-select (for excluding 10+ elements efficiently)
+**Step 6:** Grow/Reduce buttons (Visualping-style expansion)
+**Step 7:** Comprehensive testing across multiple sites
+**Step 8:** Update PRD with complete feature documentation

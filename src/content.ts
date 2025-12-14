@@ -756,9 +756,16 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       log('⏳ Waiting 2s for JavaScript to render...');
       
       setTimeout(() => {
+        // 🎯 BATCH 1: Generate selectors for excluded elements
+        const excludedSelectors: string[] = [];
+        excludedElements.forEach(el => {
+          const selector = generateSelector(el);
+          excludedSelectors.push(selector);
+        });
+        console.log('🎯 Generated', excludedSelectors.length, 'exclusion selectors');
+        
         // ✨ SANITIZE HTML BEFORE STORING (after JS renders)
         // Pass excluded elements so they can be removed from saved HTML
-        console.log('DEBUG: Passing', excludedElements.length, 'excluded elements to sanitizeHTML');
         const cleanedHTML = sanitizeHTML(target, excludedElements);
         log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
         
@@ -787,8 +794,10 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           url: component.url,
           name: component.name,
           favicon: component.favicon,
-          selector: component.selector
+          selector: component.selector,
+          excludedSelectors: excludedSelectors  // BATCH 2: Store exclusion selectors
         };
+        console.log('💾 Storing', excludedSelectors.length, 'exclusion selectors in metadata');
         
         // Get existing sync data
         chrome.storage.sync.get(['components'], (result) => {
@@ -821,7 +830,8 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
               localData[component.id] = {
                 selector: component.selector,
                 html_cache: component.html_cache,
-                last_refresh: component.last_refresh
+                last_refresh: component.last_refresh,
+                excludedSelectors: excludedSelectors  // BATCH 2: Store exclusion selectors
               };
               
               chrome.storage.local.set({ componentsData: localData }, () => {
