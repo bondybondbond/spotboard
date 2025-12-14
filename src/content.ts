@@ -325,7 +325,9 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
   });
 }
 
-function sanitizeHTML(element: HTMLElement): string {
+function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []): string {
+  console.log('🧹 sanitizeHTML called with', excludedElements.length, 'excluded elements');
+  
   // 🎯 STEP 1: Mark hidden elements in ORIGINAL DOM (before cloning)
   // Check computed styles on live DOM elements, then mark them for removal
   const allOriginalElements = [element, ...Array.from(element.querySelectorAll('*'))];
@@ -346,6 +348,31 @@ function sanitizeHTML(element: HTMLElement): string {
   
   // Clean up markers from original DOM (restore page to pristine state)
   markedElements.forEach(el => el.removeAttribute('data-spotboard-hidden'));
+  
+  // 🎯 REMOVE USER-EXCLUDED ELEMENTS
+  // User marked these elements for exclusion before confirming capture
+  // We need to find them in the clone using path-based matching
+  if (excludedElements.length > 0) {
+    console.log('🎯 Processing', excludedElements.length, 'user-excluded elements');
+    
+    // For each excluded element, calculate its path from root
+    // Then find the same element in the clone using that path
+    excludedElements.forEach(excludedEl => {
+      // Get path from root element to excluded element
+      const path = getElementPath(excludedEl, element);
+      console.log('  📍 Excluded element path:', path, excludedEl.tagName, excludedEl.className);
+      
+      // Find corresponding element in clone using path
+      const elementInClone = getElementByPath(clone, path);
+      
+      if (elementInClone) {
+        elementInClone.remove();
+        console.log('  ✅ Removed excluded element from clone');
+      } else {
+        console.warn('  ⚠️ Could not find excluded element in clone');
+      }
+    });
+  }
   
   // 🎯 HIT LIST: Remove known duplicate/hidden elements by class name
   // This fixes mobile/desktop duplicate content patterns across sites
@@ -730,7 +757,9 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       
       setTimeout(() => {
         // ✨ SANITIZE HTML BEFORE STORING (after JS renders)
-        const cleanedHTML = sanitizeHTML(target);
+        // Pass excluded elements so they can be removed from saved HTML
+        console.log('DEBUG: Passing', excludedElements.length, 'excluded elements to sanitizeHTML');
+        const cleanedHTML = sanitizeHTML(target, excludedElements);
         log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
         
         // Extract domain for favicon

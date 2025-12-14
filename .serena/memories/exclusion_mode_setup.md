@@ -53,10 +53,31 @@ if (isAlreadyExcluded) {
 5. Hover over modal → stays visible (no styling applied)
 6. Confirm/Cancel/Escape → saves/exits + resets all exclusions
 
+## Step 3: Track Excluded Elements in Save Flow (✅ Complete)
+
+**Modified `sanitizeHTML()` signature:**
+- Now accepts `excludedElements: HTMLElement[] = []` parameter
+- Logs count of excluded elements on entry
+
+**Exclusion removal logic (added after clone creation):**
+```typescript
+if (excludedElements.length > 0) {
+  excludedElements.forEach(excludedEl => {
+    const path = getElementPath(excludedEl, element);
+    const elementInClone = getElementByPath(clone, path);
+    if (elementInClone) {
+      elementInClone.remove();
+    }
+  });
+}
+```
+
+**Updated sanitizeHTML() call (line ~735):**
+- Changed from: `sanitizeHTML(target)`
+- Changed to: `sanitizeHTML(target, excludedElements)`
+
 ## Next Steps (Pending)
-**Step 3:** Track excluded elements in save flow
-- Pass `excludedElements` to `sanitizeHTML()` function
-- Modify function signature to accept exclusions parameter
+**Step 4:** Testing and verification
 
 **Step 4:** Remove excluded elements from HTML
 - Loop through `excludedElements` array before cloning
