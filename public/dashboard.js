@@ -1728,10 +1728,6 @@ async function refreshComponent(component) {
     return {
       success: true,
       html_cache: afterCleanup,
-    
-    return {
-      success: true,
-      html_cache: afterCleanup,
       last_refresh: new Date().toISOString(),
       status: 'active'
     };
