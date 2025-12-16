@@ -89,6 +89,22 @@ function generateSelector(element: HTMLElement): string {
     return pathSelector;
   }
   
+  // 🚨 CRITICAL: Never return ultra-generic selectors (bare tag names)
+  // These will match TOO MANY elements during refresh and cause content removal
+  const isBareTag = /^[a-z]+$/i.test(baseSelector); // Just a tag name like "div", "span", "a"
+  
+  if (isBareTag) {
+    log('🚨 BLOCKING ultra-generic selector:', baseSelector);
+    // Force path-based approach by adding parent context
+    const parent = element.parentElement;
+    if (parent) {
+      const parentBase = buildBaseSelector(parent);
+      const contextSelector = `${parentBase} > ${baseSelector}`;
+      log('✅ Adding parent context:', contextSelector);
+      return contextSelector;
+    }
+  }
+  
   // Last resort: return base selector (fingerprint will catch mismatches)
   log('⚠️ Could not make selector unique, using:', baseSelector);
   return baseSelector;
@@ -592,6 +608,37 @@ function toggleExclusion(element: HTMLElement) {
     element.style.removeProperty('outline');
     log('✅ Element un-excluded:', element.tagName, element.className);
   } else {
+    // Check if this element would create a too-generic selector
+    const tempSelector = generateSelector(element);
+    const isBareTag = /^[a-z]+$/i.test(tempSelector.trim());
+    
+    if (isBareTag) {
+      // Show warning tooltip near element
+      const warning = document.createElement('div');
+      warning.style.cssText = `
+        position: absolute;
+        background: #f56565;
+        color: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        z-index: 999998;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        pointer-events: none;
+      `;
+      warning.textContent = `⚠️ Too generic - will be skipped!`;
+      
+      const rect = element.getBoundingClientRect();
+      warning.style.left = `${rect.left + window.scrollX}px`;
+      warning.style.top = `${rect.top + window.scrollY - 40}px`;
+      
+      document.body.appendChild(warning);
+      setTimeout(() => warning.remove(), 3000);
+      
+      log('🚨 BLOCKED exclusion of ultra-generic element:', tempSelector);
+    }
+    
     // Add to excluded list and mark with red
     excludedElements.push(element);
     element.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');

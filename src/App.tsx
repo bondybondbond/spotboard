@@ -8,6 +8,7 @@ interface Component {
   url: string;
   customLabel?: string; // User's custom label (optional)
   favicon?: string; // Site favicon URL
+  headingFingerprint?: string; // 🎯 FIX: Heading text for fallback selector detection
   selector?: string; // From local storage
   html_cache?: string; // From local storage
   last_refresh?: string; // From local storage
@@ -69,6 +70,7 @@ function App() {
       url: c.url,
       favicon: c.favicon,
       customLabel: c.customLabel,  // 🎯 FIX: Preserve custom label
+      headingFingerprint: c.headingFingerprint,  // 🎯 FIX: Preserve heading fallback
       selector: c.selector,
       excludedSelectors: c.excludedSelectors || []  // 🎯 FIX: Preserve exclusions
     }));

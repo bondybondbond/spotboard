@@ -19,7 +19,18 @@ function applyExclusions(html, excludedSelectors) {
   
   excludedSelectors.forEach(selector => {
     try {
+      // 🚨 SAFETY CHECK: Detect ultra-generic selectors that would remove everything
+      const isBareTag = /^[a-z]+$/i.test(selector.trim()); // Just "div", "span", "a", etc.
+      
+      if (isBareTag) {
+        console.warn(`🚨 SKIPPING ultra-generic selector that would remove too much: "${selector}"`);
+        return; // Skip this selector entirely
+      }
+      
       const excluded = tempDiv.querySelectorAll(selector);
+      if (excluded.length > 0) {
+        console.log(`  ↪️ Removing ${excluded.length} elements matching: ${selector}`);
+      }
       excluded.forEach(el => el.remove());
     } catch (e) {
       console.warn('  ⚠️ Could not remove excluded element:', selector, e);
@@ -655,6 +666,7 @@ chrome.storage.sync.get(['components'], (syncResult) => {
           url: c.url,
           favicon: c.favicon,
           customLabel: c.customLabel,
+          headingFingerprint: c.headingFingerprint,  // 🎯 FIX: Preserve heading fallback
           selector: c.selector,
           excludedSelectors: c.excludedSelectors || []  // 🎯 FIX: Include exclusions
         }));
@@ -717,6 +729,7 @@ chrome.storage.sync.get(['components'], (syncResult) => {
             url: c.url,
             favicon: c.favicon,
             customLabel: c.customLabel,
+            headingFingerprint: c.headingFingerprint,  // 🎯 FIX: Preserve heading fallback
             selector: c.selector,
             excludedSelectors: c.excludedSelectors || []  // 🎯 FIX: Include exclusions
           }));
@@ -1560,14 +1573,126 @@ async function refreshComponent(component) {
           };
         }
       } else {
-        // Selector not found in fetched HTML - try tab-based refresh
-        const originalFingerprint = extractFingerprint(component.html_cache);
-        const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint);
+        // Selector not found in fetched HTML
+        
+        // 🎯 SELF-HEALING: Auto-generate headingFingerprint if missing
+        if (!component.headingFingerprint) {
+          console.log(`🔧 [Self-Healing] No headingFingerprint found, attempting to generate...`);
+          
+          // Try to find a heading in the original cached HTML
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = component.html_cache || '';
+          const cachedHeading = tempDiv.querySelector('h1, h2, h3, h4');
+          
+          if (cachedHeading) {
+            const headingText = cachedHeading.textContent.trim();
+            console.log(`✅ [Self-Healing] Generated headingFingerprint: "${headingText}"`);
+            component.headingFingerprint = headingText;
+            
+            // Save to storage for future refreshes
+            chrome.storage.sync.get(['components'], (result) => {
+              const components = result.components || [];
+              const index = components.findIndex(c => c.id === component.id);
+              if (index !== -1) {
+                components[index].headingFingerprint = headingText;
+                chrome.storage.sync.set({ components }, () => {
+                  console.log(`💾 [Self-Healing] Saved headingFingerprint to storage`);
+                });
+              }
+            });
+          } else {
+            console.log(`⚠️ [Self-Healing] Could not find heading in cached HTML`);
+          }
+        }
+        
+        // 🎯 NEW: Try heading-based detection for dynamic ID patterns (Amazon CardInstance pattern)
+        if (component.headingFingerprint) {
+          console.log(`🔍 [Heading Fallback] Selector not found, trying heading-based detection for: "${component.headingFingerprint}"`);
+          
+          // Find all headings that match the fingerprint
+          const allHeadings = doc.querySelectorAll('h1, h2, h3, h4');
+          let targetHeading = null;
+          
+          for (const heading of allHeadings) {
+            if (heading.textContent.includes(component.headingFingerprint)) {
+              targetHeading = heading;
+              console.log(`✅ [Heading Fallback] Found heading: "${heading.textContent.substring(0, 50)}"`);
+              break;
+            }
+          }
+          
+          if (targetHeading) {
+            // Traverse up to find the card container
+            // Look for common container patterns: data attributes, card classes
+            let current = targetHeading;
+            let container = null;
+            
+            // Try up to 5 levels up
+            for (let i = 0; i < 5; i++) {
+              if (!current.parentElement) break;
+              current = current.parentElement;
+              
+              // Check if this looks like a card container
+              const hasDataAttr = current.hasAttribute('data-card-metrics-id') || 
+                                  current.hasAttribute('data-testid') ||
+                                  current.hasAttribute('data-component-id');
+              const hasCardClass = current.className && (
+                current.className.includes('card') ||
+                current.className.includes('component') ||
+                current.className.includes('widget')
+              );
+              
+              if (hasDataAttr || hasCardClass) {
+                container = current;
+                console.log(`✅ [Heading Fallback] Found container at level ${i + 1}`);
+                break;
+              }
+            }
+            
+            // If no specific container found, use parent 3 levels up (reasonable default)
+            if (!container && targetHeading.parentElement?.parentElement?.parentElement) {
+              container = targetHeading.parentElement.parentElement.parentElement;
+              console.log(`⚠️ [Heading Fallback] Using default parent (3 levels up)`);
+            }
+            
+            if (container) {
+              extractedHtml = container.outerHTML;
+              
+              // Validate minimum size - if too small, try climbing higher
+              if (extractedHtml.length < 1000) {
+                console.log(`⚠️ [Heading Fallback] Container too small (${extractedHtml.length} chars), searching higher...`);
+                
+                // Try going up 2 more levels to find larger container
+                let largerContainer = container.parentElement?.parentElement;
+                if (largerContainer && largerContainer.outerHTML.length > extractedHtml.length) {
+                  const largerHtml = largerContainer.outerHTML;
+                  console.log(`✅ [Heading Fallback] Found larger container: ${largerHtml.length} chars (${Math.round(largerHtml.length / extractedHtml.length)}x bigger)`);
+                  container = largerContainer;
+                  extractedHtml = largerHtml;
+                } else {
+                  console.log(`⚠️ [Heading Fallback] No larger container found, using small one`);
+                }
+              }
+              
+              console.log(`✅ [Heading Fallback] Successfully extracted via heading: ${extractedHtml.length} chars`);
+            }
+          } else {
+            console.log(`❌ [Heading Fallback] Heading not found in page`);
+          }
+        }
+        
+        // If heading fallback didn't work (extractedHtml still null), try tab-based refresh
+        if (!extractedHtml) {
+          const originalFingerprint = extractFingerprint(component.html_cache);
+          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint);
         
         if (tabHtml) {
           // Verify with fingerprint
           
           if (originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
+            console.error(`❌ FINGERPRINT MISMATCH: ${component.name}`);
+            console.error(`   Expected fingerprint: "${originalFingerprint}"`);
+            console.error(`   Tab HTML length: ${tabHtml.length} chars`);
             return {
               success: false,
               error: 'Tab refresh returned different element',
@@ -1581,6 +1706,7 @@ async function refreshComponent(component) {
             status: 'active'
           };
         }
+        }  // Close if (!extractedHtml) for tab refresh
       }
     } else {
       // Generic selector - skip extraction
@@ -1588,6 +1714,10 @@ async function refreshComponent(component) {
     
     // If extraction failed, DON'T use the full page - keep original HTML
     if (!extractedHtml) {
+      console.error(`❌ SILENT FAIL: ${component.name}`);
+      console.error(`   URL: ${component.url}`);
+      console.error(`   Selector: ${component.selector}`);
+      console.error(`   Reason: Selector not found and heading fallback failed`);
       return {
         success: false,
         error: 'Cannot extract component - selector too generic or not found',
@@ -1597,13 +1727,20 @@ async function refreshComponent(component) {
     
     return {
       success: true,
-      html_cache: cleanupDuplicates(applyExclusions(extractedHtml, component.excludedSelectors)),
+      html_cache: afterCleanup,
+    
+    return {
+      success: true,
+      html_cache: afterCleanup,
       last_refresh: new Date().toISOString(),
       status: 'active'
     };
     
   } catch (error) {
     console.error(`❌ Failed to refresh ${component.name}:`, error);
+    console.error(`   URL: ${component.url}`);
+    console.error(`   Selector: ${component.selector}`);
+    console.error(`   Error details:`, error.message);
     return {
       success: false,
       error: error.message,
@@ -1684,6 +1821,7 @@ async function refreshAll() {
         url: comp.url,
         favicon: comp.favicon,
         customLabel: comp.customLabel,
+        headingFingerprint: comp.headingFingerprint,  // 🎯 FIX: Preserve heading fallback
         selector: comp.selector,
         excludedSelectors: comp.excludedSelectors || []
       });
