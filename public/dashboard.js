@@ -1725,6 +1725,9 @@ async function refreshComponent(component) {
       };
     }
     
+    // Apply cleanup to extracted HTML
+    const afterCleanup = cleanupDuplicates(applyExclusions(extractedHtml, component.excludedSelectors));
+    
     return {
       success: true,
       html_cache: afterCleanup,
