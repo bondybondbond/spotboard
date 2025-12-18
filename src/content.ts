@@ -637,6 +637,47 @@ function toggleExclusion(element: HTMLElement) {
       log('🚨 BLOCKED exclusion of ultra-generic element:', tempSelector);
     }
     
+    // ⚠️ CHECK IF EXCLUDING HEADING (may affect refresh)
+    const isHeading = /^H[1-6]$/i.test(element.tagName);
+    const hasHeadingClass = element.className && (
+      element.className.includes('heading') ||
+      element.className.includes('title') ||
+      element.className.includes('header')
+    );
+    const hasHeadingAttribute = element.hasAttribute('data-testid') && (
+      element.getAttribute('data-testid')?.includes('heading') ||
+      element.getAttribute('data-testid')?.includes('title')
+    );
+    
+    if (isHeading || hasHeadingClass || hasHeadingAttribute) {
+      // Show warning tooltip near element
+      const warning = document.createElement('div');
+      warning.style.cssText = `
+        position: absolute;
+        background: #f59e0b;
+        color: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        z-index: 999998;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        pointer-events: none;
+        max-width: 280px;
+        line-height: 1.4;
+      `;
+      warning.innerHTML = `⚠️ Excluding heading may affect refresh.<br>Keep section labels for best results.`;
+      
+      const rect = element.getBoundingClientRect();
+      warning.style.left = `${rect.left + window.scrollX}px`;
+      warning.style.top = `${rect.top + window.scrollY - 60}px`;
+      
+      document.body.appendChild(warning);
+      setTimeout(() => warning.remove(), 4000);
+      
+      log('⚠️ WARNING: Excluding heading element - may affect refresh');
+    }
+    
     // Add to excluded list and mark with red
     excludedElements.push(element);
     element.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
