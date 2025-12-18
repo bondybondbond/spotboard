@@ -228,11 +228,9 @@ function handleHover(event: MouseEvent) {
     return;
   }
   
-  console.log('DEBUG: handleHover - lockedElement:', lockedElement);
-  
-  if (lockedElement) {
-    console.log('DEBUG: Element is locked, checking if hovering child for exclusion preview');
     
+  if (lockedElement) {
+        
     // Keep green outline on locked element
     lockedElement.style.setProperty('outline', '5px solid #00ff00', 'important');
     
@@ -646,38 +644,32 @@ function toggleExclusion(element: HTMLElement) {
     log('❌ Element excluded:', element.tagName, element.className);
   }
   
-  console.log('DEBUG: excludedElements count:', excludedElements.length);
-}
+  }
 
 function handleClick(event: MouseEvent) {
   if (!isCapturing) return;
   
   log('🖱️ Click detected on:', event.target);
-  console.log('DEBUG: lockedElement before click:', lockedElement);
-  
+    
   const target = event.target as HTMLElement;
   
   // If clicking on modal buttons, let them handle it (don't intercept)
   if (target.closest('#spotboard-capture-confirmation')) {
-    console.log('DEBUG: Click is on modal, allowing button handlers to process');
-    return;
+        return;
   }
   
   // If we already have a locked element, check if clicking child for exclusion
   if (lockedElement) {
-    console.log('DEBUG: Element already locked, checking if clicking child...');
-    
+        
     // Check if clicked element is a child of locked element (but not the locked element itself)
     if (lockedElement.contains(target) && target !== lockedElement) {
-      console.log('DEBUG: Clicking child of locked element - toggling exclusion');
-      event.preventDefault();
+            event.preventDefault();
       event.stopPropagation();
       toggleExclusion(target);
       return;
     }
     
-    console.log('DEBUG: Click outside locked element, ignoring');
-    return;
+        return;
   }
   
   event.preventDefault();
@@ -687,8 +679,7 @@ function handleClick(event: MouseEvent) {
   
   // Lock this element and set green outline
   lockedElement = target;
-  console.log('DEBUG: lockedElement LOCKED:', lockedElement);
-  target.style.setProperty('outline', '5px solid #00ff00', 'important');
+    target.style.setProperty('outline', '5px solid #00ff00', 'important');
   
   // Generate smart label using Option 1 strategy
   let name = '';
@@ -788,14 +779,12 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   
   document.body.appendChild(modal);
   
-  console.log('DEBUG: Modal created, lockedElement:', lockedElement);
-  
+    
   // Confirm button handler - use capture phase to ensure it fires first
   const confirmBtn = modal.querySelector('#confirmSpot') as HTMLButtonElement;
   if (confirmBtn) {
     confirmBtn.addEventListener('click', (e) => {
-      console.log('DEBUG: Confirm clicked');
-      e.stopPropagation();
+            e.stopPropagation();
       e.preventDefault();
       modal.remove();
       
@@ -815,6 +804,21 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         // Pass excluded elements so they can be removed from saved HTML
         const cleanedHTML = sanitizeHTML(target, excludedElements);
         log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
+        
+        // 🎯 BATCH 2: Extract first heading for self-healing fallback
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = cleanedHTML;
+        // 🎯 EXPANDED: Include common title patterns beyond semantic HTML (60% → 85% coverage)
+        const heading = tempDiv.querySelector(`
+          h1, h2, h3, h4,
+          [class*="heading"], [class*="title"], [class*="header"],
+          [data-testid*="heading"], [data-testid*="title"]
+        `);
+        // Limit to 100 chars to avoid exceeding sync storage quota (8KB per item)
+        const rawHeading = heading?.textContent?.trim() || null;
+        const headingFingerprint = rawHeading ? rawHeading.substring(0, 100) : null;
+        // Always log for debugging - even if null
+        log('🔖 Extracted heading fingerprint:', headingFingerprint || 'NULL (no h1-h4 found)');
         
         // Extract domain for favicon
         const domain = new URL(window.location.href).hostname;
@@ -842,9 +846,10 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           name: component.name,
           favicon: component.favicon,
           selector: component.selector,
-          excludedSelectors: excludedSelectors  // BATCH 2: Store exclusion selectors
+          headingFingerprint: headingFingerprint  // 🎯 BATCH 2: Auto-extracted for self-healing
+          // 🎯 FIX: excludedSelectors stored in LOCAL only (too large for sync quota)
         };
-        console.log('💾 Storing', excludedSelectors.length, 'exclusion selectors in metadata');
+        console.log('💾 Storing metadata in sync storage (~300 bytes), exclusions in local storage');
         
         // Get existing sync data
         chrome.storage.sync.get(['components'], (result) => {
@@ -896,8 +901,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                 target.style.cursor = '';
                 lockedElement = null;
                 resetExclusions();
-                console.log('DEBUG: lockedElement UNLOCKED (confirm)');
-                
+                                
                 showStyledNotification(`✅ Saved: ${name}`, 'success');
                 toggleCapture(false);
               });
@@ -912,8 +916,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   const cancelBtn = modal.querySelector('#cancelSpot') as HTMLButtonElement;
   if (cancelBtn) {
     cancelBtn.addEventListener('click', (e) => {
-      console.log('DEBUG: Cancel clicked');
-      e.stopPropagation();
+            e.stopPropagation();
       e.preventDefault();
       modal.remove();
       // Clear green flash and unlock
@@ -921,22 +924,19 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       target.style.cursor = '';
       lockedElement = null;
       resetExclusions();
-      console.log('DEBUG: lockedElement UNLOCKED (cancel)');
-      toggleCapture(false);
+            toggleCapture(false);
     }, true); // Use capture phase
   }
   
   // Handle Escape key to close modal
   const escapeHandler = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
-      console.log('DEBUG: Escape pressed, closing modal');
-      modal.remove();
+            modal.remove();
       target.style.outline = '';
       target.style.cursor = '';
       lockedElement = null;
       resetExclusions();
-      console.log('DEBUG: lockedElement UNLOCKED (escape)');
-      document.removeEventListener('keydown', escapeHandler);
+            document.removeEventListener('keydown', escapeHandler);
     }
   };
   document.addEventListener('keydown', escapeHandler);

@@ -71,8 +71,8 @@ function App() {
       favicon: c.favicon,
       customLabel: c.customLabel,  // 🎯 FIX: Preserve custom label
       headingFingerprint: c.headingFingerprint,  // 🎯 FIX: Preserve heading fallback
-      selector: c.selector,
-      excludedSelectors: c.excludedSelectors || []  // 🎯 FIX: Preserve exclusions
+      selector: c.selector
+      // 🎯 FIX: excludedSelectors stored in LOCAL only (too large for sync quota)
     }));
     chrome.storage.sync.set({ components: syncData });
     

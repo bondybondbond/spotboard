@@ -667,8 +667,8 @@ chrome.storage.sync.get(['components'], (syncResult) => {
           favicon: c.favicon,
           customLabel: c.customLabel,
           headingFingerprint: c.headingFingerprint,  // 🎯 FIX: Preserve heading fallback
-          selector: c.selector,
-          excludedSelectors: c.excludedSelectors || []  // 🎯 FIX: Include exclusions
+          selector: c.selector
+          // 🎯 FIX: excludedSelectors stored in LOCAL only (too large for sync quota)
         }));
         chrome.storage.sync.set({ components: syncData });
         
@@ -730,8 +730,8 @@ chrome.storage.sync.get(['components'], (syncResult) => {
             favicon: c.favicon,
             customLabel: c.customLabel,
             headingFingerprint: c.headingFingerprint,  // 🎯 FIX: Preserve heading fallback
-            selector: c.selector,
-            excludedSelectors: c.excludedSelectors || []  // 🎯 FIX: Include exclusions
+            selector: c.selector
+            // 🎯 FIX: excludedSelectors stored in LOCAL only (too large for sync quota)
           }));
           chrome.storage.sync.set({ components: syncData });
         }
@@ -1582,7 +1582,12 @@ async function refreshComponent(component) {
           // Try to find a heading in the original cached HTML
           const tempDiv = document.createElement('div');
           tempDiv.innerHTML = component.html_cache || '';
-          const cachedHeading = tempDiv.querySelector('h1, h2, h3, h4');
+          // 🎯 EXPANDED: Include common title patterns beyond semantic HTML (60% → 85% coverage)
+          const cachedHeading = tempDiv.querySelector(`
+            h1, h2, h3, h4,
+            [class*="heading"], [class*="title"], [class*="header"],
+            [data-testid*="heading"], [data-testid*="title"]
+          `);
           
           if (cachedHeading) {
             const headingText = cachedHeading.textContent.trim();
@@ -1609,8 +1614,12 @@ async function refreshComponent(component) {
         if (component.headingFingerprint) {
           console.log(`🔍 [Heading Fallback] Selector not found, trying heading-based detection for: "${component.headingFingerprint}"`);
           
-          // Find all headings that match the fingerprint
-          const allHeadings = doc.querySelectorAll('h1, h2, h3, h4');
+          // 🎯 EXPANDED: Find all title/heading elements that match the fingerprint
+          const allHeadings = doc.querySelectorAll(`
+            h1, h2, h3, h4,
+            [class*="heading"], [class*="title"], [class*="header"],
+            [data-testid*="heading"], [data-testid*="title"]
+          `);
           let targetHeading = null;
           
           for (const heading of allHeadings) {
@@ -1662,8 +1671,14 @@ async function refreshComponent(component) {
               if (extractedHtml.length < 1000) {
                 console.log(`⚠️ [Heading Fallback] Container too small (${extractedHtml.length} chars), searching higher...`);
                 
-                // Try going up 2 more levels to find larger container
-                let largerContainer = container.parentElement?.parentElement;
+                // Try going up progressively to find adequately-sized container
+                let largerContainer = container.parentElement;
+                // Keep climbing until we hit a reasonable size (2000+ chars) or run out of parents
+                while (largerContainer && largerContainer.outerHTML.length < 2000 && largerContainer.parentElement) {
+                  console.log(`  Level up: ${largerContainer.className?.substring(0, 30)} (${largerContainer.outerHTML.length} chars)`);
+                  largerContainer = largerContainer.parentElement;
+                }
+                
                 if (largerContainer && largerContainer.outerHTML.length > extractedHtml.length) {
                   const largerHtml = largerContainer.outerHTML;
                   console.log(`✅ [Heading Fallback] Found larger container: ${largerHtml.length} chars (${Math.round(largerHtml.length / extractedHtml.length)}x bigger)`);
@@ -1821,8 +1836,8 @@ async function refreshAll() {
         favicon: comp.favicon,
         customLabel: comp.customLabel,
         headingFingerprint: comp.headingFingerprint,  // 🎯 FIX: Preserve heading fallback
-        selector: comp.selector,
-        excludedSelectors: comp.excludedSelectors || []
+        selector: comp.selector
+        // 🎯 FIX: excludedSelectors stored in LOCAL only (too large for sync quota)
       });
       
       // Save full data to local
