@@ -32,16 +32,23 @@ function App() {
       }
     });
 
-    // Load components from hybrid storage (sync metadata + local data)
-    chrome.storage.sync.get(['components'], (syncResult) => {
+    // Load components from hybrid storage (NEW per-component format)
+    chrome.storage.sync.get(null, (syncResult) => {
       chrome.storage.local.get(['componentsData'], (localResult) => {
-        const metadata = (syncResult.components as any[]) || [];
         const localData: Record<string, any> = localResult.componentsData || {};
+        
+        // Extract all comp-* keys from sync storage
+        const metadata: any[] = [];
+        Object.keys(syncResult).forEach(key => {
+          if (key.startsWith('comp-')) {
+            metadata.push(syncResult[key]);
+          }
+        });
         
         // Merge sync metadata with local data by ID
         const merged = metadata.map((meta: any) => ({
           ...meta,
-          ...localData[meta.id] // Add selector, html_cache, last_refresh if exists
+          ...localData[meta.id] // Add html_cache, last_refresh if exists
         }));
         
         setComponents(merged);
@@ -63,18 +70,14 @@ function App() {
     const updated = components.filter((c) => c.id !== component.id);
     setComponents(updated);
     
-    // Update sync storage (includes selector for cross-device refresh)
-    const syncData = updated.map(c => ({
-      id: c.id,
-      name: c.name,
-      url: c.url,
-      favicon: c.favicon,
-      customLabel: c.customLabel,  // 🎯 FIX: Preserve custom label
-      headingFingerprint: c.headingFingerprint,  // 🎯 FIX: Preserve heading fallback
-      selector: c.selector
-      // 🎯 FIX: excludedSelectors stored in LOCAL only (too large for sync quota)
-    }));
-    chrome.storage.sync.set({ components: syncData });
+    // NEW: Remove per-component key from sync storage
+    chrome.storage.sync.remove(`comp-${component.id}`, () => {
+      if (chrome.runtime.lastError) {
+        console.error('❌ Failed to delete from sync:', chrome.runtime.lastError);
+      } else {
+        console.log('✅ Deleted from sync:', component.id);
+      }
+    });
     
     // Update local storage (remove HTML data)
     chrome.storage.local.get(['componentsData'], (result) => {

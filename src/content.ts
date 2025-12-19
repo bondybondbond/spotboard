@@ -886,29 +886,33 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           url: component.url,
           name: component.name,
           favicon: component.favicon,
+          customLabel: undefined,  // New captures don't have custom labels yet
           selector: component.selector,
           headingFingerprint: headingFingerprint  // 🎯 BATCH 2: Auto-extracted for self-healing
           // 🎯 FIX: excludedSelectors stored in LOCAL only (too large for sync quota)
         };
         console.log('💾 Storing metadata in sync storage (~300 bytes), exclusions in local storage');
         
-        // Get existing sync data
-        chrome.storage.sync.get(['components'], (result) => {
-          const existingCount = (result.components as any[])?.length || 0;
-          log('📥 Sync storage retrieved, existing components:', existingCount);
-          
-          if (chrome.runtime.lastError) {
-            console.error('❌ Chrome storage error:', chrome.runtime.lastError);
-            showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
-            return;
+        // NEW: Save with per-component key instead of array
+        const syncKey = `comp-${component.id}`;
+        const syncData = {
+          [syncKey]: {
+            id: component.id,
+            name: metadata.name,
+            url: metadata.url,
+            favicon: metadata.favicon,
+            customLabel: metadata.customLabel,
+            selector: metadata.selector,
+            headingFingerprint: metadata.headingFingerprint,
+            excludedSelectors: excludedSelectors, // IMPORTANT: Sync for cross-device!
+            last_refresh: component.last_refresh
           }
-          
-          const metadataList = Array.isArray(result.components) ? result.components : [];
-          metadataList.push(metadata);
-          log('📝 Updated metadata list length:', metadataList.length);
-          
-          // Save metadata to sync storage
-          chrome.storage.sync.set({ components: metadataList }, () => {
+        };
+        
+        log('💾 Saving component with key:', syncKey);
+        
+        // Save metadata to sync storage with per-component key
+        chrome.storage.sync.set(syncData, () => {
             if (chrome.runtime.lastError) {
               console.error('❌ Sync storage set error:', chrome.runtime.lastError);
               showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
@@ -948,7 +952,6 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
               });
             });
           });
-        });
       }, 2000);
     }, true); // Use capture phase
   }

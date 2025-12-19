@@ -7,18 +7,146 @@
  * - utils/refresh-engine.js
  */
 
+// NEW: Migration helper - converts old array format to per-component keys
+async function migrateStorageIfNeeded() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(null, (syncData) => {
+      // Check if old format exists (components array)
+      if (syncData.components && Array.isArray(syncData.components)) {
+        console.log('🔄 Migrating to per-component storage format...');
+        console.log('📊 Components to migrate:', syncData.components.length);
+        
+        const oldComponents = syncData.components;
+        const newFormat = {};
+        
+        // Convert array to per-component keys
+        oldComponents.forEach(comp => {
+          const key = `comp-${comp.id}`;
+          newFormat[key] = {
+            id: comp.id,
+            name: comp.name,
+            url: comp.url,
+            favicon: comp.favicon,
+            customLabel: comp.customLabel,
+            selector: comp.selector,
+            excludedSelectors: comp.excludedSelectors || [],
+            headingFingerprint: comp.headingFingerprint,
+            last_refresh: comp.last_refresh // IMPORTANT: Preserve timestamps!
+          };
+        });
+        
+        // Backup before migration (safety measure)
+        chrome.storage.local.set({ 
+          'backup-pre-migration': JSON.stringify(syncData) 
+        }, () => {
+          console.log('💾 Backup created before migration');
+          
+          // Save new format and remove old
+          chrome.storage.sync.set(newFormat, () => {
+            chrome.storage.sync.remove('components', () => {
+              console.log('✅ Migration complete:', Object.keys(newFormat).length, 'components');
+              resolve(newFormat);
+            });
+          });
+        });
+      } else {
+        // Already new format or empty
+        console.log('✅ Storage already in new format');
+        resolve(syncData);
+      }
+    });
+  });
+}
+
+// NEW: Data integrity validation - checks for issues in stored components
+async function validateStorageFormat() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(null, (syncData) => {
+      let issues = [];
+      let totalSize = 0;
+      
+      Object.keys(syncData).forEach(key => {
+        if (!key.startsWith('comp-')) return; // Skip non-component keys
+        
+        const comp = syncData[key];
+        const size = JSON.stringify(comp).length;
+        totalSize += size;
+        
+        // Check required fields
+        if (!comp.id) issues.push(`${key}: missing id`);
+        if (!comp.selector) issues.push(`${key}: missing selector`);
+        
+        // Check size (8KB = 8192 bytes, warn at 7500)
+        if (size > 7500) issues.push(`${key}: size ${size} bytes (approaching 8KB limit!)`);
+        
+        // Check excludedSelectors is array
+        if (comp.excludedSelectors && !Array.isArray(comp.excludedSelectors)) {
+          issues.push(`${key}: excludedSelectors not array`);
+        }
+      });
+      
+      console.log('🔍 Storage validation complete:');
+      console.log('  Total components:', Object.keys(syncData).filter(k => k.startsWith('comp-')).length);
+      console.log('  Total sync storage used:', totalSize, 'bytes');
+      
+      if (issues.length === 0) {
+        console.log('✅ All components valid');
+        resolve({ valid: true, issues: [] });
+      } else {
+        console.warn('⚠️ Issues found:', issues);
+        resolve({ valid: false, issues });
+      }
+    });
+  });
+}
+
+// NEW: Load components from per-key format
+function loadComponentsFromSync() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(null, (syncData) => {
+      const components = [];
+      
+      // Extract all comp-* keys
+      Object.keys(syncData).forEach(key => {
+        if (key.startsWith('comp-')) {
+          components.push(syncData[key]);
+        }
+      });
+      
+      console.log('📦 Loaded components from sync:', components.length);
+      resolve(components);
+    });
+  });
+}
+
 // Load and display components from hybrid storage (sync metadata + local data)
-chrome.storage.sync.get(['components'], (syncResult) => {
-  chrome.storage.local.get(['componentsData'], (localResult) => {
-    const container = document.getElementById('components-container');
-    const metadata = Array.isArray(syncResult.components) ? syncResult.components : [];
+(async () => {
+  try {
+    // Step 1: Run migration if needed (old format → new format)
+    await migrateStorageIfNeeded();
+    
+    // Step 2: Validate storage integrity
+    const validation = await validateStorageFormat();
+    if (!validation.valid) {
+      console.error('⚠️ Storage validation failed:', validation.issues);
+    }
+    
+    // Step 3: Load from new per-component format
+    const metadata = await loadComponentsFromSync();
+  
+    // Step 4: Load local HTML data
+    const localResult = await new Promise(resolve => {
+      chrome.storage.local.get(['componentsData'], resolve);
+    });
     const localData = localResult.componentsData || {};
     
-    // Merge sync metadata with local HTML data by ID
-    const components = metadata.map(meta => ({
-      ...meta,
-      ...localData[meta.id] // Add selector, html_cache, last_refresh if exists
-    }));
+    const container = document.getElementById('components-container');
+    
+    // Step 5: Merge sync metadata with local HTML data by ID
+  const components = metadata.map(meta => ({
+    ...meta,
+    ...localData[meta.id] // Add html_cache from local storage
+  }));
   
     // Inject CSS cleanup for whitespace compression
     injectCleanupCSS();
@@ -154,18 +282,10 @@ chrome.storage.sync.get(['components'], (syncResult) => {
           components.length = 0;
           components.push(...updated);
           
-          // Update sync storage (metadata + selector for cross-device refresh)
-          const syncData = updated.map(c => ({
-            id: c.id,
-            name: c.name,
-            url: c.url,
-            favicon: c.favicon,
-            customLabel: c.customLabel,
-            headingFingerprint: c.headingFingerprint,
-            selector: c.selector
-            // excludedSelectors stored in LOCAL only (too large for sync quota)
-          }));
-          chrome.storage.sync.set({ components: syncData });
+          // Delete from sync storage (remove the component's key)
+          chrome.storage.sync.remove(`comp-${componentId}`, () => {
+            console.log('✅ Deleted from sync:', componentId);
+          });
           
           // Update local storage (remove HTML data)
           chrome.storage.local.get(['componentsData'], (result) => {
@@ -218,18 +338,18 @@ chrome.storage.sync.get(['components'], (syncResult) => {
             component.customLabel = newLabel;
             titleElement.textContent = newLabel;
             
-            // Save metadata to sync storage (includes selector for cross-device refresh)
-            const syncData = components.map(c => ({
-              id: c.id,
-              name: c.name,
-              url: c.url,
-              favicon: c.favicon,
-              customLabel: c.customLabel,
-              headingFingerprint: c.headingFingerprint,
-              selector: c.selector
-              // excludedSelectors stored in LOCAL only (too large for sync quota)
-            }));
-            chrome.storage.sync.set({ components: syncData });
+            // Save metadata to sync storage (update only this component)
+            chrome.storage.sync.get(`comp-${component.id}`, (result) => {
+              const compData = result[`comp-${component.id}`];
+              if (compData) {
+                compData.customLabel = newLabel;
+                chrome.storage.sync.set({ [`comp-${component.id}`]: compData }, () => {
+                  console.log('✅ Label updated in sync:', component.id);
+                });
+              } else {
+                console.warn('⚠️ Component not found in sync storage:', component.id);
+              }
+            });
           }
         };
         
@@ -316,8 +436,16 @@ chrome.storage.sync.get(['components'], (syncResult) => {
       
       grid.appendChild(card);
     });
-  }); // Close chrome.storage.local.get
-});
+  } catch (error) {
+    console.error('❌ Error loading components:', error);
+    container.innerHTML = `
+      <div class="empty-state">
+        <h2>Error loading components</h2>
+        <p>Please refresh the page. If the issue persists, check the console for details.</p>
+      </div>
+    `;
+  }
+})(); // Close async IIFE
 
 // Attach refresh handler when page loads
 document.addEventListener('DOMContentLoaded', () => {

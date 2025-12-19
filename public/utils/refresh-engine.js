@@ -716,13 +716,12 @@ async function refreshComponent(component) {
             console.log(`✅ [Self-Healing] Generated headingFingerprint: "${headingText}"`);
             component.headingFingerprint = headingText;
             
-            // Save to storage for future refreshes
-            chrome.storage.sync.get(['components'], (result) => {
-              const components = result.components || [];
-              const index = components.findIndex(c => c.id === component.id);
-              if (index !== -1) {
-                components[index].headingFingerprint = headingText;
-                chrome.storage.sync.set({ components }, () => {
+            // Save to storage for future refreshes (per-component key)
+            chrome.storage.sync.get(`comp-${component.id}`, (result) => {
+              const compData = result[`comp-${component.id}`];
+              if (compData) {
+                compData.headingFingerprint = headingText;
+                chrome.storage.sync.set({ [`comp-${component.id}`]: compData }, () => {
                   console.log(`💾 [Self-Healing] Saved headingFingerprint to storage`);
                 });
               }
@@ -892,15 +891,23 @@ async function refreshAll() {
   
   try {
     // Get components from hybrid storage (sync metadata + local data)
+    // NEW: Load from per-component keys instead of array
     const syncResult = await new Promise(resolve => {
-      chrome.storage.sync.get(['components'], resolve);
+      chrome.storage.sync.get(null, resolve);
     });
     
     const localResult = await new Promise(resolve => {
       chrome.storage.local.get(['componentsData'], resolve);
     });
     
-    const metadata = syncResult.components || [];
+    // Extract all comp-* keys from sync storage
+    const metadata = [];
+    Object.keys(syncResult).forEach(key => {
+      if (key.startsWith('comp-')) {
+        metadata.push(syncResult[key]);
+      }
+    });
+    
     const localData = localResult.componentsData || {};
     
     // Merge sync metadata with local data
@@ -941,25 +948,28 @@ async function refreshAll() {
     }
     
     // Update components with new data (split between sync and local storage)
-    const updatedMetadata = [];
+    // NEW: Build per-component sync updates
+    const syncUpdates = {};
     const updatedLocalData = {};
     
     components.forEach((comp, index) => {
       const result = results[index];
       
-      // Always save metadata to sync (includes selector for cross-device refresh)
-      updatedMetadata.push({
+      // Save metadata to sync with per-component key
+      // IMPORTANT: Include excludedSelectors for cross-device sync!
+      syncUpdates[`comp-${comp.id}`] = {
         id: comp.id,
         name: comp.name,
         url: comp.url,
         favicon: comp.favicon,
         customLabel: comp.customLabel,
         headingFingerprint: comp.headingFingerprint,
-        selector: comp.selector
-        // excludedSelectors stored in LOCAL only (too large for sync quota)
-      });
+        selector: comp.selector,
+        excludedSelectors: comp.excludedSelectors || [], // Cross-device exclusions!
+        last_refresh: result.success ? result.last_refresh : comp.last_refresh // Preserve timestamp
+      };
       
-      // Save full data to local
+      // Save full data to local (including HTML)
       if (result.success) {
         updatedLocalData[comp.id] = {
           selector: comp.selector,
@@ -978,9 +988,9 @@ async function refreshAll() {
       }
     });
     
-    // Save to both storages
+    // Save to both storages (sync gets per-component keys, local gets HTML)
     await new Promise(resolve => {
-      chrome.storage.sync.set({ components: updatedMetadata }, resolve);
+      chrome.storage.sync.set(syncUpdates, resolve);
     });
     
     await new Promise(resolve => {
