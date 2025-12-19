@@ -4,8 +4,17 @@
  */
 
 /**
- * 🎯 BATCH 3: Apply user exclusions to HTML
- * Removes elements that user excluded during capture
+ * Apply user exclusions to HTML content
+ * Removes DOM elements that user explicitly excluded during capture or editing
+ * 
+ * @param {string} html - The HTML content to process
+ * @param {string[]} excludedSelectors - Array of CSS selectors for elements to remove
+ * @returns {string} - HTML with excluded elements removed
+ * 
+ * Safety: Skips ultra-generic selectors (bare tag names like "div", "span") 
+ * to prevent accidentally removing all content
+ * 
+ * Used in: Direct fetch refresh, tab-based refresh, skeleton fallback
  */
 function applyExclusions(html, excludedSelectors) {
   if (!html || !excludedSelectors || excludedSelectors.length === 0) {
@@ -41,8 +50,26 @@ function applyExclusions(html, excludedSelectors) {
 }
 
 /**
- * 🎯 HIT LIST: Remove duplicate/hidden elements from captured HTML
- * Fixes BBC's triple-text pattern (MobileValue, DesktopValue, visually-hidden)
+ * Remove duplicate and hidden elements from HTML
+ * Fixes modern responsive design pattern where sites include both mobile/desktop content
+ * 
+ * @param {string} html - The HTML content to clean
+ * @returns {string} - HTML with duplicates removed
+ * 
+ * Patterns detected:
+ * - Mobile-specific classes (-mobile, MobileValue)
+ * - Shortened versions (-short, -abbr, abbreviated)
+ * - Screen reader only content (.sr-only, .visually-hidden)
+ * - Empty wrapper elements
+ * - Broken SVG sprites and unrenderable SVGs
+ * - Decorative images (number graphics, small inline images)
+ * - Progressive loading artifacts (blur filters, skeleton loaders)
+ * - Dangerous positioning (fixed/sticky that escape cards)
+ * 
+ * Note: Does NOT check display:none here (HTML without CSS loaded)
+ * That check happens during capture and tab refresh where CSS is available
+ * 
+ * Used in: All refresh paths (direct fetch, tab refresh, skeleton fallback)
  */
 function cleanupDuplicates(html) {
   if (!html) return html;
@@ -237,7 +264,24 @@ function isSVGRenderable(svg) {
 }
 
 /**
- * Fix relative URLs to absolute based on component origin
+ * Convert relative URLs to absolute URLs based on source page
+ * Ensures images, backgrounds, and links work after extraction from original site
+ * 
+ * @param {HTMLElement} container - DOM element containing the extracted HTML
+ * @param {string} sourceUrl - Original URL where content was captured from
+ * 
+ * Handles:
+ * - Image src and srcset attributes
+ * - Lazy-loaded images (data-image, data-src, data-lazy-src patterns)
+ * - CSS background images in inline styles
+ * - Link hrefs (and ensures they open in new tabs)
+ * 
+ * URL patterns fixed:
+ * - Absolute paths: /img/logo.png → https://site.com/img/logo.png
+ * - Relative paths: ./img/logo.png → https://site.com/path/img/logo.png
+ * - Relative paths without ./: img/logo.png → https://site.com/path/img/logo.png
+ * 
+ * Used in: All refresh paths after HTML is fetched
  */
 function fixRelativeUrls(container, sourceUrl) {
   try {
@@ -345,7 +389,18 @@ function fixRelativeUrls(container, sourceUrl) {
 }
 
 /**
- * Remove all cursor styles from captured HTML, then mark links
+ * Reset cursor styles on all elements and mark links for proper styling
+ * Ensures consistent cursor behavior in dashboard cards
+ * 
+ * @param {HTMLElement} container - DOM element to process
+ * 
+ * Process:
+ * 1. Removes all inline cursor styles from elements
+ * 2. Adds 'canvas-link' class to <a> tags for CSS targeting
+ * 
+ * Result: Default cursor everywhere except links (which get pointer via CSS)
+ * 
+ * Used in: Dashboard rendering after content is inserted into cards
  */
 function removeCursorStyles(container) {
   // Get all elements including the container itself
@@ -506,7 +561,13 @@ function injectCleanupCSS() {
 }
 
 /**
- * Remove the injected cleanup CSS (restore original styling)
+ * Remove injected cleanup CSS from dashboard
+ * Restores original component styling
+ * 
+ * @returns {void}
+ * 
+ * Used when: Testing/debugging to see original layout without cleanup
+ * Safe to call: Does nothing if cleanup CSS not injected
  */
 function removeCleanupCSS() {
   const sheet = document.getElementById('cleanup-injected-css');
