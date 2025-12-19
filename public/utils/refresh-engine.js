@@ -615,7 +615,7 @@ async function tryActiveTab(url, selector, fingerprint = null) {
  * - Verifies fingerprint match
  * - Preserves original on failure
  * 
- * Used in: dashboard-new.js refreshAll() loop
+ * Used in: dashboard.js refreshAll() loop
  */
 async function refreshComponent(component) {
   try {

@@ -19,7 +19,7 @@
   4. Remove alert after debugging complete
 
 **Where to Add Debug Alert**
-In `dashboard-new.js`, the `refreshAll()` function has:
+In `dashboard.js`, the `refreshAll()` function has:
 ```javascript
 // Auto-reload after success toast displays
 setTimeout(() => {
