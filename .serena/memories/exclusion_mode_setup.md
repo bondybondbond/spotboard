@@ -109,9 +109,9 @@ localData[component.id] = {
 };
 ```
 
-**BATCH 3 - Apply During Refresh (dashboard.js):**
+**BATCH 3 - Apply During Refresh (utils/dom-cleanup.js + utils/refresh-engine.js):**
 ```javascript
-// Helper function (line ~6)
+// Helper function in utils/dom-cleanup.js
 function applyExclusions(html, excludedSelectors) {
   if (!excludedSelectors?.length) return html;
   const tempDiv = document.createElement('div');
@@ -122,15 +122,15 @@ function applyExclusions(html, excludedSelectors) {
   return tempDiv.innerHTML;
 }
 
-// Applied in 4 refresh code paths:
+// Applied in 4 refresh code paths in utils/refresh-engine.js:
 html_cache: cleanupDuplicates(applyExclusions(extractedHtml, component.excludedSelectors))
 ```
 
-**Critical Locations (dashboard.js):**
-1. Line ~1396: After willNeedActiveTab (session-dependent sites)
-2. Line ~1550: After skeleton fallback detection
-3. Line ~1580: After selector-not-found fallback
-4. Line ~1601: After direct fetch extraction success
+**Critical Locations (utils/refresh-engine.js):**
+1. After willNeedActiveTab (session-dependent sites)
+2. After skeleton fallback detection
+3. After selector-not-found fallback
+4. After direct fetch extraction success
 
 **Selector Persistence Pattern:**
 - **CRITICAL:** Store as selectors, NOT element references
@@ -151,10 +151,12 @@ Missing even ONE refresh path = excluded elements reappear in that scenario. All
 
 **Symptom:** Exclusions worked on first refresh, disappeared on second/third refresh
 
-**Root Cause (dashboard.js ~line 1678-1701):**
+**Root Cause (utils/refresh-engine.js):**
 - After each refresh, we updated storage with new HTML
 - But we FORGOT to save `excludedSelectors` back to storage
 - Result: Exclusions lived in memory (first refresh OK) then lost forever
+
+**Note (Dec 20, 2024):** Storage later migrated to per-component keys. Pattern still applies: always save ALL metadata fields when updating storage.
 
 **The Fix:**
 Added `excludedSelectors` to BOTH storage locations during refresh cycle:

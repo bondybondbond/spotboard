@@ -17,11 +17,11 @@ Added lazy-load image converter to 3 code paths that runs BEFORE URL fixing:
    - Runs in sanitizeContent before cloning
    - Converts data-* to src while CSS is loaded
 
-2. **Direct fetch refresh** (public/dashboard.js ~line 223):
+2. **Direct fetch refresh** (public/utils/refresh-engine.js):
    - Runs in fixRelativeUrls before URL conversion
    - Catches lazy-loaded images in fetched HTML
 
-3. **Tab-based refresh** (public/dashboard.js ~line 1200 & 1285):
+3. **Tab-based refresh** (public/utils/refresh-engine.js):
    - Runs in both background and active tab injection
    - Converts while live DOM is available
 

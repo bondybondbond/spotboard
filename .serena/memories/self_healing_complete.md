@@ -3,9 +3,9 @@
 ## What Was Implemented
 
 ### Fingerprint Extraction (3 locations)
-1. **content.ts:821** - At capture time
-2. **dashboard.js:1585** - Auto-generate if missing during refresh
-3. **dashboard.js:1613** - Heading-based element lookup during refresh
+1. **content.ts** - At capture time
+2. **utils/refresh-engine.js** - Auto-generate if missing during refresh
+3. **utils/refresh-engine.js** - Heading-based element lookup during refresh
 
 ### Expanded Selector Pattern
 ```javascript
@@ -39,5 +39,6 @@ Sites with working fingerprints:
 
 ## Files Changed
 - src/content.ts - Expanded selector at capture
-- public/dashboard.js - Expanded selector in 2 refresh paths
+- public/utils/refresh-engine.js - Expanded selector in refresh paths
+- public/utils/fingerprint.js - Shared fingerprint extraction logic
 - Removed 16 DEBUG console.log statements from content.ts

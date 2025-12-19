@@ -68,6 +68,6 @@ When encountering refresh failures:
 3. If both true → Expected behavior, document as user choice
 
 ## Files Confirmed
-- YouTube NOT in `requiresVisibleTab()` list (line 1017-1032 dashboard.js)
+- YouTube NOT in `requiresVisibleTab()` list (utils/refresh-engine.js)
 - Uses background tab refresh successfully
-- Fails at fingerprint validation (line 1708-1710 dashboard.js)
+- Fails at fingerprint validation (utils/refresh-engine.js)

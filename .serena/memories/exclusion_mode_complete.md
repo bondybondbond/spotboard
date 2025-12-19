@@ -50,7 +50,8 @@ Blocks exclusion of elements with bare tag selectors (e.g., "div", "span"):
 
 ## Files
 - src/content.ts (lines 342-647) - Capture + exclusion UI
-- public/dashboard.js (multiple locations) - Apply exclusions during refresh
+- public/dashboard-new.js - Apply exclusions during refresh
+- public/utils/dom-cleanup.js - Shared applyExclusions() function
 
 ## Known Limitations
 - Headingless sites (YouTube Shorts) may fail refresh if heading excluded

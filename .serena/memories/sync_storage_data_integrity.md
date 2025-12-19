@@ -26,9 +26,11 @@ chrome.storage.sync.set({ components: syncData });
 Any code writing to `chrome.storage.sync.set({ components: ... })` MUST map ALL metadata fields. Grep for `chrome.storage.sync.set` to audit.
 
 **Locations Fixed:**
-1. `public/dashboard.js` line ~658 (delete handler)
-2. `public/dashboard.js` line ~720 (edit label handler)
-3. `src/App.tsx` line ~68 (popup delete handler)
+1. `public/dashboard-new.js` - delete handler
+2. `public/dashboard-new.js` - edit label handler
+3. `src/App.tsx` - popup delete handler
+
+**Note (Dec 20, 2024):** Storage format migrated to per-component keys (`comp-{uuid}`). Pattern still applies - always map ALL metadata fields when updating individual component keys.
 
 **Testing:**
 - Edit label → delete other component → label persists ✅

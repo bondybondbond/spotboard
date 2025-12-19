@@ -23,7 +23,9 @@
 ## Files Modified
 1. **src/content.ts** - Split save into sync metadata + local full data
 2. **src/App.tsx** - Load from both storages, merge by ID, delete from both
-3. **public/dashboard.js** - Load from both, refresh saves to both, delete from both
+3. **public/dashboard-new.js** - Load from both, refresh saves to both, delete from both
+
+**Note (Dec 20, 2024):** Storage format later migrated to per-component keys (comp-{uuid}). Hybrid model remains: metadata in sync, HTML in local.
 
 ## Cross-Device Behavior
 **Work Computer:** Capture component → metadata syncs, HTML stays local

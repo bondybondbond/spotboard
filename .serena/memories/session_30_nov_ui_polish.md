@@ -60,7 +60,9 @@ All functionality preserved:
 
 ## 📝 Files Modified
 - `public/dashboard.html` - Header HTML + CSS
-- `public/dashboard.js` - Card rendering + info icon handler
+- `public/dashboard-new.js` - Card rendering + info icon handler
+
+**Note (Dec 20, 2024):** dashboard.js was later refactored into dashboard-new.js + utils modules.
 
 ## 🚀 Next Steps (Optional Polish)
 - P9: Add favicons (10 mins)
