@@ -576,3 +576,100 @@ function removeCleanupCSS() {
     console.log('✅ CSS cleanup removed');
   }
 }
+
+/**
+ * 🎯 BATCH 3: Classify images for refresh (without CSS layout)
+ * 
+ * Problem: Direct fetch uses DOMParser which doesn't render CSS,
+ * so getBoundingClientRect() returns 0. We need heuristics instead.
+ * 
+ * Classification rules:
+ * - Icon (48px): Small dimensions (<70px), or class contains icon/logo/badge/avatar
+ * - Thumbnail (120px): Medium dimensions, or class contains thumb/card
+ * - Preview (280px): Large dimensions (>200px), or class contains hero/preview/featured
+ * 
+ * @param {string} html - HTML string to process
+ * @returns {string} - HTML with data-scale-context attributes added to images
+ * 
+ * Used in: Direct fetch refresh path (refresh-engine.js)
+ */
+function classifyImagesForRefresh(html) {
+  if (!html) return html;
+  
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  
+  temp.querySelectorAll('img').forEach(img => {
+    // Skip if already classified (from capture)
+    if (img.hasAttribute('data-scale-context')) {
+      return;
+    }
+    
+    let context = 'thumbnail'; // Safe default (120px)
+    
+    // HEURISTIC 1: Check width/height attributes
+    const width = parseInt(img.getAttribute('width')) || 0;
+    const height = parseInt(img.getAttribute('height')) || 0;
+    const maxDim = Math.max(width, height);
+    
+    if (maxDim > 0) {
+      if (maxDim <= 70) {
+        context = 'icon';
+      } else if (maxDim <= 150) {
+        context = 'thumbnail';
+      } else {
+        context = 'preview';
+      }
+      console.log(`  🏷️ Image sized by attributes: ${width}x${height} → "${context}"`);
+    } else {
+      // HEURISTIC 2: Check class names
+      const className = (img.className || '').toLowerCase();
+      const parentClass = (img.parentElement?.className || '').toLowerCase();
+      const allClasses = className + ' ' + parentClass;
+      
+      // Icon patterns
+      if (/icon|logo|badge|avatar|symbol|favicon/.test(allClasses)) {
+        context = 'icon';
+        console.log(`  🏷️ Image classified by class (icon pattern): "${context}"`);
+      }
+      // Preview patterns (large hero images)
+      else if (/hero|preview|featured|banner|cover|main-image|property-image|listing-image/.test(allClasses)) {
+        context = 'preview';
+        console.log(`  🏷️ Image classified by class (preview pattern): "${context}"`);
+      }
+      // Thumbnail patterns
+      else if (/thumb|card|tile|grid-item|product|item-image/.test(allClasses)) {
+        context = 'thumbnail';
+        console.log(`  🏷️ Image classified by class (thumbnail pattern): "${context}"`);
+      }
+      // HEURISTIC 3: Check parent context
+      else {
+        const article = img.closest('article, [class*="card"], [class*="listing"], [class*="property"]');
+        const nav = img.closest('nav, header, footer, [class*="menu"], [class*="nav"]');
+        
+        if (nav) {
+          context = 'icon';
+          console.log(`  🏷️ Image in nav/header context → "icon"`);
+        } else if (article) {
+          // In article/card - check if it's the main image or decorative
+          const siblingText = article.textContent?.length || 0;
+          if (siblingText > 200) {
+            // Lots of text = image is probably preview/feature
+            context = 'preview';
+          } else {
+            context = 'thumbnail';
+          }
+          console.log(`  🏷️ Image in article context (${siblingText} chars) → "${context}"`);
+        } else {
+          // Default fallback
+          console.log(`  🏷️ Image defaulting to: "thumbnail"`);
+        }
+      }
+    }
+    
+    img.setAttribute('data-scale-context', context);
+  });
+  
+  console.log('🎯 Refresh image classification complete');
+  return temp.innerHTML;
+}

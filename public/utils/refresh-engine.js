@@ -635,9 +635,12 @@ async function refreshComponent(component) {
           };
         }
         
+        // BATCH 3: Classify images for proper sizing
+        const withExclusions = applyExclusions(tabHtml, component.excludedSelectors);
+        const withImageClassification = classifyImagesForRefresh(withExclusions);
         return {
           success: true,
-          html_cache: cleanupDuplicates(applyExclusions(tabHtml, component.excludedSelectors)),
+          html_cache: cleanupDuplicates(withImageClassification),
           last_refresh: new Date().toISOString(),
           status: 'active'
         };
@@ -779,9 +782,12 @@ async function refreshComponent(component) {
             }
             
             // Tab refresh worked and verified!
+            // BATCH 3: Classify images for proper sizing
+            const withExclusions = applyExclusions(tabHtml, component.excludedSelectors);
+            const withImageClassification = classifyImagesForRefresh(withExclusions);
             return {
               success: true,
-              html_cache: cleanupDuplicates(applyExclusions(tabHtml, component.excludedSelectors)),
+              html_cache: cleanupDuplicates(withImageClassification),
               last_refresh: new Date().toISOString(),
               status: 'active'
             };
@@ -927,9 +933,12 @@ async function refreshComponent(component) {
                 keepOriginal: true
               };
             }
+            // BATCH 3: Classify images for proper sizing
+            const withExclusions = applyExclusions(tabHtml, component.excludedSelectors);
+            const withImageClassification = classifyImagesForRefresh(withExclusions);
             return {
               success: true,
-              html_cache: cleanupDuplicates(applyExclusions(tabHtml, component.excludedSelectors)),
+              html_cache: cleanupDuplicates(withImageClassification),
               last_refresh: new Date().toISOString(),
               status: 'active'
             };
@@ -954,7 +963,10 @@ async function refreshComponent(component) {
     }
     
     // Apply cleanup to extracted HTML
-    const afterCleanup = cleanupDuplicates(applyExclusions(extractedHtml, component.excludedSelectors));
+    // BATCH 3: Classify images for proper sizing (since direct fetch has no CSS layout)
+    const withExclusions = applyExclusions(extractedHtml, component.excludedSelectors);
+    const withImageClassification = classifyImagesForRefresh(withExclusions);
+    const afterCleanup = cleanupDuplicates(withImageClassification);
     
     return {
       success: true,
