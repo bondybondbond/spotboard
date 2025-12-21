@@ -357,7 +357,65 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     }
   });
 
-  // Clone and clean up duplicate/hidden elements
+  // 🎯 IMAGE CONTEXT CLASSIFICATION (BEFORE CLONING)
+  // Analyze images in ORIGINAL element (still in DOM with proper layout)
+  // Icon (badges/logos): <70x70px OR <10% container → 48px max
+  // Thumbnail (supplementary): 10-40% container → 120px max  
+  // Preview (primary content): >40% container → 280px max
+  element.querySelectorAll('img').forEach(img => {
+    try {
+      // Get nearest structural container (article, section, or direct parent)
+      let container = img.closest('article, section') || img.parentElement;
+      if (!container) {
+        console.log('  ⚠️ Image has no container, defaulting to icon');
+        img.setAttribute('data-scale-context', 'icon');
+        return;
+      }
+      
+      // Calculate container dimensions (works because element is in DOM)
+      const containerRect = container.getBoundingClientRect();
+      const containerArea = containerRect.width * containerRect.height;
+      
+      // Calculate RENDERED image area (not natural file dimensions)
+      const imgRect = img.getBoundingClientRect();
+      const imageArea = imgRect.width * imgRect.height;
+      
+      // Calculate area ratio
+      const areaRatio = containerArea > 0 ? imageArea / containerArea : 0;
+      
+      // Classification logic
+      let context: 'icon' | 'thumbnail' | 'preview';
+      
+      // Rule 1: Very small rendered images are icons
+      if (imageArea < 2500) {  // ~50x50px or smaller
+        context = 'icon';
+      }
+      // Rule 2: Small ratio = icon
+      else if (areaRatio < 0.10) {
+        context = 'icon';
+      }
+      // Rule 3: Medium ratio OR small absolute size = thumbnail
+      // Even 100% ratio images stay thumbnail if <141×141px
+      else if (areaRatio < 0.40 || imageArea < 20000) {
+        context = 'thumbnail';
+      }
+      // Rule 4: Large ratio AND large size = preview
+      else {
+        context = 'preview';
+      }
+      
+      img.setAttribute('data-scale-context', context);
+      console.log(`  🏷️ Image classified as "${context}" (${Math.round(imageArea)}px² / ${Math.round(containerArea)}px² = ${(areaRatio * 100).toFixed(1)}%)`);
+      
+    } catch (e) {
+      console.warn('  ⚠️ Failed to classify image, defaulting to icon:', e);
+      img.setAttribute('data-scale-context', 'icon');
+    }
+  });
+  
+  console.log('🎯 Image classification complete');
+
+  // Clone (classification attributes will be copied)
   const clone = element.cloneNode(true) as HTMLElement;
   
   // Clean up markers from original DOM (restore page to pristine state)

@@ -68,8 +68,45 @@
     .component-content button {
       cursor: default !important;
     }
-    /* Image and video scaling - prevent oversized media */
-    .component-content img,
+    /* Context-aware image scaling - based on content role */
+    
+    /* Icons (badges/logos) - keep small */
+    .component-content img[data-scale-context="icon"] {
+      max-width: 48px !important;
+      max-height: 48px !important;
+      object-fit: contain;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    
+    /* Thumbnails (supplementary images) - medium size */
+    .component-content img[data-scale-context="thumbnail"] {
+      max-width: 120px !important;
+      max-height: 120px !important;
+      object-fit: contain;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    
+    /* Preview (primary content images) - large size */
+    .component-content img[data-scale-context="preview"] {
+      max-width: 280px !important;
+      max-height: 280px !important;
+      object-fit: contain;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    
+    /* Fallback for old captures without classification */
+    .component-content img:not([data-scale-context]) {
+      max-width: 25px !important;
+      max-height: 25px !important;
+      object-fit: contain;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    
+    /* Videos always stay small (no classification yet) */
     .component-content video {
       max-width: 25px !important;
       max-height: 25px !important;
