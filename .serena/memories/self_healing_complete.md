@@ -18,6 +18,16 @@ h1, h2, h3, h4,
 - **Before:** 60% (semantic HTML only: h1-h4)
 - **After:** ~85% (catches React/Vue/modern frameworks with .title classes)
 
+## Case-Insensitive Matching (Dec 22 Fix)
+**Problem:** Amazon fingerprint was "Top offersTop offers" (duplicated mobile/desktop) but page heading was "Top offers"
+**Solution:** Case-insensitive bidirectional matching:
+```javascript
+const headingLower = headingText.toLowerCase();
+const fingerprintLower = fingerprint.toLowerCase();
+if (headingLower.includes(fingerprintLower) || fingerprintLower.includes(headingLower))
+```
+**Impact:** Sites with duplicated/capitalized heading text now match correctly
+
 ## How It Works
 
 1. **Capture:** Extract fingerprint from first heading/title element
