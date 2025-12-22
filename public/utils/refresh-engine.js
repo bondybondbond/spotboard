@@ -749,6 +749,33 @@ async function refreshComponent(component) {
         const duplicateCount = linkTexts.length - uniqueTexts.size;
         const hasDuplicates = duplicateCount >= 5 && duplicateCount >= uniqueTexts.size;
         
+        // WIRED PATTERN: Check for pure wrapper skeleton (many empty children, no content)
+        // Example: ListWrapper with 13+ DividerWrapper children, all empty
+        const wrappers = tempDiv.querySelectorAll('div[class*="Wrapper"], div[class*="wrapper"]');
+        let isPureWrapperSkeleton = false;
+        
+        if (wrappers.length > 0) {
+          // Check each potential wrapper container
+          wrappers.forEach(wrapper => {
+            const children = Array.from(wrapper.children);
+            if (children.length >= 10) {
+              // Count how many children are truly empty (no text/links/images)
+              const emptyChildren = children.filter(child => {
+                const hasText = child.textContent.trim().length > 0;
+                const hasLinks = child.querySelector('a');
+                const hasImages = child.querySelector('img');
+                return !hasText && !hasLinks && !hasImages;
+              });
+              
+              // If 80%+ of children are empty AND total content is short, it's a skeleton
+              const emptyRatio = emptyChildren.length / children.length;
+              if (emptyRatio >= 0.8 && contentLength < 2000) {
+                isPureWrapperSkeleton = true;
+              }
+            }
+          });
+        }
+        
         console.log(`🔍 Skeleton check for ${component.name}:`, {
           isSkeletonContent,
           isEmptyContainer,
@@ -758,13 +785,15 @@ async function refreshComponent(component) {
           duplicateCount,
           totalLinks: linkTexts.length,
           uniqueLinks: uniqueTexts.size,
+          isPureWrapperSkeleton,
+          wrapperCount: wrappers.length,
           hasHeading,
           linkCount,
           articleCount,
           contentLength
         });
         
-        if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates) {
+        if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton) {
           // Extract fingerprint FIRST to pass to tab refresh
           const originalFingerprint = extractFingerprint(component.html_cache);
           
@@ -787,9 +816,10 @@ async function refreshComponent(component) {
             // BATCH 3: Classify images for proper sizing
             const withExclusions = applyExclusions(tabHtml, component.excludedSelectors);
             const withImageClassification = classifyImagesForRefresh(withExclusions);
+            const cleaned = cleanupDuplicates(withImageClassification);
             return {
               success: true,
-              html_cache: cleanupDuplicates(withImageClassification),
+              html_cache: cleaned,
               last_refresh: new Date().toISOString(),
               status: 'active'
             };
@@ -945,11 +975,15 @@ async function refreshComponent(component) {
               };
             }
             // BATCH 3: Classify images for proper sizing
+            console.log(`🔧 [2nd Tab Fallback HTML Pipeline] ${component.name}:`);
+            console.log(`   1. Tab HTML: ${tabHtml.length} chars`);
+            
             const withExclusions = applyExclusions(tabHtml, component.excludedSelectors);
             const withImageClassification = classifyImagesForRefresh(withExclusions);
+            const cleaned = cleanupDuplicates(withImageClassification);
             return {
               success: true,
-              html_cache: cleanupDuplicates(withImageClassification),
+              html_cache: cleaned,
               last_refresh: new Date().toISOString(),
               status: 'active'
             };
@@ -975,9 +1009,22 @@ async function refreshComponent(component) {
     
     // Apply cleanup to extracted HTML
     // BATCH 3: Classify images for proper sizing (since direct fetch has no CSS layout)
+    console.log(`🔧 [HTML Pipeline] ${component.name}:`);
+    console.log(`   1. Extracted: ${extractedHtml.length} chars`);
+    
     const withExclusions = applyExclusions(extractedHtml, component.excludedSelectors);
+    console.log(`   2. After exclusions: ${withExclusions.length} chars`);
+    
     const withImageClassification = classifyImagesForRefresh(withExclusions);
+    console.log(`   3. After image classification: ${withImageClassification.length} chars`);
+    
     const afterCleanup = cleanupDuplicates(withImageClassification);
+    console.log(`   4. After cleanup (FINAL): ${afterCleanup.length} chars`);
+    
+    if (afterCleanup.length < 100) {
+      console.error(`⚠️ SUSPICIOUSLY SHORT HTML (${afterCleanup.length} chars):`);
+      console.error(`   Content:`, afterCleanup);
+    }
     
     return {
       success: true,
@@ -1092,12 +1139,23 @@ async function refreshAll() {
       
       // Save full data to local (including HTML)
       if (result.success) {
-        updatedLocalData[comp.id] = {
-          selector: comp.selector,
-          html_cache: result.html_cache,
-          last_refresh: result.last_refresh,
-          excludedSelectors: comp.excludedSelectors || []
-        };
+        // Validate HTML is not empty before marking as success
+        if (!result.html_cache || result.html_cache.length < 50) {
+          console.error(`⚠️ Empty HTML detected for ${comp.name} - keeping original`);
+          updatedLocalData[comp.id] = {
+            selector: comp.selector,
+            html_cache: comp.html_cache,
+            last_refresh: comp.last_refresh,
+            excludedSelectors: comp.excludedSelectors || []
+          };
+        } else {
+          updatedLocalData[comp.id] = {
+            selector: comp.selector,
+            html_cache: result.html_cache,
+            last_refresh: result.last_refresh,
+            excludedSelectors: comp.excludedSelectors || []
+          };
+        }
       } else {
         // Keep existing data if refresh failed
         updatedLocalData[comp.id] = {

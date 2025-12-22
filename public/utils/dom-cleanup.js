@@ -77,6 +77,7 @@ function cleanupDuplicates(html) {
   const temp = document.createElement('div');
   temp.innerHTML = html;
   
+    
   // Remove known duplicate/hidden elements
   // Note: BBC uses CSS-in-JS class names like "ssrcss-xxx-MobileValue"
   const duplicateSelectors = [
@@ -99,8 +100,11 @@ function cleanupDuplicates(html) {
     '[class*="abbreviated"]'      // Explicit abbreviated content
   ];
   
+  let removedCount = 0;
   duplicateSelectors.forEach(selector => {
-    temp.querySelectorAll(selector).forEach(el => el.remove());
+    const matches = temp.querySelectorAll(selector);
+    removedCount += matches.length;
+    matches.forEach(el => el.remove());
   });
 
   // 🎯 REMOVED from cleanupDuplicates: display:none check causes false positives here
@@ -109,28 +113,51 @@ function cleanupDuplicates(html) {
   // We handle display:none during CAPTURE and TAB REFRESH where CSS IS loaded
   
   // Remove empty wrapper divs/spans that only add spacing
+  let emptyWrappersRemoved = 0;
+  const removedElements = []; // Track what we're removing
+  
   temp.querySelectorAll('div, span').forEach(el => {
     // Check if element is effectively empty (no text, only whitespace/images/br)
     const hasText = el.textContent.trim().length > 0;
     const hasImages = el.querySelector('img');
     const hasLinks = el.querySelector('a');
+    const hasSvg = el.querySelector('svg');
+    const hasVideo = el.querySelector('video');
     
     // If it's just a spacing wrapper with no content
-    if (!hasText && !hasImages && !hasLinks) {
+    if (!hasText && !hasImages && !hasLinks && !hasSvg && !hasVideo) {
+      emptyWrappersRemoved++;
+      
+      // Log first 5 removed elements for debugging
+      if (removedElements.length < 5) {
+        removedElements.push({
+          tag: el.tagName,
+          classes: el.className,
+          id: el.id,
+          children: el.children.length,
+          innerHTML: el.innerHTML.substring(0, 100)
+        });
+      }
+      
       el.remove();
     }
   });
   
+  
+  
   // Remove broken SVG sprite references (prevents console errors)
+  let svgSpritesRemoved = 0;
   temp.querySelectorAll('svg use[href*=".svg#"]').forEach(use => {
+    svgSpritesRemoved++;
     use.parentElement.remove(); // Remove the entire SVG element
   });
   
   // 🎯 SCALABLE SVG VALIDATION: Remove unrenderable SVGs (Guardian numbers, etc.)
   // Tests if SVG can render properly at 25px using heuristics
+  let svgsRemoved = 0;
   temp.querySelectorAll('svg').forEach(svg => {
     if (!isSVGRenderable(svg)) {
-      console.log('🗑️ Removed unrenderable SVG:', svg.getAttribute('class') || 'no-class');
+      svgsRemoved++;
       svg.remove();
     }
   });
@@ -145,7 +172,6 @@ function cleanupDuplicates(html) {
     
     // Pattern 1: Number-only alt text (Guardian article pages use these)
     if (/^[0-9]+$/.test(alt.trim())) {
-      console.log('🗑️ Removed decorative number image:', alt);
       img.remove();
       return;
     }
@@ -156,7 +182,6 @@ function cleanupDuplicates(html) {
       img.className.includes('rank') ||
       img.className.includes('index')
     )) {
-      console.log('🗑️ Removed decorative image (no alt + decorative class)');
       img.remove();
       return;
     }
@@ -182,7 +207,6 @@ function cleanupDuplicates(html) {
     const loadingClasses = ['blurring', 'skeleton', 'loading', 'placeholder', 'lazy', 'lazy-load'];
     loadingClasses.forEach(cls => {
       if (img.classList.contains(cls)) {
-        console.log(`🗑️ Removed progressive loading class: ${cls}`);
         img.classList.remove(cls);
       }
     });
@@ -193,12 +217,16 @@ function cleanupDuplicates(html) {
     const styleAttr = el.getAttribute('style');
     if (styleAttr && (styleAttr.includes('position:fixed') || styleAttr.includes('position: fixed') ||
                       styleAttr.includes('position:sticky') || styleAttr.includes('position: sticky'))) {
-      console.log('🗑️ Stripped fixed/sticky positioning from:', el.tagName, el.className);
       // Remove the position property instead of removing the whole element
       const newStyle = styleAttr.replace(/position\s*:\s*(fixed|sticky)\s*;?/gi, '');
       el.setAttribute('style', newStyle);
     }
   });
+  
+  if (temp.innerHTML.length === 0) {
+    console.error('❌ [cleanupDuplicates] RETURNED EMPTY HTML!');
+    console.error('   Original input length:', html.length);
+  }
   
   return temp.innerHTML;
 }
