@@ -677,7 +677,9 @@ async function refreshComponent(component) {
     
     // Only try to extract if we have a specific selector
     // Generic selectors like "div" or "section" will match wrong elements
-    if (component.selector && !['div', 'section', 'article', 'main', 'aside', 'header', 'footer', 'nav'].includes(component.selector.toLowerCase())) {
+    const isGenericSelector = ['div', 'section', 'article', 'main', 'aside', 'header', 'footer', 'nav'].includes(component.selector?.toLowerCase());
+    
+    if (component.selector && !isGenericSelector) {
       // Get ALL matching elements, not just first one
       const matches = doc.querySelectorAll(component.selector);
       
@@ -847,7 +849,16 @@ async function refreshComponent(component) {
           let targetHeading = null;
           
           for (const heading of allHeadings) {
-            if (heading.textContent.includes(component.headingFingerprint)) {
+            const headingText = heading.textContent.trim();
+            const fingerprint = component.headingFingerprint;
+            
+            // CASE-INSENSITIVE bidirectional match: either heading contains fingerprint OR fingerprint contains heading
+            // This handles cases where fingerprint has duplicated text (e.g., "Top offersTop offers")
+            const headingLower = headingText.toLowerCase();
+            const fingerprintLower = fingerprint.toLowerCase();
+            
+            if (headingLower.includes(fingerprintLower) || 
+                (headingText.length >= 8 && fingerprintLower.includes(headingLower))) {
               targetHeading = heading;
               console.log(`✅ [Heading Fallback] Found heading: "${heading.textContent.substring(0, 50)}"`);
               break;
@@ -946,7 +957,7 @@ async function refreshComponent(component) {
         }
       }
     } else {
-      // Generic selector - skip extraction
+      // Generic selector - skip extraction but still try heading-based fallback
     }
     
     // If extraction failed, DON'T use the full page - keep original HTML
