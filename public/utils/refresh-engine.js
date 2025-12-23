@@ -160,8 +160,10 @@ const toastManager = new RefreshToastManager();
  * Note: This is for UI warning only, actual refresh logic uses requiresVisibleTab()
  */
 function willNeedActiveTab(url) {
-  const problematicDomains = ['hotukdeals.com', 'premierleague.com'];
-  return problematicDomains.some(domain => url.includes(domain));
+  // Removed hardcoded domain list - let intelligent fallback handle detection
+  // Previously: hotukdeals.com, premierleague.com
+  // Now relies on skeleton detection and automatic tab fallback
+  return false;
 }
 
 /**
@@ -169,13 +171,13 @@ function willNeedActiveTab(url) {
  * These sites use IntersectionObserver or Page Visibility API that cannot be spoofed
  */
 function requiresVisibleTab(url) {
-  // Sites that block background tabs (Page Visibility API or bot detection)
-  const visibilityCheckDomains = [
-    'hotukdeals.com',     // Page Visibility API blocks background
-    'premierleague.com',  // Page Visibility API blocks background  
-    'ign.com'             // Bot detection shows error page in background
-  ];
-  return visibilityCheckDomains.some(domain => url.includes(domain));
+  // Removed hardcoded domain list - let intelligent fallback handle detection
+  // Previously forced active tab for: hotukdeals.com, premierleague.com, ign.com
+  // Now relies on:
+  // 1. Direct fetch attempt
+  // 2. Skeleton content detection → background tab
+  // 3. Background tab failure → active tab fallback
+  return false;
 }
 
 /**
@@ -200,7 +202,7 @@ function requiresVisibleTab(url) {
  * 
  * Used in: refreshComponent() when direct fetch fails or for known problematic sites
  */
-async function tabBasedRefresh(url, selector, fingerprint = null) {
+async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0) {
   try {
     // Check if this site MUST be visible (Page Visibility API blocks background)
     if (requiresVisibleTab(url)) {
@@ -211,7 +213,16 @@ async function tabBasedRefresh(url, selector, fingerprint = null) {
     
     // ATTEMPT 1: Try background tab with visibility spoof
     const result = await tryBackgroundWithSpoof(url, selector);
-    if (result) return result;
+    if (result) {
+      // Check if images are missing (site may still detect background tab)
+      const resultImgCount = (result.match(/<img/gi) || []).length;
+      if (expectedImgCount >= 3 && resultImgCount === 0) {
+        console.log(`🖼️ [Background Tab] Images missing (expected ${expectedImgCount}, got ${resultImgCount}) - falling back to active tab`);
+        // Fall through to active tab
+      } else {
+        return result;
+      }
+    }
     
     // ATTEMPT 2: Fallback to active tab (guaranteed to work)
     const fallbackResult = await tryActiveTab(url, selector, fingerprint);
@@ -620,8 +631,11 @@ async function tryActiveTab(url, selector, fingerprint = null) {
 async function refreshComponent(component) {
   try {
     // Check if this site requires tab-based refresh (session-dependent content)
+    // Count images in original for fallback detection
+    const originalImgCount = (component.html_cache?.match(/<img/gi) || []).length;
+    
     if (willNeedActiveTab(component.url)) {
-      const tabHtml = await tabBasedRefresh(component.url, component.selector);
+      const tabHtml = await tabBasedRefresh(component.url, component.selector, null, originalImgCount);
       
       if (tabHtml) {
         // Verify with fingerprint
@@ -716,6 +730,16 @@ async function refreshComponent(component) {
         
         extractedHtml = element.outerHTML;
         
+        // HOTUKDEALS/JS-RENDERED IMAGES PATTERN: Check if original had images but extracted has none
+        // Sites like HotUKDeals render images via JavaScript - direct fetch gets text but no images
+        const originalImgCount = (component.html_cache?.match(/<img/gi) || []).length;
+        const extractedImgCount = (extractedHtml.match(/<img/gi) || []).length;
+        const hasImagesMissing = originalImgCount >= 3 && extractedImgCount === 0;
+        
+        if (hasImagesMissing) {
+          console.log(`🖼️ [Images Missing] Original had ${originalImgCount} images, extracted has ${extractedImgCount} - likely JS-rendered`);
+        }
+        
         // Check if we got a skeleton/loading placeholder instead of real content
         const isSkeletonContent = extractedHtml.includes('class="skeleton') || 
                                    extractedHtml.includes('skeleton-color') ||
@@ -787,19 +811,22 @@ async function refreshComponent(component) {
           uniqueLinks: uniqueTexts.size,
           isPureWrapperSkeleton,
           wrapperCount: wrappers.length,
+          hasImagesMissing,
+          originalImgCount,
+          extractedImgCount,
           hasHeading,
           linkCount,
           articleCount,
           contentLength
         });
         
-        if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton) {
+        if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing) {
           // Extract fingerprint FIRST to pass to tab refresh
           const originalFingerprint = extractFingerprint(component.html_cache);
           
           // Try tab-based refresh as fallback
           console.log('[Skeleton Fallback] Attempting tab refresh for', component.label, 'with fingerprint:', originalFingerprint);
-          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint);
+          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount);
           
           if (tabHtml) {
             // Verify we got the right element by checking fingerprint
@@ -961,7 +988,7 @@ async function refreshComponent(component) {
         // If heading fallback didn't work, try tab-based refresh
         if (!extractedHtml) {
           const originalFingerprint = extractFingerprint(component.html_cache);
-          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint);
+          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount);
         
           if (tabHtml) {
             if (originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
