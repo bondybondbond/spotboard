@@ -404,7 +404,7 @@ async function tryBackgroundWithSpoof(url, selector) {
     // Wait additional time for JS to fully load (complex sites)
     await new Promise(r => setTimeout(r, 3000));
     
-    // Try to extract - WITH SANITIZATION IN THE TAB
+    // Try to extract - WITH SANITIZATION AND IMAGE CLASSIFICATION IN THE TAB
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       args: [selector],
@@ -436,6 +436,72 @@ async function tryBackgroundWithSpoof(url, selector) {
               img.setAttribute('src', lazyUrl);
               break;
             }
+          }
+        });
+        
+        // 🎯 5-TIER IMAGE CLASSIFICATION USING LIVE CSS
+        // Icon (25px): Tiny images like logos, voting buttons
+        // Small (48px): Avatars, badges
+        // Thumbnail (80px): HotUK deals
+        // Medium (100px): Zoopla property images (landscape)
+        // Preview (150px): Large product hero images
+        element.querySelectorAll('img').forEach(img => {
+          try {
+            // Skip if already classified
+            if (img.hasAttribute('data-scale-context')) return;
+            
+            // Get nearest structural container
+            let container = img.closest('article, section') || img.parentElement;
+            if (!container) {
+              img.setAttribute('data-scale-context', 'icon');
+              return;
+            }
+            
+            // Calculate container dimensions (works because we're in live DOM)
+            const containerRect = container.getBoundingClientRect();
+            const containerArea = containerRect.width * containerRect.height;
+            
+            // Calculate RENDERED image dimensions
+            const imgRect = img.getBoundingClientRect();
+            const imageArea = imgRect.width * imgRect.height;
+            const imgHeight = imgRect.height;
+            
+            // Calculate area ratio
+            const areaRatio = containerArea > 0 ? imageArea / containerArea : 0;
+            
+            // 5-tier classification logic (HEIGHT-BASED primary)
+            let context;
+            
+            // Rule 1: Tiny images (<40px height) = icon (25px)
+            if (imgHeight < 40 || imageArea < 1600) {
+              context = 'icon';
+            }
+            // Rule 2: Small images (<70px height) = small (48px)
+            else if (imgHeight < 70 || imageArea < 4900) {
+              context = 'small';
+            }
+            // Rule 3: Small ratio (<10%) = small (48px)
+            else if (areaRatio < 0.10) {
+              context = 'small';
+            }
+            // Rule 4: Medium ratio (10-25%) = thumbnail (80px)
+            else if (areaRatio < 0.25 || imageArea < 15000) {
+              context = 'thumbnail';
+            }
+            // Rule 5: Medium-large ratio (25-50%) = medium (100px)
+            else if (areaRatio < 0.50 || imageArea < 40000) {
+              context = 'medium';
+            }
+            // Rule 6: Large ratio (>50%) = preview (150px)
+            else {
+              context = 'preview';
+            }
+            
+            img.setAttribute('data-scale-context', context);
+            console.log(`🏷️ [Tab] Image: ${Math.round(imgRect.width)}x${Math.round(imgHeight)} = ${(areaRatio * 100).toFixed(1)}% → "${context}"`);
+            
+          } catch (e) {
+            img.setAttribute('data-scale-context', 'icon');
           }
         });
         
@@ -503,7 +569,7 @@ async function tryActiveTab(url, selector, fingerprint = null) {
     // Wait for JS to load
     await new Promise(r => setTimeout(r, 3000));
     
-    // Extract - WITH SANITIZATION IN THE TAB
+    // Extract - WITH SANITIZATION AND IMAGE CLASSIFICATION IN THE TAB
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       args: [selector, fingerprint],
@@ -563,6 +629,72 @@ async function tryActiveTab(url, selector, fingerprint = null) {
               img.setAttribute('src', lazyUrl);
               break;
             }
+          }
+        });
+        
+        // 🎯 5-TIER IMAGE CLASSIFICATION USING LIVE CSS
+        // Icon (25px): Tiny images like logos, voting buttons
+        // Small (48px): Avatars, badges
+        // Thumbnail (80px): HotUK deals
+        // Medium (100px): Zoopla property images (landscape)
+        // Preview (150px): Large product hero images
+        element.querySelectorAll('img').forEach(img => {
+          try {
+            // Skip if already classified
+            if (img.hasAttribute('data-scale-context')) return;
+            
+            // Get nearest structural container
+            let container = img.closest('article, section') || img.parentElement;
+            if (!container) {
+              img.setAttribute('data-scale-context', 'icon');
+              return;
+            }
+            
+            // Calculate container dimensions (works because we're in live DOM)
+            const containerRect = container.getBoundingClientRect();
+            const containerArea = containerRect.width * containerRect.height;
+            
+            // Calculate RENDERED image dimensions
+            const imgRect = img.getBoundingClientRect();
+            const imageArea = imgRect.width * imgRect.height;
+            const imgHeight = imgRect.height;
+            
+            // Calculate area ratio
+            const areaRatio = containerArea > 0 ? imageArea / containerArea : 0;
+            
+            // 5-tier classification logic (HEIGHT-BASED primary)
+            let context;
+            
+            // Rule 1: Tiny images (<40px height) = icon (25px)
+            if (imgHeight < 40 || imageArea < 1600) {
+              context = 'icon';
+            }
+            // Rule 2: Small images (<70px height) = small (48px)
+            else if (imgHeight < 70 || imageArea < 4900) {
+              context = 'small';
+            }
+            // Rule 3: Small ratio (<10%) = small (48px)
+            else if (areaRatio < 0.10) {
+              context = 'small';
+            }
+            // Rule 4: Medium ratio (10-25%) = thumbnail (80px)
+            else if (areaRatio < 0.25 || imageArea < 15000) {
+              context = 'thumbnail';
+            }
+            // Rule 5: Medium-large ratio (25-50%) = medium (100px)
+            else if (areaRatio < 0.50 || imageArea < 40000) {
+              context = 'medium';
+            }
+            // Rule 6: Large ratio (>50%) = preview (150px)
+            else {
+              context = 'preview';
+            }
+            
+            img.setAttribute('data-scale-context', context);
+            console.log(`🏷️ [Tab] Image: ${Math.round(imgRect.width)}x${Math.round(imgHeight)} = ${(areaRatio * 100).toFixed(1)}% → "${context}"`);
+            
+          } catch (e) {
+            img.setAttribute('data-scale-context', 'icon');
           }
         });
         
@@ -649,9 +781,10 @@ async function refreshComponent(component) {
           };
         }
         
-        // BATCH 3: Classify images for proper sizing
+        // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
         const withExclusions = applyExclusions(tabHtml, component.excludedSelectors);
-        const withImageClassification = classifyImagesForRefresh(withExclusions);
+        const withPreserved = preserveImageClassifications(withExclusions, component.html_cache);
+        const withImageClassification = classifyImagesForRefresh(withPreserved);
         return {
           success: true,
           html_cache: cleanupDuplicates(withImageClassification),
@@ -840,9 +973,10 @@ async function refreshComponent(component) {
             }
             
             // Tab refresh worked and verified!
-            // BATCH 3: Classify images for proper sizing
+            // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
             const withExclusions = applyExclusions(tabHtml, component.excludedSelectors);
-            const withImageClassification = classifyImagesForRefresh(withExclusions);
+            const withPreserved = preserveImageClassifications(withExclusions, component.html_cache);
+            const withImageClassification = classifyImagesForRefresh(withPreserved);
             const cleaned = cleanupDuplicates(withImageClassification);
             return {
               success: true,
@@ -1001,12 +1135,13 @@ async function refreshComponent(component) {
                 keepOriginal: true
               };
             }
-            // BATCH 3: Classify images for proper sizing
+            // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
             console.log(`🔧 [2nd Tab Fallback HTML Pipeline] ${component.name}:`);
             console.log(`   1. Tab HTML: ${tabHtml.length} chars`);
             
             const withExclusions = applyExclusions(tabHtml, component.excludedSelectors);
-            const withImageClassification = classifyImagesForRefresh(withExclusions);
+            const withPreserved = preserveImageClassifications(withExclusions, component.html_cache);
+            const withImageClassification = classifyImagesForRefresh(withPreserved);
             const cleaned = cleanupDuplicates(withImageClassification);
             return {
               success: true,
@@ -1035,14 +1170,17 @@ async function refreshComponent(component) {
     }
     
     // Apply cleanup to extracted HTML
-    // BATCH 3: Classify images for proper sizing (since direct fetch has no CSS layout)
+    // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
     console.log(`🔧 [HTML Pipeline] ${component.name}:`);
     console.log(`   1. Extracted: ${extractedHtml.length} chars`);
     
     const withExclusions = applyExclusions(extractedHtml, component.excludedSelectors);
     console.log(`   2. After exclusions: ${withExclusions.length} chars`);
     
-    const withImageClassification = classifyImagesForRefresh(withExclusions);
+    const withPreserved = preserveImageClassifications(withExclusions, component.html_cache);
+    console.log(`   2b. After preserving classifications: ${withPreserved.length} chars`);
+    
+    const withImageClassification = classifyImagesForRefresh(withPreserved);
     console.log(`   3. After image classification: ${withImageClassification.length} chars`);
     
     const afterCleanup = cleanupDuplicates(withImageClassification);

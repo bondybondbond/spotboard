@@ -358,10 +358,12 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   });
 
   // 🎯 IMAGE CONTEXT CLASSIFICATION (BEFORE CLONING)
-  // Analyze images in ORIGINAL element (still in DOM with proper layout)
-  // Icon (badges/logos): <70x70px OR <10% container → 48px max
-  // Thumbnail (supplementary): 10-40% container → 120px max  
-  // Preview (primary content): >40% container → 280px max
+  // 5-tier system based on rendered size and container ratio:
+  // Icon (25px): Tiny images like logos, avatars, voting buttons
+  // Small (48px): Avatars, badges
+  // Thumbnail (80px): HotUK style deal images
+  // Medium (100px): Zoopla property images (landscape)
+  // Preview (150px): Large product hero images
   element.querySelectorAll('img').forEach(img => {
     try {
       // Get nearest structural container (article, section, or direct parent)
@@ -376,36 +378,44 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       const containerRect = container.getBoundingClientRect();
       const containerArea = containerRect.width * containerRect.height;
       
-      // Calculate RENDERED image area (not natural file dimensions)
+      // Calculate RENDERED image dimensions
       const imgRect = img.getBoundingClientRect();
       const imageArea = imgRect.width * imgRect.height;
+      const imgHeight = imgRect.height;
       
       // Calculate area ratio
       const areaRatio = containerArea > 0 ? imageArea / containerArea : 0;
       
-      // Classification logic
-      let context: 'icon' | 'thumbnail' | 'preview';
+      // 5-tier classification logic (HEIGHT-BASED primary)
+      let context: 'icon' | 'small' | 'thumbnail' | 'medium' | 'preview';
       
-      // Rule 1: Very small rendered images are icons
-      if (imageArea < 2500) {  // ~50x50px or smaller
+      // Rule 1: Tiny images (<40px height) = icon (25px)
+      if (imgHeight < 40 || imageArea < 1600) {
         context = 'icon';
       }
-      // Rule 2: Small ratio = icon
+      // Rule 2: Small images (<70px height) = small (48px)
+      else if (imgHeight < 70 || imageArea < 4900) {
+        context = 'small';
+      }
+      // Rule 3: Small ratio (<10%) = small (48px) - decorative
       else if (areaRatio < 0.10) {
-        context = 'icon';
+        context = 'small';
       }
-      // Rule 3: Medium ratio OR small absolute size = thumbnail
-      // Even 100% ratio images stay thumbnail if <141×141px
-      else if (areaRatio < 0.40 || imageArea < 20000) {
+      // Rule 4: Medium ratio (10-25%) = thumbnail (80px)
+      else if (areaRatio < 0.25 || imageArea < 15000) {
         context = 'thumbnail';
       }
-      // Rule 4: Large ratio AND large size = preview
+      // Rule 5: Medium-large ratio (25-50%) = medium (100px)
+      else if (areaRatio < 0.50 || imageArea < 40000) {
+        context = 'medium';
+      }
+      // Rule 6: Large ratio (>50%) AND large area = preview (150px)
       else {
         context = 'preview';
       }
       
       img.setAttribute('data-scale-context', context);
-      console.log(`  🏷️ Image classified as "${context}" (${Math.round(imageArea)}px² / ${Math.round(containerArea)}px² = ${(areaRatio * 100).toFixed(1)}%)`);
+      console.log(`  🏷️ Image: ${Math.round(imgRect.width)}x${Math.round(imgRect.height)} (${Math.round(imageArea)}px²) / container ${Math.round(containerRect.width)}x${Math.round(containerRect.height)} (${Math.round(containerArea)}px²) = ${(areaRatio * 100).toFixed(1)}% → "${context}"`);
       
     } catch (e) {
       console.warn('  ⚠️ Failed to classify image, defaulting to icon:', e);

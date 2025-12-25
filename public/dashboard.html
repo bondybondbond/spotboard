@@ -68,10 +68,19 @@
     .component-content button {
       cursor: default !important;
     }
-    /* Context-aware image scaling - based on content role */
+    /* Context-aware image scaling - 5-tier system based on content role */
     
-    /* Icons (badges/logos) - keep small */
+    /* Icons (logos/voting buttons) - minimal 25px */
     .component-content img[data-scale-context="icon"] {
+      max-width: 25px !important;
+      max-height: 25px !important;
+      object-fit: contain;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    
+    /* Small (avatars/badges) - 48px */
+    .component-content img[data-scale-context="small"] {
       max-width: 48px !important;
       max-height: 48px !important;
       object-fit: contain;
@@ -79,19 +88,28 @@
       vertical-align: middle;
     }
     
-    /* Thumbnails (supplementary images) - medium size */
+    /* Thumbnail (HotUK deals) - 80px */
     .component-content img[data-scale-context="thumbnail"] {
-      max-width: 120px !important;
-      max-height: 120px !important;
+      max-width: 80px !important;
+      max-height: 80px !important;
       object-fit: contain;
       display: inline-block;
       vertical-align: middle;
     }
     
-    /* Preview (primary content images) - large size */
+    /* Medium (Zoopla houses - landscape property images) - 100px height */
+    .component-content img[data-scale-context="medium"] {
+      max-width: 180px !important;
+      max-height: 100px !important;
+      object-fit: contain;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    
+    /* Preview/Large (Amazon products) - 150px MAX */
     .component-content img[data-scale-context="preview"] {
-      max-width: 280px !important;
-      max-height: 280px !important;
+      max-width: 150px !important;
+      max-height: 150px !important;
       object-fit: contain;
       display: inline-block;
       vertical-align: middle;

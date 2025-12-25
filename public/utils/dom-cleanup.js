@@ -605,6 +605,123 @@ function removeCleanupCSS() {
   }
 }
 
+
+/**
+ * 🎯 Preserve image classifications from cached HTML to refreshed HTML
+ * 
+ * Problem: Capture-time uses live CSS for accurate classification, but refresh
+ * fetches NEW HTML which doesn't have our data-scale-context attributes.
+ * This function copies classifications from the old cached HTML to the new HTML.
+ * 
+ * @param {string} newHtml - Freshly fetched HTML from refresh
+ * @param {string} oldHtml - Previously cached HTML with classifications
+ * @returns {string} - New HTML with preserved classifications
+ */
+function preserveImageClassifications(newHtml, oldHtml) {
+  if (!newHtml || !oldHtml) return newHtml;
+  
+  // Parse old HTML to extract classification mapping
+  // We need to match by MULTIPLE attributes since lazy-loaded images
+  // may have placeholder src but real URLs in data-image
+  const oldTemp = document.createElement('div');
+  oldTemp.innerHTML = oldHtml;
+  
+  const classificationMap = new Map();
+  oldTemp.querySelectorAll('img[data-scale-context]').forEach(img => {
+    const classification = img.getAttribute('data-scale-context');
+    if (!classification) return;
+    
+    // Store mappings for ALL possible identifiers
+    const src = img.getAttribute('src');
+    const dataImage = img.getAttribute('data-image');
+    const dataSrc = img.getAttribute('data-src');
+    const dataLazySrc = img.getAttribute('data-lazy-src');
+    const dataOriginal = img.getAttribute('data-original');
+    const alt = img.getAttribute('alt');
+    
+    // For each URL, store both full and partial (last 2 path segments)
+    const storeUrl = (url) => {
+      if (!url || url.startsWith('data:')) return; // Skip data URIs
+      classificationMap.set(url, classification);
+      // Also store partial for CDN variations
+      const partial = url.split('?')[0].split('/').slice(-2).join('/');
+      if (partial.length > 5) classificationMap.set(partial, classification);
+    };
+    
+    storeUrl(src);
+    storeUrl(dataImage);
+    storeUrl(dataSrc);
+    storeUrl(dataLazySrc);
+    storeUrl(dataOriginal);
+    
+    // Also store by alt text if unique enough
+    if (alt && alt.length > 5) {
+      classificationMap.set(`alt:${alt}`, classification);
+    }
+  });
+  
+  if (classificationMap.size === 0) {
+    console.log('🏷️ No existing classifications to preserve');
+    return newHtml;
+  }
+  
+  console.log(`🏷️ Preserving image classifications (${classificationMap.size} mappings)`);
+  
+  // Parse new HTML and apply preserved classifications
+  const newTemp = document.createElement('div');
+  newTemp.innerHTML = newHtml;
+  
+  let preserved = 0;
+  newTemp.querySelectorAll('img').forEach(img => {
+    // Skip if already classified
+    if (img.hasAttribute('data-scale-context')) return;
+    
+    // Try all possible identifiers
+    const src = img.getAttribute('src');
+    const dataImage = img.getAttribute('data-image');
+    const dataSrc = img.getAttribute('data-src');
+    const dataLazySrc = img.getAttribute('data-lazy-src');
+    const dataOriginal = img.getAttribute('data-original');
+    const alt = img.getAttribute('alt');
+    
+    let classification = null;
+    
+    // Try matching in priority order
+    const tryMatch = (url) => {
+      if (!url || url.startsWith('data:') || classification) return;
+      classification = classificationMap.get(url);
+      if (!classification) {
+        const partial = url.split('?')[0].split('/').slice(-2).join('/');
+        if (partial.length > 5) classification = classificationMap.get(partial);
+      }
+    };
+    
+    // Try data-image first (most reliable for lazy-loaded)
+    tryMatch(dataImage);
+    tryMatch(dataSrc);
+    tryMatch(dataLazySrc);
+    tryMatch(dataOriginal);
+    tryMatch(src);
+    
+    // Try alt text as last resort
+    if (!classification && alt && alt.length > 5) {
+      classification = classificationMap.get(`alt:${alt}`);
+    }
+    
+    if (classification) {
+      img.setAttribute('data-scale-context', classification);
+      preserved++;
+      const displaySrc = (dataImage || src || '').substring(0, 50);
+      console.log(`  ✅ Preserved "${classification}" for: ${displaySrc}...`);
+    }
+  });
+  
+  const unclassified = newTemp.querySelectorAll('img:not([data-scale-context])').length;
+  console.log(`🏷️ Preserved ${preserved} classifications, ${unclassified} unclassified remain`);
+  
+  return newTemp.innerHTML;
+}
+
 /**
  * 🎯 BATCH 3: Classify images for refresh (without CSS layout)
  * 
@@ -628,68 +745,86 @@ function classifyImagesForRefresh(html) {
   temp.innerHTML = html;
   
   temp.querySelectorAll('img').forEach(img => {
-    // Skip if already classified (from capture)
+    // Skip if already classified (from capture or tab-based refresh)
     if (img.hasAttribute('data-scale-context')) {
       return;
     }
     
-    let context = 'thumbnail'; // Safe default (120px)
+    let context = 'thumbnail'; // Safe default (80px)
     
-    // HEURISTIC 1: Check width/height attributes
+    // HEURISTIC 1: Check width/height attributes (HEIGHT-BASED for card layout)
     const width = parseInt(img.getAttribute('width')) || 0;
     const height = parseInt(img.getAttribute('height')) || 0;
-    const maxDim = Math.max(width, height);
     
-    if (maxDim > 0) {
-      if (maxDim <= 70) {
-        context = 'icon';
-      } else if (maxDim <= 150) {
-        context = 'thumbnail';
+    if (height > 0 || width > 0) {
+      // Use height as primary constraint (better for card layout)
+      // Fall back to width if height not specified
+      const effectiveHeight = height > 0 ? height : width;
+      
+      if (effectiveHeight <= 40) {
+        context = 'icon';       // 25px - tiny icons
+      } else if (effectiveHeight <= 70) {
+        context = 'small';      // 48px - avatars, badges
+      } else if (effectiveHeight <= 120) {
+        context = 'thumbnail';  // 80px - HotUK style deals
+      } else if (effectiveHeight <= 250) {
+        context = 'medium';     // 100px - Zoopla houses (229px height → medium)
       } else {
-        context = 'preview';
+        context = 'preview';    // 150px - Large hero images
       }
-      console.log(`  🏷️ Image sized by attributes: ${width}x${height} → "${context}"`);
+      console.log(`  🏷️ Image sized by attributes: ${width}x${height} (h=${effectiveHeight}) → "${context}"`);
     } else {
-      // HEURISTIC 2: Check class names
+      // HEURISTIC 2: Check class names (expanded patterns)
       const className = (img.className || '').toLowerCase();
       const parentClass = (img.parentElement?.className || '').toLowerCase();
-      const allClasses = className + ' ' + parentClass;
+      const grandparentClass = (img.parentElement?.parentElement?.className || '').toLowerCase();
+      const allClasses = className + ' ' + parentClass + ' ' + grandparentClass;
       
-      // Icon patterns
-      if (/icon|logo|badge|avatar|symbol|favicon/.test(allClasses)) {
+      // Also check src/alt for common patterns
+      const src = (img.getAttribute('src') || '').toLowerCase();
+      const alt = (img.getAttribute('alt') || '').toLowerCase();
+      
+      // Icon patterns (25px) - logos, avatars, voting buttons, nav icons
+      if (/icon|logo|badge|avatar|symbol|favicon|profile|user|member|author|upvote|vote|score|rating|rank|point|brand|app-icon|site-icon|emoji|arrow|chevron|caret|close|menu|nav-icon|button/.test(allClasses) ||
+          /avatar|profile|icon|logo|badge|vote|arrow/.test(src) ||
+          /avatar|profile pic|user photo|logo/.test(alt)) {
         context = 'icon';
         console.log(`  🏷️ Image classified by class (icon pattern): "${context}"`);
       }
-      // Preview patterns (large hero images)
-      else if (/hero|preview|featured|banner|cover|main-image|property-image|listing-image/.test(allClasses)) {
+      // Preview patterns (150px) - only for explicit hero/feature classes
+      else if (/hero|featured|banner|cover|main-image|product-hero/.test(allClasses)) {
         context = 'preview';
         console.log(`  🏷️ Image classified by class (preview pattern): "${context}"`);
       }
-      // Thumbnail patterns
-      else if (/thumb|card|tile|grid-item|product|item-image/.test(allClasses)) {
+      // Medium patterns (100px) - property/listing images
+      else if (/property|listing|house|estate|real-estate/.test(allClasses)) {
+        context = 'medium';
+        console.log(`  🏷️ Image classified by class (medium pattern): "${context}"`);
+      }
+      // Small patterns (48px) - decorative, secondary images
+      else if (/small|mini|tiny|decorative|secondary/.test(allClasses)) {
+        context = 'small';
+        console.log(`  🏷️ Image classified by class (small pattern): "${context}"`);
+      }
+      // Thumbnail patterns (80px) - default for cards, products, deals
+      else if (/thumb|card|tile|grid-item|product|item-image|deal|offer|preview/.test(allClasses)) {
         context = 'thumbnail';
         console.log(`  🏷️ Image classified by class (thumbnail pattern): "${context}"`);
       }
       // HEURISTIC 3: Check parent context
       else {
-        const article = img.closest('article, [class*="card"], [class*="listing"], [class*="property"]');
-        const nav = img.closest('nav, header, footer, [class*="menu"], [class*="nav"]');
+        const article = img.closest('article, [class*="card"], [class*="listing"], [class*="property"], [class*="deal"]');
+        const nav = img.closest('nav, header, footer, [class*="menu"], [class*="nav"], [class*="sidebar"]');
         
         if (nav) {
           context = 'icon';
           console.log(`  🏷️ Image in nav/header context → "icon"`);
         } else if (article) {
-          // In article/card - check if it's the main image or decorative
-          const siblingText = article.textContent?.length || 0;
-          if (siblingText > 200) {
-            // Lots of text = image is probably preview/feature
-            context = 'preview';
-          } else {
-            context = 'thumbnail';
-          }
-          console.log(`  🏷️ Image in article context (${siblingText} chars) → "${context}"`);
+          // In article/card - default to thumbnail (80px)
+          context = 'thumbnail';
+          console.log(`  🏷️ Image in article context → "thumbnail"`);
         } else {
-          // Default fallback
+          // Default fallback - thumbnail (80px) is safest
           console.log(`  🏷️ Image defaulting to: "thumbnail"`);
         }
       }
