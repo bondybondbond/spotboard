@@ -347,12 +347,61 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   const allOriginalElements = [element, ...Array.from(element.querySelectorAll('*'))];
   const markedElements: HTMLElement[] = [];
   
+  // Get the captured element's bounding rect for relative position checking
+  const containerRect = element.getBoundingClientRect();
+  
+  // Helper: Find nearest ancestor that clips content (carousel container)
+  const findClippingAncestor = (el: HTMLElement): DOMRect => {
+    let parent = el.parentElement;
+    while (parent && parent !== element) {
+      const style = window.getComputedStyle(parent);
+      // Check all overflow values that cause clipping
+      const overflowX = style.overflowX;
+      const overflow = style.overflow;
+      const isClipping = 
+        overflow === 'hidden' || overflow === 'scroll' || overflow === 'auto' || overflow === 'clip' ||
+        overflowX === 'hidden' || overflowX === 'scroll' || overflowX === 'auto' || overflowX === 'clip';
+      
+      if (isClipping) {
+        const parentRect = parent.getBoundingClientRect();
+        // Only use this container if it's narrower than our current reference (actual clipping)
+        // and reasonably sized (not a tiny element)
+        if (parentRect.width < containerRect.width && parentRect.width > 50) {
+          return parentRect;
+        }
+      }
+      parent = parent.parentElement;
+    }
+    return containerRect; // Fallback to outer container
+  };
+  
   allOriginalElements.forEach(el => {
     if (el instanceof HTMLElement && el !== element) {
       const computed = window.getComputedStyle(el);
-      if (computed.display === 'none') {
+      
+      // 🎯 COMPREHENSIVE VISIBILITY CHECK
+      // Method 1: CSS-based hiding
+      const isDisplayNone = computed.display === 'none';
+      const isVisibilityHidden = computed.visibility === 'hidden';
+      const isOpacityZero = computed.opacity === '0';
+      const isAriaHidden = el.getAttribute('aria-hidden') === 'true';
+      
+      // Method 2: Off-screen positioning (carousel slides)
+      // Use the nearest clipping ancestor (overflow:hidden) for bounds check
+      const rect = el.getBoundingClientRect();
+      const clipRect = findClippingAncestor(el);
+      const isOffScreenLeft = rect.right < clipRect.left;   // Fully left of clip container
+      const isOffScreenRight = rect.left > clipRect.right;  // Fully right of clip container
+      const isOffScreen = isOffScreenLeft || isOffScreenRight;
+      
+
+      
+      const isHidden = isDisplayNone || isVisibilityHidden || isOpacityZero || isAriaHidden || isOffScreen;
+      
+      if (isHidden) {
         el.setAttribute('data-spotboard-hidden', 'true');
         markedElements.push(el);
+
       }
     }
   });
@@ -415,7 +464,6 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       }
       
       img.setAttribute('data-scale-context', context);
-      console.log(`  🏷️ Image: ${Math.round(imgRect.width)}x${Math.round(imgRect.height)} (${Math.round(imageArea)}px²) / container ${Math.round(containerRect.width)}x${Math.round(containerRect.height)} (${Math.round(containerArea)}px²) = ${(areaRatio * 100).toFixed(1)}% → "${context}"`);
       
     } catch (e) {
       console.warn('  ⚠️ Failed to classify image, defaulting to icon:', e);
@@ -423,7 +471,7 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     }
   });
   
-  console.log('🎯 Image classification complete');
+
 
   // Clone (classification attributes will be copied)
   const clone = element.cloneNode(true) as HTMLElement;
@@ -533,7 +581,6 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       if (lazyUrl && lazyUrl.startsWith('http')) {
         // Found a real URL in lazy attribute - use it as src
         img.setAttribute('src', lazyUrl);
-        console.log(`  ✅ Converted ${attr} to src:`, lazyUrl.substring(0, 80));
         break; // Stop after first match
       }
     }
@@ -550,7 +597,6 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       try {
         const absoluteUrl = new URL(src, pageUrl).href;
         img.setAttribute('src', absoluteUrl);
-        console.log('  ✅ Fixed img src:', src, '→', absoluteUrl.substring(0, 80));
       } catch (e) {
         console.warn('  ⚠️ Could not fix img src:', src, e);
       }
@@ -572,7 +618,6 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
           return parts.join(' ');
         }).join(', ');
         img.setAttribute('srcset', fixedSrcset);
-        console.log('  ✅ Fixed img srcset');
       } catch (e) {
         console.warn('  ⚠️ Could not fix img srcset:', e);
       }
@@ -586,7 +631,6 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       try {
         const absoluteUrl = new URL(href, pageUrl).href;
         link.setAttribute('href', absoluteUrl);
-        console.log('  ✅ Fixed link href:', href.substring(0, 50), '→', absoluteUrl.substring(0, 80));
       } catch (e) {
         console.warn('  ⚠️ Could not fix link href:', href, e);
       }
@@ -604,7 +648,7 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
           }
           try {
             const absoluteUrl = new URL(url, pageUrl).href;
-            console.log('  ✅ Fixed CSS bg-image:', url.substring(0, 40), '→', absoluteUrl.substring(0, 60));
+
             return `url('${absoluteUrl}')`;
           } catch (e) {
             return match;
