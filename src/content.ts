@@ -375,6 +375,7 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     return containerRect; // Fallback to outer container
   };
   
+  
   allOriginalElements.forEach(el => {
     if (el instanceof HTMLElement && el !== element) {
       const computed = window.getComputedStyle(el);
@@ -394,14 +395,11 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       const isOffScreenRight = rect.left > clipRect.right;  // Fully right of clip container
       const isOffScreen = isOffScreenLeft || isOffScreenRight;
       
-
-      
       const isHidden = isDisplayNone || isVisibilityHidden || isOpacityZero || isAriaHidden || isOffScreen;
       
       if (isHidden) {
         el.setAttribute('data-spotboard-hidden', 'true');
         markedElements.push(el);
-
       }
     }
   });
@@ -526,7 +524,29 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     '[class*="team-name--short"]',// Premier League mobile team names (duplicate)
     '[class*="team-name--abbr"]', // Generic abbreviated team names (backup pattern)
     '[class*="-abbr"]',           // Generic abbreviation classes (e.g., "name-abbr", "title-abbr")
-    '[class*="abbreviated"]'      // Explicit abbreviated content
+    '[class*="abbreviated"]',     // Explicit abbreviated content
+    
+    // 🎯 CAROUSEL/GALLERY UI CONTROLS (always remove - not content)
+    // These are navigation elements that clutter the dashboard
+    '[class*="navigate"]',        // Rightmove: ImagesControls_navigateButtons__
+    '[class*="NavigateButton"]',  // Generic navigate buttons
+    '[class*="previousButton"]',  // Rightmove: ImagesControls_previousButton__
+    '[class*="nextButton"]',      // Rightmove: ImagesControls_nextButton__
+    '[class*="prevButton"]',      // Generic prev buttons
+    '[class*="Chevron"]',         // Rightmove: ImagesControls_previousChevron__
+    '[class*="chevron"]',         // Generic chevron icons
+    '[class*="carousel-control"]',// Bootstrap carousel controls
+    '[class*="slick-arrow"]',     // Slick slider arrows
+    '[class*="swiper-button"]',   // Swiper slider buttons
+    '[class*="gallery-nav"]',     // Generic gallery navigation
+    '[class*="slider-nav"]',      // Generic slider navigation
+    '[class*="slide-arrow"]',     // Generic slide arrows
+    'button[aria-label*="previous"]', // Accessibility-labeled prev buttons
+    'button[aria-label*="next"]',     // Accessibility-labeled next buttons
+    'button[aria-label*="arrow"]',    // Arrow buttons by aria-label
+    '[class*="ImageControls"]',   // Rightmove variant
+    '[class*="image-controls"]',  // Generic image controls
+    '[class*="Controls_"]'        // CSS module controls pattern
   ];
   duplicateSelectors.forEach(selector => {
     clone.querySelectorAll(selector).forEach(el => el.remove());

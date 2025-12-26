@@ -498,7 +498,6 @@ async function tryBackgroundWithSpoof(url, selector) {
             }
             
             img.setAttribute('data-scale-context', context);
-            console.log(`🏷️ [Tab] Image: ${Math.round(imgRect.width)}x${Math.round(imgHeight)} = ${(areaRatio * 100).toFixed(1)}% → "${context}"`);
             
           } catch (e) {
             img.setAttribute('data-scale-context', 'icon');
@@ -691,7 +690,6 @@ async function tryActiveTab(url, selector, fingerprint = null) {
             }
             
             img.setAttribute('data-scale-context', context);
-            console.log(`🏷️ [Tab] Image: ${Math.round(imgRect.width)}x${Math.round(imgHeight)} = ${(areaRatio * 100).toFixed(1)}% → "${context}"`);
             
           } catch (e) {
             img.setAttribute('data-scale-context', 'icon');
@@ -933,25 +931,10 @@ async function refreshComponent(component) {
           });
         }
         
-        console.log(`🔍 Skeleton check for ${component.name}:`, {
-          isSkeletonContent,
-          isEmptyContainer,
-          hasEmptyContainers,
-          emptyContainerCount: emptyContainers.length,
-          hasDuplicates,
-          duplicateCount,
-          totalLinks: linkTexts.length,
-          uniqueLinks: uniqueTexts.size,
-          isPureWrapperSkeleton,
-          wrapperCount: wrappers.length,
-          hasImagesMissing,
-          originalImgCount,
-          extractedImgCount,
-          hasHeading,
-          linkCount,
-          articleCount,
-          contentLength
-        });
+        // Skeleton check triggers: skeleton class, empty container, missing images, wrapper skeleton
+        if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing) {
+          console.log(`🔍 Skeleton detected: ${component.name} (imgs: ${originalImgCount}→${extractedImgCount})`);
+        }
         
         if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing) {
           // Extract fingerprint FIRST to pass to tab refresh
