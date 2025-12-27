@@ -613,6 +613,13 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   // Fix image src attributes
   clone.querySelectorAll('img[src]').forEach(img => {
     const src = img.getAttribute('src');
+    
+    // 🔧 Handle protocol-relative URLs (//upload.wikimedia.org/...)
+    if (src && src.startsWith('//')) {
+      img.setAttribute('src', 'https:' + src);
+      return;
+    }
+    
     if (src && !src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:')) {
       try {
         const absoluteUrl = new URL(src, pageUrl).href;
@@ -631,6 +638,13 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
         const fixedSrcset = srcset.split(',').map(src => {
           const parts = src.trim().split(/\s+/);
           const url = parts[0];
+          
+          // 🔧 Handle protocol-relative URLs (//upload.wikimedia.org/...)
+          if (url && url.startsWith('//')) {
+            parts[0] = 'https:' + url;
+            return parts.join(' ');
+          }
+          
           if (url && !url.startsWith('http') && !url.startsWith('data:') && !url.startsWith('blob:')) {
             const absoluteUrl = new URL(url, pageUrl).href;
             parts[0] = absoluteUrl;

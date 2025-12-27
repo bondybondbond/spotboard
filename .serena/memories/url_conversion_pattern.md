@@ -29,10 +29,14 @@ Missing URL conversion in `utils/refresh-engine.js` caused SlotCatalog images to
 
 Fix: Enhanced `fixRelativeUrls()` in refresh-engine.js to handle all resource types (was only fixing links).
 
-## Code Pattern
+## Code Pattern - Complete URL Handling
 ```javascript
-// Convert relative to absolute
-if (url && !url.startsWith('http') && !url.startsWith('data:') && !url.startsWith('blob:')) {
+// 1. Protocol-relative URLs (Dec 2024 - Wikipedia fix)
+if (url && url.startsWith('//')) {
+  absoluteUrl = 'https:' + url;  // //cdn.com/x.png → https://cdn.com/x.png
+}
+// 2. Relative URLs
+else if (url && !url.startsWith('http') && !url.startsWith('data:') && !url.startsWith('blob:')) {
   if (url.startsWith('/')) {
     absoluteUrl = origin + url;  // /img/x.png → https://site.com/img/x.png
   } else {
@@ -40,6 +44,8 @@ if (url && !url.startsWith('http') && !url.startsWith('data:') && !url.startsWit
   }
 }
 ```
+
+See `protocol_relative_urls_pattern` memory for detailed Wikipedia fix (Dec 2024).
 
 ## Progressive Loading Side Effect
 Progressive loading classes (`.blurring`, `.skeleton`) are removed by:

@@ -360,6 +360,13 @@ function fixRelativeUrls(container, sourceUrl) {
     // 🎯 FIX IMAGE SRC ATTRIBUTES
     container.querySelectorAll('img[src]').forEach(img => {
       const src = img.getAttribute('src');
+      
+      // 🔧 Handle protocol-relative URLs (//upload.wikimedia.org/...)
+      if (src && src.startsWith('//')) {
+        img.src = 'https:' + src;
+        return;
+      }
+      
       if (src && !src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:')) {
         if (src.startsWith('/')) {
           // Absolute path: /img/logo.png → https://site.com/img/logo.png
@@ -383,6 +390,13 @@ function fixRelativeUrls(container, sourceUrl) {
         const fixedSrcset = srcset.split(',').map(src => {
           const parts = src.trim().split(/\s+/);
           const imgUrl = parts[0];
+          
+          // 🔧 Handle protocol-relative URLs (//upload.wikimedia.org/...)
+          if (imgUrl && imgUrl.startsWith('//')) {
+            parts[0] = 'https:' + imgUrl;
+            return parts.join(' ');
+          }
+          
           if (imgUrl && !imgUrl.startsWith('http') && !imgUrl.startsWith('data:') && !imgUrl.startsWith('blob:')) {
             if (imgUrl.startsWith('/')) {
               parts[0] = origin + imgUrl;
