@@ -106,6 +106,23 @@ function App() {
 
   return (
     <div style={{ padding: '10px', minWidth: '300px' }}>
+      {/* First-time user tooltip */}
+      {components.length === 0 && (
+        <div style={{ 
+          background: '#e3f2fd', 
+          padding: '10px', 
+          borderRadius: '6px', 
+          marginBottom: '12px',
+          fontSize: '13px',
+          color: '#1565c0',
+          border: '1px solid #90caf9'
+        }}>
+          👋 <strong>Welcome to SpotBoard!</strong>
+          <br />
+          Click any website element to save it to your board
+        </div>
+      )}
+      
       <button 
         onClick={handleOpenCanvas} 
         style={{ 
@@ -118,10 +135,15 @@ function App() {
           borderRadius: '6px',
           fontWeight: '600',
           fontSize: '14px',
-          cursor: 'pointer'
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px'
         }}
       >
-        🖼️ Open Board
+        <img src="/logo.png" alt="SpotBoard" style={{ width: '20px', height: '20px' }} />
+        Open Board
       </button>
       <button 
         onClick={handleToggleCapture} 

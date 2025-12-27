@@ -3,9 +3,18 @@
   "name": "SpotBoard",
   "version": "1.0.0",
   "description": "Capture web components from any site.",
+  "icons": {
+    "16": "icon-16.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
   "action": {
     "default_popup": "index.html",
-    "default_title": "SpotBoard"
+    "default_title": "SpotBoard",
+    "default_icon": {
+      "16": "icon-16.png",
+      "48": "icon-48.png"
+    }
   },
   "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "host_permissions": ["<all_urls>"],

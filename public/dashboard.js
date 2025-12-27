@@ -301,8 +301,11 @@ function loadComponentsFromSync() {
           if (updated.length === 0) {
             container.innerHTML = `
               <div class="empty-state">
-                <h2>No components yet</h2>
-                <p>Use the extension popup to capture components from any website</p>
+                <h2>Your board is empty</h2>
+                <p>Click the SpotBoard extension icon on any website to capture a component.</p>
+                <p style="color: #666; margin-top: 8px;">💡 Try capturing something you want to see updated over time.</p>
+                <p style="color: #666;">E.g.: BBC's "Most Read", Product Hunt launches, Wikipedia's "In the news"</p>
+                <p style="color: #e65100; margin-top: 12px; font-weight: 600;">❗ Remember to reload this page after you have captured something new!</p>
               </div>
             `;
           }
