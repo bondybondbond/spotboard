@@ -293,28 +293,31 @@ function handleExit(event: MouseEvent) {
 function showStyledNotification(message: string, type: 'success' | 'error' = 'success') {
   const modal = document.createElement('div');
   modal.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 999999;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    background: rgba(0, 0, 0, 0.5) !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    z-index: 2147483647 !important;
+    isolation: isolate !important;
   `;
   
   const modalContent = document.createElement('div');
   const bgColor = type === 'success' ? '#2d3748' : '#742a2a';
   modalContent.style.cssText = `
-    background: ${bgColor};
-    color: white;
-    padding: 24px;
-    border-radius: 8px;
-    max-width: 400px;
-    width: 90%;
-    text-align: center;
+    background: ${bgColor} !important;
+    color: white !important;
+    padding: 24px !important;
+    border-radius: 8px !important;
+    max-width: 400px !important;
+    width: 90% !important;
+    text-align: center !important;
+    position: relative !important;
+    z-index: 2147483647 !important;
   `;
   
   modalContent.innerHTML = `
@@ -923,25 +926,34 @@ function handleClick(event: MouseEvent) {
   log('🎯 Final selector:', selector);
   
   // Show top-right confirmation modal
-  showCaptureConfirmation(target, name, selector);
+  log('📞 About to call showCaptureConfirmation...');
+  try {
+    showCaptureConfirmation(target, name, selector);
+    log('✅ showCaptureConfirmation returned');
+  } catch (error) {
+    console.error('❌ showCaptureConfirmation FAILED:', error);
+  }
 }
 
 function showCaptureConfirmation(target: HTMLElement, name: string, selector: string) {
+  log('🚀 showCaptureConfirmation called with:', { name, selector });
+  
   // Create top-right confirmation modal
   const modal = document.createElement('div');
   modal.id = 'spotboard-capture-confirmation';
   modal.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    background: #6b46c1;
-    color: white;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    z-index: 999999;
-    min-width: 300px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    position: fixed !important;
+    top: 20px !important;
+    right: 20px !important;
+    background: #6b46c1 !important;
+    color: white !important;
+    padding: 20px !important;
+    border-radius: 12px !important;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+    z-index: 2147483647 !important;
+    min-width: 300px !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    isolation: isolate !important;
   `;
   
   modal.innerHTML = `
@@ -964,7 +976,9 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
     </div>
   `;
   
+  log('📦 Modal HTML created, appending to body...');
   document.body.appendChild(modal);
+  log('✅ Modal appended to DOM successfully');
   
     
   // Confirm button handler - use capture phase to ensure it fires first
