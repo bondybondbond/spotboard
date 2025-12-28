@@ -105,7 +105,7 @@ function App() {
   });
 
   return (
-    <div style={{ padding: '10px', minWidth: '300px' }}>
+    <div style={{ padding: '10px', width: '340px', maxWidth: '100vw' }}>
       {/* First-time user tooltip */}
       {components.length === 0 && (
         <div style={{ 
@@ -174,7 +174,7 @@ function App() {
       )}
       <div>
         {filteredComponents.map((component: Component, index) => (
-          <div key={index} style={{ border: '1px solid #ccc', padding: '10px', marginBottom: '10px' }}>
+          <div key={index} style={{ border: '1px solid #ccc', padding: '10px', marginBottom: '10px', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
               {component.favicon && (
                 <img 
@@ -188,7 +188,18 @@ function App() {
                 Delete
               </button>
             </div>
-            <small>URL: {component.url}</small>
+            <small 
+              title={component.url}
+              style={{ 
+                display: 'block', 
+                overflow: 'hidden', 
+                textOverflow: 'ellipsis', 
+                whiteSpace: 'nowrap',
+                color: '#666'
+              }}
+            >
+              {component.url}
+            </small>
           </div>
         ))}
       </div>

@@ -412,7 +412,8 @@ function loadComponentsFromSync() {
               <a href="${component.url || '#'}" 
                  target="_blank" 
                  rel="noopener noreferrer"
-                 style="color: #63b3ed; text-decoration: none; word-break: break-all; display: block; padding: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px;">
+                 title="${component.url || 'No URL'}"
+                 style="color: #63b3ed; text-decoration: none; display: block; padding: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                 ${component.url || 'No URL'}
               </a>
             </div>
