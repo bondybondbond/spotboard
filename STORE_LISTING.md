@@ -6,7 +6,10 @@
 **Why needed:** To capture the specific webpage section you select. This permission allows SpotBoard to read the HTML content of the component you've chosen to save when you click the capture button.
 
 ### storage  
-**Why needed:** To save your captured components locally on your device. All data is stored in Chrome's local storage and never leaves your computer.
+**Why needed:** To save your captured components using Chrome's hybrid storage system:
+- **Sync storage**: Component metadata (URLs, selectors, labels) syncs across your Chrome browsers
+- **Local storage**: HTML content stays on each device for unlimited storage
+This enables cross-device component lists without hitting cloud quota limits while keeping your content private and local.
 
 ### scripting
 **Why needed:** To inject the visual capture interface onto webpages, allowing you to select which component you want to capture.
@@ -22,11 +25,11 @@
 ## Store Listing Description (Suggested)
 
 **Short Description (132 char limit):**
-Capture specific sections from any website and display them in a synced dashboard. Works across all your Chrome browsers.
+Capture specific webpage sections you select into a synced dashboard. User-driven monitoring for publicly accessible content.
 
 **Detailed Description:**
 
-SpotBoard lets you capture and track specific sections of websites in a personal dashboard—without repeatedly visiting those sites.
+SpotBoard lets you capture and track specific sections of websites **that you manually select** in a personal dashboard—without repeatedly visiting those sites.
 
 **Perfect for tracking:**
 - "Most read" articles on news sites
@@ -37,20 +40,25 @@ SpotBoard lets you capture and track specific sections of websites in a personal
 
 **How it works:**
 1. Click the extension icon on any webpage
-2. Select the section you want to capture
+2. **You select** the specific section you want to capture
 3. View all your captures in a customizable dashboard
-4. Refresh manually to see updated content
+4. Refresh manually when you want updated content
 
-**Privacy-first design:**
-✓ Syncs across your Chrome browsers (using Google's secure sync)
-✓ No SpotBoard servers or accounts required
-✓ No tracking or analytics from us
-✓ Under 100KB storage limit
-✓ Open source
+**Privacy & Storage:**
+- **Hybrid storage**: Component lists sync across Chrome browsers, HTML content stays local
+- **No SpotBoard servers**: Everything stored in Chrome's built-in storage
+- **No tracking or analytics from us**
+- **User-driven**: You choose what to capture, when to refresh, when to delete
+- **Open source**: Full transparency
+- **Permission transparency**: All permissions are used only for the features described above; SpotBoard never sends page content to our servers or any third party
 
-**Note:** Users are responsible for complying with the terms of service of websites they capture content from. SpotBoard fetches publicly accessible content only.
+**User Responsibility:**
+You are responsible for ensuring you have the right to access and capture content from websites you visit, and for respecting those sites' terms of service. SpotBoard is designed for personal monitoring of publicly accessible content only. Do not use it to bypass paywalls, violate access controls, or for commercial data extraction.
 
-**Support:** bondybondbond@gmail.com  
+**Limited Use Commitment:**
+We do not sell, repurpose, or use your captured data for advertising, AI training, or any unrelated purposes. Your data is yours alone.
+
+**Support:** spotboard@outlook.com  
 **Source Code:** https://github.com/bondybondbond/spotboard
 
 ---
@@ -59,10 +67,18 @@ SpotBoard lets you capture and track specific sections of websites in a personal
 Primary: Productivity  
 Secondary: Tools
 
-## Tags/Keywords:
-- web scraper
-- dashboard
-- component capture
+## Tags/Keywords (Priority Order):
+**Primary tags (emphasize these):**
 - website monitoring
+- personal dashboard
 - content tracker
-- personal homepage
+- component capture
+
+**Secondary tags (include but de-emphasize):**
+- web scraper
+- bookmark manager
+
+**SEO-friendly additions:**
+- custom homepage
+- page section tracker
+- content organizer

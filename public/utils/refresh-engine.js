@@ -760,11 +760,10 @@ async function tryActiveTab(url, selector, fingerprint = null) {
  */
 async function refreshComponent(component) {
   try {
-    // Check if this site requires tab-based refresh (session-dependent content)
+        // Check if this site requires tab-based refresh (session-dependent content)
     // Count images in original for fallback detection
     const originalImgCount = (component.html_cache?.match(/<img/gi) || []).length;
-    
-    if (willNeedActiveTab(component.url)) {
+        if (willNeedActiveTab(component.url)) {
       const tabHtml = await tabBasedRefresh(component.url, component.selector, null, originalImgCount);
       
       if (tabHtml) {
@@ -814,7 +813,7 @@ async function refreshComponent(component) {
     
     const fullHtml = await response.text();
     
-    // Try to extract the component using the selector
+        // Try to extract the component using the selector
     const parser = new DOMParser();
     const doc = parser.parseFromString(fullHtml, 'text/html');
     
@@ -828,7 +827,7 @@ async function refreshComponent(component) {
       // Get ALL matching elements, not just first one
       const matches = doc.querySelectorAll(component.selector);
       
-      if (matches.length > 0) {
+            if (matches.length > 0) {
         let element = null;
         
         // If multiple matches, use fingerprint to find the right one
@@ -861,7 +860,7 @@ async function refreshComponent(component) {
         
         extractedHtml = element.outerHTML;
         
-        // HOTUKDEALS/JS-RENDERED IMAGES PATTERN: Check if original had images but extracted has none
+                // HOTUKDEALS/JS-RENDERED IMAGES PATTERN: Check if original had images but extracted has none
         // Sites like HotUKDeals render images via JavaScript - direct fetch gets text but no images
         const originalImgCount = (component.html_cache?.match(/<img/gi) || []).length;
         const extractedImgCount = (extractedHtml.match(/<img/gi) || []).length;

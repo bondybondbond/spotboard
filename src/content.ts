@@ -993,10 +993,10 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
         
         // 🎯 BATCH 2: Extract first heading for self-healing fallback
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = cleanedHTML;
-        // 🎯 EXPANDED: Include common title patterns beyond semantic HTML (60% → 85% coverage)
-        const heading = tempDiv.querySelector(`
+        // 🔧 FIX: Extract from LIVE DOM (target), not sanitized HTML
+        // Amazon and other sites inject text via JS that cloneNode doesn't capture
+        // Live DOM has the rendered text, sanitized clone may have empty spans
+        const heading = target.querySelector(`
           h1, h2, h3, h4,
           [class*="heading"], [class*="title"], [class*="header"],
           [data-testid*="heading"], [data-testid*="title"]

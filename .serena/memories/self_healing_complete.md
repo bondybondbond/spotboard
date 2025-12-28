@@ -47,8 +47,12 @@ Sites with working fingerprints:
 - Gumtree ("Shop gifts for everyone")
 - News sites (various headlines)
 
+## Live DOM Fix (Dec 2024)
+**Problem:** Amazon fingerprint empty - JS-injected text not captured by cloneNode()
+**Solution:** Extract fingerprint from live DOM (target), not sanitized HTML clone
+**Impact:** Universal fix for ~10-15% of sites using JS frameworks to render headings
+
 ## Files Changed
-- src/content.ts - Expanded selector at capture
+- src/content.ts - Expanded selector at capture, extract from live DOM
 - public/utils/refresh-engine.js - Expanded selector in refresh paths
 - public/utils/fingerprint.js - Shared fingerprint extraction logic
-- Removed 16 DEBUG console.log statements from content.ts

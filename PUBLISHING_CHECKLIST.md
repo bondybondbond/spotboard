@@ -9,48 +9,39 @@
 
 ## 📝 YOUR ACTION ITEMS (Before Upload)
 
-### 1. Create Support Email (5 mins)
-- [ ] Create Gmail account (suggestion: `[yourname].extensions@gmail.com`)
-- [ ] This will be your universal support email for all extensions
-- [ ] Or use: `componentcanvas.support@gmail.com` if you prefer project-specific
+### 1. ✅ Support Email & GitHub (DONE)
+- [x] Support email: spotboard@outlook.com
+- [x] GitHub: https://github.com/bondybondbond/spotboard
+- [x] Updated in PRIVACY.md and STORE_LISTING.md
 
-### 2. Update Placeholders (2 mins)
-Replace these placeholders in the files:
-
-**In `PRIVACY.md`:**
-- Find: `[ADD_YOUR_SUPPORT_EMAIL_HERE]`
-- Replace with: Your actual support email
-
-- Find: `[ADD_YOUR_GITHUB_USERNAME]`
-- Replace with: Your GitHub username (e.g., `manasak`)
-
-**In `STORE_LISTING.md`:**
-- Find: `[ADD_YOUR_SUPPORT_EMAIL_HERE]`
-- Replace with: Same support email
-
-- Find: `[ADD_YOUR_GITHUB_USERNAME]`
-- Replace with: Your GitHub username
-
-### 3. Test Sync Storage (10 mins)
+### 2. Test Hybrid Storage (10 mins)
+**What to test:**
 - [ ] Rebuild extension: `npm run build`
-- [ ] Load unpacked extension in Chrome
+- [ ] Load unpacked extension in Chrome (Device A)
 - [ ] Capture a component
-- [ ] Open Chrome on another device/profile (signed into same Google account)
+- [ ] Open Chrome on Device B or new profile (signed into same Google account)
 - [ ] Install extension there
-- [ ] Verify component synced automatically ✨
+- [ ] **Expected behavior:**
+  - ✅ Component list appears on Device B (metadata synced)
+  - ❌ Content is empty on Device B (needs manual refresh - this is correct!)
+  - ✅ Click "Refresh All" on Device B → content loads
 
-**If sync doesn't work:**
-- Check you're signed into Chrome on both devices
+**If component list doesn't sync:**
+- Check you're signed into Chrome on both devices with same Google account
 - Check extension permissions in manifest.json includes "storage"
 - Check browser console for errors
+- Verify you're NOT in Incognito mode (sync disabled there)
 
-### 4. Register as Chrome Web Store Developer (10 mins)
+**If content appears without refresh:**
+- That's wrong - report to me (content should be local-only)
+
+### 3. Register as Chrome Web Store Developer (10 mins)
 - [ ] Go to: https://chrome.google.com/webstore/devconsole
 - [ ] Sign in with your **PERSONAL Gmail** (not the support email)
 - [ ] Pay $5 registration fee (one-time, lifetime)
 - [ ] Accept developer agreement
 
-### 5. Build for Upload (5 mins)
+### 4. Build for Upload (5 mins)
 ```bash
 npm run build
 ```
@@ -60,7 +51,7 @@ Then ZIP the **dist folder** contents:
 - OR manually select all files INSIDE dist/ and zip them
 - **Important**: The manifest.json should be at the ROOT of the ZIP, not in a subfolder
 
-### 6. Upload to Chrome Web Store (15 mins)
+### 5. Upload to Chrome Web Store (15 mins)
 - [ ] Go to Chrome Web Store Developer Console
 - [ ] Click "New Item"
 - [ ] Upload your ZIP file
@@ -74,7 +65,7 @@ Then ZIP the **dist folder** contents:
 
 - [ ] Submit for review
 
-### 7. Wait for Review (1-3 days)
+### 6. Wait for Review (1-3 days)
 - Google will review your extension
 - You'll get email when approved or if changes needed
 - First submission often gets rejected - don't panic, just fix and resubmit
@@ -83,9 +74,20 @@ Then ZIP the **dist folder** contents:
 
 ## 📌 Key Points to Remember
 
-**Storage:** You're using `chrome.storage.sync` (100KB limit, syncs across devices via Google)
+**Storage:** You're using **HYBRID STORAGE**:
+- Sync storage: Component metadata (8KB per component, 100KB total)
+- Local storage: HTML content (unlimited, never leaves device)
 
-**Privacy:** All data goes through Google's servers for sync, but YOU don't operate any servers
+**Privacy:** Metadata passes through Google's servers for sync, HTML content stays local. YOU don't operate any servers.
+
+**Compliance - Critical for Approval:**
+- ✅ User-driven: Users select what to capture (not bulk crawler)
+- ✅ Transparent: Hybrid storage clearly disclosed
+- ✅ Limited Use: No selling/repurposing of scraped data
+- ✅ User responsibility: Users must respect site ToS
+- ✅ Takedown process: We'll help users comply if sites complain
+- ✅ Analytics future-proofed: Policy allows adding telemetry later (with update + opt-in)
+- ✅ Keywords prioritize "monitoring" over "scraper" (safer positioning)
 
 **Vite Build:** Your bundled code is compliant (standard minification, not obfuscation)
 
@@ -121,11 +123,70 @@ Then ZIP the **dist folder** contents:
 
 ---
 
+## 🔮 Future Analytics Integration (When You're Ready)
+
+When you want to add telemetry for funnel optimization:
+
+**What to track (compliant examples):**
+- ✅ Number of captures per user (to understand engagement)
+- ✅ Feature usage (which features are used/ignored)
+- ✅ Error rates (to fix bugs)
+- ✅ Performance metrics (load times, refresh success rates)
+
+**What NOT to track:**
+- ❌ Actual captured content (HTML)
+- ❌ URLs of sites users visit (privacy violation)
+- ❌ User identity linked to browsing behavior
+- ❌ Anything that could be sold to third parties
+
+**Implementation checklist:**
+1. Update PRIVACY.md with specific telemetry details
+2. Add opt-in toggle in extension settings (or clear opt-out)
+3. Use privacy-preserving analytics (e.g., Plausible, Fathom) not Google Analytics
+4. Update Chrome Web Store listing with new data collection details
+5. Submit updated version for review (Google will re-review privacy disclosure)
+
+**Recommended tool:** [Plausible Analytics](https://plausible.io/) - GDPR-compliant, no cookies, privacy-first
+
+---
+
+## 🛡️ Compliance Checklist (Read Before Submitting)
+
+Google scrutinizes scraping extensions heavily. Make sure you can answer YES to all:
+
+**Positioning:**
+- [ ] ✅ Extension framed as "user monitors specific pages" (not "bulk crawler")
+- [ ] ✅ Requires explicit user action to select content (not automatic)
+- [ ] ✅ Privacy policy clearly states hybrid storage (sync metadata + local content)
+
+**Limited Use Policy:**
+- [ ] ✅ No selling of scraped content
+- [ ] ✅ No repurposing for unrelated purposes (ads, AI training, etc.)
+- [ ] ✅ No human review except user support requests
+- [ ] ✅ Explicitly stated in PRIVACY.md and STORE_LISTING.md
+
+**User Responsibility:**
+- [ ] ✅ Users must respect website ToS (stated in docs)
+- [ ] ✅ Not designed for bypassing paywalls/access controls (stated in docs)
+- [ ] ✅ Personal monitoring only, not commercial resale (stated in docs)
+
+**Takedown Process:**
+- [ ] ✅ We'll help users comply if sites complain (stated in privacy policy)
+
+**Transparency:**
+- [ ] ✅ Permissions clearly justified (STORE_LISTING.md)
+- [ ] ✅ Data flow clearly explained (sync vs local)
+- [ ] ✅ Open source (GitHub link in listing)
+
+**If any NO answers:** Fix before submitting or risk rejection/takedown.
+
+---
+
 ## 💡 Need Help?
 
 If you get stuck or have questions:
 1. Check Chrome Web Store documentation: https://developer.chrome.com/docs/webstore/
-2. Re-read the policies we reviewed earlier
+2. Re-read the compliance checklist above
 3. Google specific error messages
 4. Ask me in next session!
 
