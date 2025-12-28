@@ -58,22 +58,42 @@ SpotBoard collects only the information necessary to provide its core functional
 - Use scraped data for advertising, AI training, or unrelated purposes
 - Perform human review of your data (except for user-initiated support requests)
 
-## What We Don't Collect (Currently)
-- Personal information (name, email, phone number)
-- Browsing history (beyond the pages you explicitly capture)
+## What We Don't Collect
+
+**We NEVER collect:**
+- Authentication credentials or passwords
+- Payment card numbers or financial account information
+- Personal communications (emails, texts, chat messages)
 - Location data
-- Payment information
-- Analytics or usage statistics
+- Health information
 
-**Security Commitment:** We will never collect sensitive categories such as authentication credentials, passwords, payment card numbers, or financial account information. SpotBoard does not interact with login forms, payment fields, or secure authentication systems.
+**We don't CURRENTLY collect (but may add with your consent):**
+- Analytics or usage statistics (planned for future improvement)
+- Error diagnostics (to help fix bugs faster)
 
-**Future Analytics:** We do not currently collect analytics or usage statistics. If we ever add optional telemetry (such as error diagnostics or feature usage metrics to improve the product), we will:
-- Update this policy with clear explanation of what data is collected and why
-- Make analytics opt-in or provide a clear opt-out mechanism
-- Never sell or share analytics data with third parties
-- Continue to comply with Chrome Web Store Limited Use policies
+**We only collect what you explicitly capture:**
+- URLs of pages you select to capture
+- HTML content of sections you choose to save
+- Custom labels and notes you add
 
-Any analytics would be limited to improving SpotBoard's functionality and user experience only.
+**About Future Analytics:**
+We plan to add **optional** analytics in the future to understand:
+- How many components users capture (to measure engagement)
+- Which features are used vs ignored (to prioritize improvements)
+- Error rates (to fix bugs faster)
+
+**When we add analytics:**
+- This policy will be updated with specifics
+- You'll have opt-in or opt-out control
+- We'll NEVER sell or share analytics data
+- We'll NEVER track which specific sites you visit
+
+**About Premium Features (If We Add Them):**
+If we ever add paid features ($1.99/mo tier), we would need to collect:
+- Payment information (handled by Google/Stripe, not stored by us)
+- Billing email (for receipts only)
+
+This would only apply to paying users and would be clearly disclosed before purchase.
 
 ## Permissions Explained
 SpotBoard requires the following Chrome permissions to function:
@@ -86,12 +106,23 @@ SpotBoard requires the following Chrome permissions to function:
 
 These permissions are used **only** for the stated functionality and nothing else.
 
-## Data Control
+## Data Control & User Rights
 You have complete control over your data:
 
 - **Delete Components**: Remove any captured component at any time from the dashboard
-- **Uninstall**: Removing the extension will delete all stored data from your device
-- **No Recovery**: Since we don't store your data on our servers, we cannot recover deleted components
+- **Uninstall**: Removing the extension will delete all stored data from your device (both sync and local storage)
+- **Request Data Deletion**: Email spotboard@outlook.com to request deletion of any synced metadata from Chrome's sync storage
+- **Data Export**: Your captured components are stored locally in Chrome storage - you can export them by using Chrome's built-in developer tools or by contacting us for assistance
+- **No Recovery**: Since we don't store your data on our servers, we cannot recover deleted components once removed
+
+**GDPR/UK Data Protection Rights:**
+If you are in the UK or EEA, you have the right to:
+- Access your personal data (though SpotBoard stores minimal personal data)
+- Request deletion of your data
+- Object to data processing
+- Lodge a complaint with your local data protection authority
+
+To exercise these rights, contact: spotboard@outlook.com
 
 ## User Responsibilities & Compliance
 
@@ -123,6 +154,11 @@ When you capture content from websites, you are responsible for complying with t
 
 ## Changes to This Policy
 We may update this privacy policy from time to time. Any changes will be reflected in the "Last Updated" date above. Continued use of SpotBoard after changes constitutes acceptance of the updated policy.
+
+**How we notify you of changes:**
+- Major changes (e.g., adding analytics, changing data collection) will be announced via the extension's changelog on GitHub
+- You can view the full changelog here: https://github.com/bondybondbond/spotboard/releases
+- Privacy policy updates will be visible on GitHub with timestamps
 
 ## Contact
 If you have questions about this privacy policy or SpotBoard's data practices, please contact:

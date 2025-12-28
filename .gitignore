@@ -31,3 +31,7 @@ dist-ssr
 # Test files
 *.mjs
 test-*.js
+
+# Temporary submission files
+.do not upload/
+_do not upload/

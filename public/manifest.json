@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SpotBoard",
   "version": "1.0.0",
-  "description": "Capture web components from any site.",
+  "description": "Capture webpage sections into a synced dashboard. User-driven monitoring for publicly accessible content.",
   "icons": {
     "16": "icon-16.png",
     "48": "icon-48.png",
