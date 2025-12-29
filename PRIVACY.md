@@ -1,7 +1,7 @@
 # SpotBoard Privacy Policy
 
-**Effective Date:** December 27, 2025  
-**Last Updated:** December 27, 2025
+**Effective Date:** December 27, 2024  
+**Last Updated:** December 29, 2024
 
 ## Overview
 SpotBoard is a Chrome extension that allows you to capture specific sections of websites that **you explicitly select** and display them in a personal dashboard. We are committed to protecting your privacy and being transparent about our data practices.
@@ -88,12 +88,7 @@ We plan to add **optional** analytics in the future to understand:
 - We'll NEVER sell or share analytics data
 - We'll NEVER track which specific sites you visit
 
-**About Premium Features (If We Add Them):**
-If we ever add paid features ($1.99/mo tier), we would need to collect:
-- Payment information (handled by Google/Stripe, not stored by us)
-- Billing email (for receipts only)
 
-This would only apply to paying users and would be clearly disclosed before purchase.
 
 ## Permissions Explained
 SpotBoard requires the following Chrome permissions to function:
