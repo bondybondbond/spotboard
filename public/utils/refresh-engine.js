@@ -20,10 +20,11 @@ class RefreshToastManager {
     this.currentComponent = '';
   }
   
-  startRefresh(total) {
+  startRefresh(total, customMessage = null) {
     this.totalComponents = total;
     this.completedCount = 0;
     this.successCount = 0;
+    this.customMessage = customMessage; // Store custom message for progress display
     this.createToast();
   }
   
@@ -32,10 +33,10 @@ class RefreshToastManager {
     
     if (!this.toast) this.createToast();
     
-    // Update progress section
+    // Update progress section (use custom message if available)
     const progressText = this.completedCount > 0 
       ? `✓ ${this.successCount}/${this.totalComponents} refreshed`
-      : `Refreshing ${this.totalComponents} components...`;
+      : (this.customMessage || `Refreshing ${this.totalComponents} components...`);
     
     this.toast.querySelector('.toast-progress').textContent = progressText;
     
@@ -69,9 +70,9 @@ class RefreshToastManager {
     }
   }
   
-  finishAll() {
+  finishAll(pausedCount = 0) {
     this.hideToast();
-    this.showSuccessToast();
+    this.showSuccessToast(pausedCount);
   }
   
   createToast() {
@@ -118,7 +119,7 @@ class RefreshToastManager {
     }
   }
   
-  showSuccessToast() {
+  showSuccessToast(pausedCount = 0) {
     const allSuccess = this.successCount === this.totalComponents;
     const message = allSuccess 
       ? `All ${this.totalComponents} components refreshed! 👍🏼`
@@ -129,11 +130,12 @@ class RefreshToastManager {
     
     successToast.innerHTML = `
       <div class="refresh-toast__content">
-        <svg class="refresh-toast__icon" viewBox="0 0 24 24" width="24" height="24">
-          <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <svg class="refresh-toast__icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+          <polygon points="5 3 19 12 5 21"/>
         </svg>
         <div class="refresh-toast__text">
           <div class="refresh-toast__title">You're back! ${message}</div>
+          ${pausedCount > 0 ? `<div class="refresh-toast__subtitle" style="margin-top: 4px;">(${pausedCount} paused)</div>` : ''}
         </div>
       </div>
     `;
@@ -1241,13 +1243,33 @@ async function refreshAll() {
       return;
     }
     
-    // Start toast with total count
-    toastManager.startRefresh(components.length);
+    // Separate active vs paused components
+    const activeComponents = components.filter(c => !c.refreshPaused);
+    const pausedComponents = components.filter(c => c.refreshPaused);
     
-    // Refresh components sequentially for better UX feedback
+    // Handle all-paused case
+    if (activeComponents.length === 0) {
+      btn.textContent = `✅ All ${pausedComponents.length} paused`;
+      setTimeout(() => {
+        btn.textContent = '🔄 Refresh All';
+        btn.style.background = '#007bff';
+        btn.disabled = false;
+      }, 2000);
+      return;
+    }
+    
+    // Start toast with active count (show paused count if any)
+    const toastMessage = pausedComponents.length > 0 
+      ? `${activeComponents.length} active (${pausedComponents.length} paused)`
+      : `${activeComponents.length} components`;
+    toastManager.startRefresh(activeComponents.length, toastMessage);
+    
+    // Refresh active components only (skip paused)
     const results = [];
-    for (let i = 0; i < components.length; i++) {
-      const comp = components[i];
+    const componentRefreshMap = new Map(); // Track which components were refreshed
+    
+    for (let i = 0; i < activeComponents.length; i++) {
+      const comp = activeComponents[i];
       const displayName = comp.customLabel || comp.name;
       const needsActiveTab = requiresVisibleTab(comp.url);
       
@@ -1257,60 +1279,86 @@ async function refreshAll() {
       // Do the refresh
       const refreshResult = await refreshComponent(comp);
       results.push(refreshResult);
+      componentRefreshMap.set(comp.id, refreshResult);
       
       // Mark this component as complete
       toastManager.completeComponent(refreshResult.success);
     }
     
     // Update components with new data (split between sync and local storage)
-    // NEW: Build per-component sync updates
+    // Handle both active (refreshed) and paused (unchanged) components
     const syncUpdates = {};
     const updatedLocalData = {};
     
-    components.forEach((comp, index) => {
-      const result = results[index];
+    // Process all components (active + paused)
+    components.forEach((comp) => {
+      const result = componentRefreshMap.get(comp.id); // undefined for paused components
       
-      // Save metadata to sync with per-component key
-      // IMPORTANT: Include excludedSelectors for cross-device sync!
-      syncUpdates[`comp-${comp.id}`] = {
-        id: comp.id,
-        name: comp.name,
-        url: comp.url,
-        favicon: comp.favicon,
-        customLabel: comp.customLabel,
-        headingFingerprint: comp.headingFingerprint,
-        selector: comp.selector,
-        excludedSelectors: comp.excludedSelectors || [], // Cross-device exclusions!
-        last_refresh: result.success ? result.last_refresh : comp.last_refresh // Preserve timestamp
-      };
-      
-      // Save full data to local (including HTML)
-      if (result.success) {
-        // Validate HTML is not empty before marking as success
-        if (!result.html_cache || result.html_cache.length < 50) {
-          console.error(`⚠️ Empty HTML detected for ${comp.name} - keeping original`);
-          updatedLocalData[comp.id] = {
-            selector: comp.selector,
-            html_cache: comp.html_cache,
-            last_refresh: comp.last_refresh,
-            excludedSelectors: comp.excludedSelectors || []
-          };
-        } else {
-          updatedLocalData[comp.id] = {
-            selector: comp.selector,
-            html_cache: result.html_cache,
-            last_refresh: result.last_refresh,
-            excludedSelectors: comp.excludedSelectors || []
-          };
-        }
-      } else {
-        // Keep existing data if refresh failed
+      // Handle paused components - keep existing data unchanged
+      if (!result) {
+        // Component was paused - preserve all existing data
+        syncUpdates[`comp-${comp.id}`] = {
+          id: comp.id,
+          name: comp.name,
+          url: comp.url,
+          favicon: comp.favicon,
+          customLabel: comp.customLabel,
+          headingFingerprint: comp.headingFingerprint,
+          selector: comp.selector,
+          excludedSelectors: comp.excludedSelectors || [],
+          refreshPaused: comp.refreshPaused, // Preserve paused state!
+          last_refresh: comp.last_refresh
+        };
+        
         updatedLocalData[comp.id] = {
           selector: comp.selector,
           html_cache: comp.html_cache,
           last_refresh: comp.last_refresh,
           excludedSelectors: comp.excludedSelectors || []
         };
+      } else {
+        // Component was refreshed - update with new data
+        syncUpdates[`comp-${comp.id}`] = {
+          id: comp.id,
+          name: comp.name,
+          url: comp.url,
+          favicon: comp.favicon,
+          customLabel: comp.customLabel,
+          headingFingerprint: comp.headingFingerprint,
+          selector: comp.selector,
+          excludedSelectors: comp.excludedSelectors || [],
+          refreshPaused: comp.refreshPaused, // Preserve state
+          last_refresh: result.success ? result.last_refresh : comp.last_refresh
+        };
+        
+        // Save full data to local (including HTML)
+        if (result.success) {
+          // Validate HTML is not empty before marking as success
+          if (!result.html_cache || result.html_cache.length < 50) {
+            console.error(`⚠️ Empty HTML detected for ${comp.name} - keeping original`);
+            updatedLocalData[comp.id] = {
+              selector: comp.selector,
+              html_cache: comp.html_cache,
+              last_refresh: comp.last_refresh,
+              excludedSelectors: comp.excludedSelectors || []
+            };
+          } else {
+            updatedLocalData[comp.id] = {
+              selector: comp.selector,
+              html_cache: result.html_cache,
+              last_refresh: result.last_refresh,
+              excludedSelectors: comp.excludedSelectors || []
+            };
+          }
+        } else {
+          // Keep existing data if refresh failed
+          updatedLocalData[comp.id] = {
+            selector: comp.selector,
+            html_cache: comp.html_cache,
+            last_refresh: comp.last_refresh,
+            excludedSelectors: comp.excludedSelectors || []
+          };
+        }
       }
     });
     
@@ -1323,12 +1371,15 @@ async function refreshAll() {
       chrome.storage.local.set({ componentsData: updatedLocalData }, resolve);
     });
     
-    // Show success toast
-    toastManager.finishAll();
+    // Show success toast with paused count
+    toastManager.finishAll(pausedComponents.length);
     
     // Log summary to console (minimal)
     const successCount = results.filter(r => r.success).length;
-    console.log(`Refresh complete: ${successCount}/${results.length}`);
+    const logMessage = pausedComponents.length > 0 
+      ? `Refresh complete: ${successCount}/${activeComponents.length} (${pausedComponents.length} paused)`
+      : `Refresh complete: ${successCount}/${activeComponents.length}`;
+    console.log(logMessage);
     
     // Update button
     btn.textContent = `✅ Done`;

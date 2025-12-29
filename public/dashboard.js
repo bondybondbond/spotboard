@@ -162,7 +162,7 @@ function loadComponentsFromSync() {
   
     components.forEach((component, index) => {
       const card = document.createElement('div');
-      card.className = 'component-card';
+      card.className = `component-card${component.refreshPaused ? ' paused' : ''}`;
       
       // Format timestamp with both absolute and relative time
       let timestampText = 'Never refreshed';
@@ -252,9 +252,20 @@ function loadComponentsFromSync() {
             </span>
             <span style="color: #6c757d; font-size: 12px; white-space: nowrap;">•</span>
             <span style="color: #6c757d; font-size: 12px; white-space: nowrap;">⏰ ${relativeTime}</span>
-            <span class="info-icon" style="color: #6c757d; font-size: 14px; cursor: pointer; margin-left: 4px;" 
-                  title="Click for details">ℹ️</span>
+            <span class="info-icon" style="cursor: pointer; margin-left: 4px; display: inline-flex; align-items: center;" title="Click for details">
+              <svg width="16" height="16" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                <circle fill="#2196F3" cx="24" cy="24" r="21"/>
+                <rect x="22" y="22" fill="#ffffff" width="4" height="11"/>
+                <circle fill="#ffffff" cx="24" cy="16.5" r="2.5"/>
+              </svg>
+            </span>
           </div>
+          <button class="pause-btn" style="padding: 2px; background: transparent; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-left: 8px; flex-shrink: 0; transition: all 0.2s;" title="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}">
+            ${component.refreshPaused 
+              ? '<svg width="18" height="18" viewBox="0 0 330 330" xmlns="http://www.w3.org/2000/svg"><path d="M315,0H15C6.716,0,0,6.716,0,15v300c0,8.284,6.716,15,15,15h300c8.284,0,15-6.716,15-15V15C330,6.716,323.284,0,315,0z M300,300H30V30h270V300z"/><path d="M194.25,247.5c8.284,0,15-6.716,15-15v-135c0-8.284-6.716-15-15-15c-8.284,0-15,6.716-15,15v135C179.25,240.784,185.966,247.5,194.25,247.5z"/><path d="M135.75,247.5c8.284,0,15-6.716,15-15v-135c0-8.284-6.716-15-15-15s-15,6.716-15,15v135C120.75,240.784,127.466,247.5,135.75,247.5z"/></svg>'
+              : '<svg width="18" height="18" viewBox="0 0 330 330" xmlns="http://www.w3.org/2000/svg"><path d="M315,0H15C6.716,0,0,6.716,0,15v300c0,8.284,6.716,15,15,15h300c8.284,0,15-6.716,15-15V15C330,6.716,323.284,0,315,0z M300,300H30V30h270V300z"/><path d="M113.729,245.62c2.266,1.256,4.77,1.88,7.271,1.88c2.763,0,5.523-0.763,7.95-2.28l108-67.499c4.386-2.741,7.05-7.548,7.05-12.72c0-5.172-2.664-9.979-7.05-12.72l-108-67.501c-4.623-2.891-10.453-3.043-15.222-0.4C108.959,87.024,106,92.047,106,97.5v135C106,237.953,108.959,242.976,113.729,245.62z"/></svg>'
+            }
+          </button>
           <button class="delete-btn" style="padding: 4px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; margin-left: 8px; flex-shrink: 0;">Delete</button>
         </div>
         <div class="component-content" style="margin-top: 0; padding: 12px; background: #ffffff; border-radius: 0 0 6px 6px; max-height: 300px; overflow: auto;">
@@ -269,6 +280,46 @@ function loadComponentsFromSync() {
         // Force remove all cursor styles
         removeCursorStyles(contentDiv);
       }
+      
+      // Pause/Resume functionality
+      const pauseBtn = card.querySelector('.pause-btn');
+      pauseBtn.addEventListener('click', async () => {
+        // Toggle pause state
+        component.refreshPaused = !component.refreshPaused;
+        
+        // Update button UI with SVG swap (rounded square versions)
+        pauseBtn.innerHTML = component.refreshPaused 
+          ? '<svg width="18" height="18" viewBox="0 0 330 330" xmlns="http://www.w3.org/2000/svg"><path d="M315,0H15C6.716,0,0,6.716,0,15v300c0,8.284,6.716,15,15,15h300c8.284,0,15-6.716,15-15V15C330,6.716,323.284,0,315,0z M300,300H30V30h270V300z"/><path d="M194.25,247.5c8.284,0,15-6.716,15-15v-135c0-8.284-6.716-15-15-15c-8.284,0-15,6.716-15,15v135C179.25,240.784,185.966,247.5,194.25,247.5z"/><path d="M135.75,247.5c8.284,0,15-6.716,15-15v-135c0-8.284-6.716-15-15-15s-15,6.716-15,15v135C120.75,240.784,127.466,247.5,135.75,247.5z"/></svg>'
+          : '<svg width="18" height="18" viewBox="0 0 330 330" xmlns="http://www.w3.org/2000/svg"><path d="M315,0H15C6.716,0,0,6.716,0,15v300c0,8.284,6.716,15,15,15h300c8.284,0,15-6.716,15-15V15C330,6.716,323.284,0,315,0z M300,300H30V30h270V300z"/><path d="M113.729,245.62c2.266,1.256,4.77,1.88,7.271,1.88c2.763,0,5.523-0.763,7.95-2.28l108-67.499c4.386-2.741,7.05-7.548,7.05-12.72c0-5.172-2.664-9.979-7.05-12.72l-108-67.501c-4.623-2.891-10.453-3.043-15.222-0.4C108.959,87.024,106,92.047,106,97.5v135C106,237.953,108.959,242.976,113.729,245.62z"/></svg>';
+        pauseBtn.title = component.refreshPaused ? 'Resume refresh' : 'Pause refresh';
+        
+        // Update card opacity
+        if (component.refreshPaused) {
+          card.classList.add('paused');
+        } else {
+          card.classList.remove('paused');
+        }
+        
+        // Save to sync storage
+        chrome.storage.sync.get(`comp-${component.id}`, (result) => {
+          const compData = result[`comp-${component.id}`];
+          if (compData) {
+            compData.refreshPaused = component.refreshPaused;
+            chrome.storage.sync.set({ [`comp-${component.id}`]: compData }, () => {
+              console.log(`✅ ${component.refreshPaused ? 'Paused' : 'Resumed'}:`, component.id);
+            });
+          }
+        });
+        
+        // Show toast notification
+        showToast(
+          component.refreshPaused ? 'Paused' : 'Resumed',
+          component.refreshPaused 
+            ? `"${component.customLabel || component.name}" won't refresh` 
+            : `"${component.customLabel || component.name}" will refresh`,
+          component.refreshPaused ? 'info' : 'success'
+        );
+      });
       
       // Delete functionality
       const deleteBtn = card.querySelector('.delete-btn');
@@ -458,6 +509,60 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshBtn.addEventListener('click', refreshAll);
   }
 });
+
+// Simple toast notification for pause/resume
+function showToast(title, message, type = 'info') {
+  // Remove any existing toast
+  const existingToast = document.querySelector('.simple-toast');
+  if (existingToast) {
+    existingToast.remove();
+  }
+  
+  // Create toast element
+  const toast = document.createElement('div');
+  toast.className = `simple-toast simple-toast--${type}`;
+  toast.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div style="display: flex; align-items: center;">
+        ${type === 'success' 
+          ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21"/></svg>'
+          : type === 'info' 
+          ? '<svg width="20" height="20" viewBox="0 0 330 330" fill="white"><path d="M315,0H15C6.716,0,0,6.716,0,15v300c0,8.284,6.716,15,15,15h300c8.284,0,15-6.716,15-15V15C330,6.716,323.284,0,315,0z M300,300H30V30h270V300z"/><path d="M194.25,247.5c8.284,0,15-6.716,15-15v-135c0-8.284-6.716-15-15-15c-8.284,0-15,6.716-15,15v135C179.25,240.784,185.966,247.5,194.25,247.5z"/><path d="M135.75,247.5c8.284,0,15-6.716,15-15v-135c0-8.284-6.716-15-15-15s-15,6.716-15,15v135C120.75,240.784,127.466,247.5,135.75,247.5z"/></svg>'
+          : '<svg width="20" height="20" viewBox="0 0 48 48"><circle fill="#2196F3" cx="24" cy="24" r="21"/><rect x="22" y="22" fill="#ffffff" width="4" height="11"/><circle fill="#ffffff" cx="24" cy="16.5" r="2.5"/></svg>'
+        }
+      </div>
+      <div style="flex: 1;">
+        <div style="font-weight: 600; margin-bottom: 2px;">${title}</div>
+        <div style="font-size: 13px; opacity: 0.9;">${message}</div>
+      </div>
+    </div>
+  `;
+  
+  // Add toast styles
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: ${type === 'success' ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.95) 0%, rgba(22, 163, 74, 0.95) 100%)' : 
+                 type === 'info' ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.95) 0%, rgba(37, 99, 235, 0.95) 100%)' :
+                 'linear-gradient(135deg, rgba(25, 35, 55, 0.95) 0%, rgba(35, 45, 65, 0.95) 100%)'};
+    color: white;
+    padding: 16px 20px;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 20, 60, 0.3);
+    z-index: 10000;
+    animation: slideInCool 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    max-width: 380px;
+  `;
+  
+  document.body.appendChild(toast);
+  
+  // Auto-hide after 3 seconds
+  setTimeout(() => {
+    toast.style.animation = 'slideOutCool 0.3s ease-in';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
 
 // Board name editing functionality
 const boardNameElement = document.getElementById('board-name');

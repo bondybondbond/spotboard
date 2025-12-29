@@ -57,6 +57,22 @@
     .component-card:hover {
       box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     }
+    /* Paused card styling - dimmed to 85% opacity */
+    .component-card.paused {
+      opacity: 0.85;
+    }
+    .component-card.paused .card-header {
+      background: #e9ecef !important;
+    }
+    /* Pause button hover states - borderless design */
+    .pause-btn:hover {
+      background: rgba(0, 0, 0, 0.05) !important;
+      transform: scale(1.1);
+      border-radius: 4px;
+    }
+    .pause-btn:active {
+      transform: scale(0.95);
+    }
     /* Force default cursor on captured content (but not links) */
     .component-content {
       cursor: default;
