@@ -57,6 +57,27 @@ function generateSelector(element: HTMLElement): string {
   
   log(`⚠️ Selector "${baseSelector}" matches ${matches.length} elements, adding context...`);
   
+  // 🆕 TABLE CELL DETECTION: Prepend column selector to make it unique
+  const cellElement = element.closest('td, th') as HTMLTableCellElement | null;
+  if (cellElement) {
+    const columnIndex = cellElement.cellIndex; // 0-based
+    if (columnIndex !== undefined && columnIndex >= 0) {
+      const cellTag = cellElement.tagName.toLowerCase();
+      // Check if element is direct child of cell or nested
+      const isDirectChild = element.parentElement === cellElement;
+      const combinator = isDirectChild ? ' > ' : ' ';
+      const columnSelector = `${cellTag}:nth-child(${columnIndex + 1})${combinator}${baseSelector}`;
+      
+      const columnMatches = document.querySelectorAll(columnSelector);
+      log(`🔍 Table column selector matches ${columnMatches.length} elements`);
+      
+      if (columnMatches.length <= matches.length) {
+        log('🎯 Generated unique selector with column context:', columnSelector);
+        return columnSelector;
+      }
+    }
+  }
+  
   // For very generic selectors, go straight to path-based approach
   if (baseSelector === element.tagName.toLowerCase() && matches.length > 50) {
     log('🔤 Element is too generic, skipping to path-based selector...');
