@@ -358,7 +358,10 @@ function fixRelativeUrls(container, sourceUrl) {
     });
     
     // 🎯 FIX IMAGE SRC ATTRIBUTES
+    // Also add crossorigin="anonymous" to help SVG images load from cross-origin sources
     container.querySelectorAll('img[src]').forEach(img => {
+      // Add crossorigin for SVG compatibility (yr.no weather icons, etc.)
+      img.crossOrigin = 'anonymous';
       const src = img.getAttribute('src');
       
       // 🔧 Handle protocol-relative URLs (//upload.wikimedia.org/...)

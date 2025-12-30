@@ -1011,7 +1011,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         // Amazon and other sites inject text via JS that cloneNode doesn't capture
         // Live DOM has the rendered text, sanitized clone may have empty spans
         const heading = target.querySelector(`
-          h1, h2, h3, h4,
+          h1, h2, h3, h4, caption,
           [class*="heading"], [class*="title"], [class*="header"],
           [data-testid*="heading"], [data-testid*="title"]
         `);
@@ -1083,13 +1083,22 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
             
             // Save full component data to local storage (including selector)
             chrome.storage.local.get(['componentsData'], (localResult) => {
+              if (chrome.runtime.lastError) {
+                console.error('❌ Local storage GET error:', chrome.runtime.lastError);
+                showStyledNotification(`❌ Save failed: Could not read local storage`, 'error');
+                return;
+              }
+              
               const localData: Record<string, any> = localResult.componentsData || {};
-              localData[component.id] = {
+              
+              const dataToSave = {
                 selector: component.selector,
                 html_cache: component.html_cache,
                 last_refresh: component.last_refresh,
-                excludedSelectors: excludedSelectors  // BATCH 2: Store exclusion selectors
+                excludedSelectors: excludedSelectors
               };
+              
+              localData[component.id] = dataToSave;
               
               chrome.storage.local.set({ componentsData: localData }, () => {
                 if (chrome.runtime.lastError) {
@@ -1097,6 +1106,19 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                   showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
                   return;
                 }
+                
+                // 🔍 VERIFICATION: Read back to confirm save succeeded
+                chrome.storage.local.get(['componentsData'], (verifyResult: { componentsData?: Record<string, any> }) => {
+                  const savedData = verifyResult.componentsData?.[component.id];
+                  if (!savedData || !savedData.html_cache) {
+                    console.error('❌ VERIFICATION FAILED: Component not found in local storage after save!');
+                    console.error('   Component ID:', component.id);
+                    console.error('   Keys in storage:', Object.keys(verifyResult.componentsData || {}));
+                    showStyledNotification(`⚠️ Warning: Save may have failed - please refresh dashboard`, 'error');
+                  } else {
+                    console.log('✅ VERIFICATION PASSED: Component saved with', savedData.html_cache.length, 'bytes HTML');
+                  }
+                });
                 
                 log('✅ Full data saved to local storage');
                 log('✅ Component saved successfully (hybrid)!');

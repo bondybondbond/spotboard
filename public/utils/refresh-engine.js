@@ -987,7 +987,7 @@ async function refreshComponent(component) {
           const tempDiv = document.createElement('div');
           tempDiv.innerHTML = component.html_cache || '';
           const cachedHeading = tempDiv.querySelector(`
-            h1, h2, h3, h4,
+            h1, h2, h3, h4, caption,
             [class*="heading"], [class*="title"], [class*="header"],
             [data-testid*="heading"], [data-testid*="title"]
           `);
@@ -1017,7 +1017,7 @@ async function refreshComponent(component) {
           console.log(`🔍 [Heading Fallback] Selector not found, trying heading-based detection for: "${component.headingFingerprint}"`);
           
           const allHeadings = doc.querySelectorAll(`
-            h1, h2, h3, h4,
+            h1, h2, h3, h4, caption,
             [class*="heading"], [class*="title"], [class*="header"],
             [data-testid*="heading"], [data-testid*="title"]
           `);
@@ -1288,7 +1288,15 @@ async function refreshAll() {
     // Update components with new data (split between sync and local storage)
     // Handle both active (refreshed) and paused (unchanged) components
     const syncUpdates = {};
-    const updatedLocalData = {};
+    
+    // 🔧 FIX: Start from existing local data to avoid deleting unloaded components
+    // Previously started empty {}, which would delete any local data not in current components array
+    const existingLocalData = await new Promise(resolve => {
+      chrome.storage.local.get(['componentsData'], (result) => {
+        resolve(result.componentsData || {});
+      });
+    });
+    const updatedLocalData = { ...existingLocalData };
     
     // Process all components (active + paused)
     components.forEach((comp) => {

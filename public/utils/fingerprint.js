@@ -19,7 +19,7 @@ function extractFingerprint(html) {
   const doc = parser.parseFromString(html, 'text/html');
   
   // Look for headings first (h1-h6)
-  const heading = doc.querySelector('h1, h2, h3, h4, h5, h6');
+  const heading = doc.querySelector('h1, h2, h3, h4, h5, h6, caption');
   if (heading && heading.textContent.trim()) {
     return heading.textContent.trim().substring(0, 50);
   }
