@@ -1250,65 +1250,33 @@ function handleKeydown(event: KeyboardEvent) {
 
 // Main Toggle Logic
 
-// Show instructional tooltip when capture mode starts
-function showCaptureInstructions() {
-  // Check if tooltip already dismissed this session
-  if (sessionStorage.getItem('spotboard-instructions-shown')) {
-    return;
-  }
+// Show persistent yellow banner when capture mode is active
+function showCaptureBanner() {
+  // Don't create duplicate
+  if (document.getElementById('spotboard-capture-banner')) return;
   
-  const tooltip = document.createElement('div');
-  tooltip.id = 'spotboard-capture-instructions';
-  tooltip.style.cssText = `
+  const banner = document.createElement('div');
+  banner.id = 'spotboard-capture-banner';
+  banner.style.cssText = `
     position: fixed !important;
-    top: 20px !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
-    background: #6b46c1 !important;
-    color: white !important;
-    padding: 12px 20px !important;
-    border-radius: 8px !important;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2) !important;
-    z-index: 2147483646 !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    background: #fbbf24 !important;
+    color: #92400e !important;
+    padding: 10px 20px !important;
+    text-align: center !important;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
     font-size: 14px !important;
-    font-weight: 500 !important;
-    text-align: center !important;
+    font-weight: 600 !important;
+    z-index: 2147483646 !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
     pointer-events: none !important;
-    opacity: 0 !important;
-    transition: opacity 0.3s ease !important;
   `;
   
-  tooltip.textContent = '🎯 Hover over content to mark spots for your board';
+  banner.textContent = '🎯 Capture Mode Active - Click on any content you want to add to your board';
   
-  document.body.appendChild(tooltip);
-  
-  // Fade in
-  setTimeout(() => {
-    tooltip.style.opacity = '1';
-  }, 100);
-  
-  // Auto-dismiss after 4 seconds
-  const dismissTimer = setTimeout(() => {
-    dismissTooltip();
-  }, 4000);
-  
-  // Dismiss on first hover (user understands)
-  const dismissOnHover = () => {
-    clearTimeout(dismissTimer);
-    dismissTooltip();
-    document.removeEventListener('mouseover', dismissOnHover, true);
-  };
-  
-  document.addEventListener('mouseover', dismissOnHover, true);
-  
-  function dismissTooltip() {
-    tooltip.style.opacity = '0';
-    setTimeout(() => {
-      tooltip.remove();
-    }, 300);
-    sessionStorage.setItem('spotboard-instructions-shown', 'true');
-  }
+  document.body.appendChild(banner);
 }
 
 function toggleCapture(forceState?: boolean) {
@@ -1321,8 +1289,8 @@ function toggleCapture(forceState?: boolean) {
     document.addEventListener('click', handleClick, true);
     document.addEventListener('keydown', handleKeydown, true);
     
-    // 🎯 Show instructional tooltip on first capture activation
-    showCaptureInstructions();
+    // 🎯 Show persistent yellow banner at top
+    showCaptureBanner();
   } else {
     log("🔴 Capture Mode: OFF");
     document.removeEventListener('mouseover', handleHover, true);
@@ -1335,6 +1303,10 @@ function toggleCapture(forceState?: boolean) {
       (el as HTMLElement).style.outline = '';
       (el as HTMLElement).style.cursor = '';
     });
+    
+    // Remove capture banner
+    const banner = document.getElementById('spotboard-capture-banner');
+    if (banner) banner.remove();
   }
 }
 
