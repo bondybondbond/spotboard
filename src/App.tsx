@@ -13,6 +13,7 @@ interface Component {
   html_cache?: string; // From local storage
   last_refresh?: string; // From local storage
   excludedSelectors?: string[]; // 🎯 FIX: Add excluded element selectors
+  positionBased?: boolean; // 🎯 Position-based capture (no heading verification)
 }
 
 function App() {

@@ -31,6 +31,8 @@ async function migrateStorageIfNeeded() {
             selector: comp.selector,
             excludedSelectors: comp.excludedSelectors || [],
             headingFingerprint: comp.headingFingerprint,
+            positionBased: comp.positionBased || false, // 🎯 BATCH 5: Ensure field exists for old captures
+            refreshPaused: comp.refreshPaused || false, // Preserve pause state
             last_refresh: comp.last_refresh // IMPORTANT: Preserve timestamps!
           };
         });
@@ -468,9 +470,13 @@ function loadComponentsFromSync() {
                 ${component.url || 'No URL'}
               </a>
             </div>
-            <div style="margin-bottom: 20px;">
+            <div style="margin-bottom: 12px;">
               <div style="font-weight: 600; margin-bottom: 4px;">Last updated:</div>
               <div style="color: #cbd5e0;">${timestampText}</div>
+            </div>
+            <div style="margin-bottom: 20px;">
+              <div style="font-weight: 600; margin-bottom: 4px;">Capture method:</div>
+              <div style="color: #cbd5e0;">${component.positionBased ? 'Position-based' : 'Header-based'}</div>
             </div>
             <button id="closeInfoModal" style="width: 100%; padding: 10px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
               OK

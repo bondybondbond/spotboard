@@ -761,12 +761,16 @@ async function refreshComponent(component) {
         // Verify with fingerprint
         const originalFingerprint = extractFingerprint(component.html_cache);
         
-        if (originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
+        // 🎯 BATCH 3: Skip fingerprint check for position-based captures
+        if (!component.positionBased && originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
           return {
             success: false,
             error: 'Tab refresh returned different element',
             keepOriginal: true
           };
+        }
+        if (component.positionBased) {
+          console.log('📍 Position-based capture - skipping fingerprint verification');
         }
         
         // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
@@ -823,26 +827,32 @@ async function refreshComponent(component) {
         
         // If multiple matches, use fingerprint to find the right one
         if (matches.length > 1) {
-          const originalFingerprint = extractFingerprint(component.html_cache);
-          console.log(`🔍 Multiple matches (${matches.length}) for selector, using fingerprint: "${originalFingerprint}"`);
-          
-          // Try to find element whose fingerprint matches
-          for (const candidate of matches) {
-            const candidateHtml = candidate.outerHTML;
-            const candidateFingerprint = extractFingerprint(candidateHtml);
-            
-            if (originalFingerprint && candidateFingerprint && 
-                candidateFingerprint.toLowerCase().includes(originalFingerprint.toLowerCase())) {
-              element = candidate;
-              console.log(`✅ Found matching element with fingerprint: "${candidateFingerprint}"`);
-              break;
-            }
-          }
-          
-          // If no fingerprint match, fall back to first match (old behavior)
-          if (!element) {
-            console.log(`⚠️ No fingerprint match found, using first element`);
+          // 🎯 BATCH 3: Position-based captures skip fingerprint verification
+          if (component.positionBased) {
+            console.log(`📍 Position-based capture with ${matches.length} matches - using first element (no fingerprint check)`);
             element = matches[0];
+          } else {
+            const originalFingerprint = extractFingerprint(component.html_cache);
+            console.log(`🔍 Multiple matches (${matches.length}) for selector, using fingerprint: "${originalFingerprint}"`);
+            
+            // Try to find element whose fingerprint matches
+            for (const candidate of matches) {
+              const candidateHtml = candidate.outerHTML;
+              const candidateFingerprint = extractFingerprint(candidateHtml);
+              
+              if (originalFingerprint && candidateFingerprint && 
+                  candidateFingerprint.toLowerCase().includes(originalFingerprint.toLowerCase())) {
+                element = candidate;
+                console.log(`✅ Found matching element with fingerprint: "${candidateFingerprint}"`);
+                break;
+              }
+            }
+            
+            // If no fingerprint match, fall back to first match (old behavior)
+            if (!element) {
+              console.log(`⚠️ No fingerprint match found, using first element`);
+              element = matches[0];
+            }
           }
         } else {
           // Only one match - use it
@@ -936,13 +946,17 @@ async function refreshComponent(component) {
           
           if (tabHtml) {
             // Verify we got the right element by checking fingerprint
-            if (originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
+            // 🎯 BATCH 3: Skip fingerprint check for position-based captures
+            if (!component.positionBased && originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
               console.warn('[Skeleton Fallback] Fingerprint mismatch - rejecting update');
               return {
                 success: false,
                 error: 'Tab refresh returned different element',
                 keepOriginal: true
               };
+            }
+            if (component.positionBased) {
+              console.log('📍 [Skeleton Fallback] Position-based capture - skipping fingerprint verification');
             }
             
             // Tab refresh worked and verified!
@@ -1002,7 +1016,8 @@ async function refreshComponent(component) {
         }
         
         // Try heading-based detection for dynamic ID patterns (Amazon CardInstance pattern)
-        if (component.headingFingerprint) {
+        // 🎯 BATCH 3: Skip heading fallback for position-based captures (they don't use headings)
+        if (!component.positionBased && component.headingFingerprint) {
           console.log(`🔍 [Heading Fallback] Selector not found, trying heading-based detection for: "${component.headingFingerprint}"`);
           
           const allHeadings = doc.querySelectorAll(`
@@ -1098,7 +1113,8 @@ async function refreshComponent(component) {
           const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount);
         
           if (tabHtml) {
-            if (originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
+            // 🎯 BATCH 3: Skip fingerprint check for position-based captures
+            if (!component.positionBased && originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
               console.error(`❌ FINGERPRINT MISMATCH: ${component.name}`);
               console.error(`   Expected fingerprint: "${originalFingerprint}"`);
               console.error(`   Tab HTML length: ${tabHtml.length} chars`);
@@ -1292,6 +1308,7 @@ async function refreshAll() {
           headingFingerprint: comp.headingFingerprint,
           selector: comp.selector,
           excludedSelectors: comp.excludedSelectors || [],
+          positionBased: comp.positionBased || false, // 🎯 BATCH 5 FIX: Preserve capture method
           refreshPaused: comp.refreshPaused, // Preserve paused state!
           last_refresh: comp.last_refresh
         };
@@ -1313,6 +1330,7 @@ async function refreshAll() {
           headingFingerprint: comp.headingFingerprint,
           selector: comp.selector,
           excludedSelectors: comp.excludedSelectors || [],
+          positionBased: comp.positionBased || false, // 🎯 BATCH 5 FIX: Preserve capture method
           refreshPaused: comp.refreshPaused, // Preserve state
           last_refresh: result.success ? result.last_refresh : comp.last_refresh
         };

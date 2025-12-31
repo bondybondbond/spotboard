@@ -946,18 +946,30 @@ function handleClick(event: MouseEvent) {
   const selector = generateSelector(target);
   log('🎯 Final selector:', selector);
   
+  // 🎯 BATCH 2: Pre-extract heading for position-based detection
+  // Do this BEFORE modal so we can show auto-selected mode
+  const heading = target.querySelector(`
+    h1, h2, h3, h4, caption,
+    [class*="heading"], [class*="title"], [class*="header"],
+    [data-testid*="heading"], [data-testid*="title"]
+  `);
+  const rawHeading = heading?.textContent?.trim() || null;
+  const hasStableHeading = !!rawHeading;
+  const positionBased = !hasStableHeading;
+  log('📍 Pre-modal capture mode:', positionBased ? 'Position-based (no heading)' : 'Header-based (has heading)');
+  
   // Show top-right confirmation modal
   log('📞 About to call showCaptureConfirmation...');
   try {
-    showCaptureConfirmation(target, name, selector);
+    showCaptureConfirmation(target, name, selector, positionBased);
     log('✅ showCaptureConfirmation returned');
   } catch (error) {
     console.error('❌ showCaptureConfirmation FAILED:', error);
   }
 }
 
-function showCaptureConfirmation(target: HTMLElement, name: string, selector: string) {
-  log('🚀 showCaptureConfirmation called with:', { name, selector });
+function showCaptureConfirmation(target: HTMLElement, name: string, selector: string, positionBased: boolean) {
+  log('🚀 showCaptureConfirmation called with:', { name, selector, positionBased });
   
   // Create top-right confirmation modal
   const modal = document.createElement('div');
@@ -972,14 +984,15 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
     border-radius: 12px !important;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
     z-index: 2147483647 !important;
-    min-width: 300px !important;
+    width: 340px !important;
+    max-width: 90vw !important;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
     isolation: isolate !important;
   `;
   
   modal.innerHTML = `
     <div style="margin-bottom: 16px;">
-      <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">
+      <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${name.replace(/"/g, '&quot;')}">
         ✅ Captured: ${name}
       </div>
       <div style="font-size: 14px; opacity: 0.9;">
@@ -987,7 +1000,23 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         They'll turn red. Click again to undo.
       </div>
     </div>
-    <div style="display: flex; gap: 8px;">
+    <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 12px;">
+      <div id="advancedToggle" style="cursor: pointer; font-size: 13px; opacity: 0.8; user-select: none;">
+        ⚙️ Advanced
+      </div>
+      <div id="advancedPanel" style="display: none; margin-top: 8px; font-size: 13px;">
+        <div style="margin-bottom: 6px; opacity: 0.9;">Capture mode:</div>
+        <label style="display: block !important; margin: 6px 0 !important; cursor: pointer !important; opacity: 0.95 !important;">
+          <input type="radio" name="captureMode" value="header" ${!positionBased ? 'checked' : ''} style="display: inline-block !important; margin-right: 6px !important; width: auto !important; height: auto !important; opacity: 1 !important; position: static !important;">
+          <span style="display: inline !important; vertical-align: middle !important;">Header-based (uses section title)</span>
+        </label>
+        <label style="display: block !important; margin: 6px 0 !important; cursor: pointer !important; opacity: 0.95 !important;">
+          <input type="radio" name="captureMode" value="position" ${positionBased ? 'checked' : ''} style="display: inline-block !important; margin-right: 6px !important; width: auto !important; height: auto !important; opacity: 1 !important; position: static !important;">
+          <span style="display: inline !important; vertical-align: middle !important;">Position-based (uses spot position on page)</span>
+        </label>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; margin-top: 16px;">
       <button id="confirmSpot" style="flex: 1; padding: 12px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
         Confirm Spot
       </button>
@@ -1001,13 +1030,29 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   document.body.appendChild(modal);
   log('✅ Modal appended to DOM successfully');
   
-    
+  // 🎯 BATCH 2: Advanced toggle functionality
+  const advancedToggle = modal.querySelector('#advancedToggle') as HTMLDivElement;
+  const advancedPanel = modal.querySelector('#advancedPanel') as HTMLDivElement;
+  if (advancedToggle && advancedPanel) {
+    advancedToggle.addEventListener('click', () => {
+      const isVisible = advancedPanel.style.display === 'block';
+      advancedPanel.style.display = isVisible ? 'none' : 'block';
+      log('⚙️ Advanced panel toggled:', !isVisible ? 'visible' : 'hidden');
+    });
+  }
+  
   // Confirm button handler - use capture phase to ensure it fires first
   const confirmBtn = modal.querySelector('#confirmSpot') as HTMLButtonElement;
   if (confirmBtn) {
     confirmBtn.addEventListener('click', (e) => {
             e.stopPropagation();
       e.preventDefault();
+      
+      // 🎯 BATCH 2: Read selected capture mode (user may have overridden auto-detection)
+      const selectedMode = (modal.querySelector('input[name="captureMode"]:checked') as HTMLInputElement)?.value || 'header';
+      const finalPositionBased = selectedMode === 'position';
+      log('📍 Final capture mode (user selected):', finalPositionBased ? 'Position-based' : 'Header-based');
+      
       modal.remove();
       
       // ⏳ WAIT 2 SECONDS FOR JS FRAMEWORKS TO RENDER
@@ -1042,6 +1087,10 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         // Always log for debugging - even if null
         log('🔖 Extracted heading fingerprint:', headingFingerprint || 'NULL (no h1-h4 found)');
         
+        // 🎯 BATCH 2: Use finalPositionBased (user's selection from Advanced panel)
+        // Don't recalculate - respect user's choice even if it conflicts with heading presence
+        log('📍 Using final capture mode:', finalPositionBased ? 'Position-based' : 'Header-based');
+        
         // Extract domain for favicon
         const domain = new URL(window.location.href).hostname;
         const faviconUrl = `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
@@ -1069,7 +1118,8 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           favicon: component.favicon,
           customLabel: undefined,  // New captures don't have custom labels yet
           selector: component.selector,
-          headingFingerprint: headingFingerprint  // 🎯 BATCH 2: Auto-extracted for self-healing
+          headingFingerprint: headingFingerprint,  // 🎯 BATCH 2: Auto-extracted for self-healing
+          positionBased: finalPositionBased  // 🎯 BATCH 2: Use user's final selection from Advanced panel
           // 🎯 FIX: excludedSelectors stored in LOCAL only (too large for sync quota)
         };
         console.log('💾 Storing metadata in sync storage (~300 bytes), exclusions in local storage');
@@ -1085,6 +1135,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
             customLabel: metadata.customLabel,
             selector: metadata.selector,
             headingFingerprint: metadata.headingFingerprint,
+            positionBased: finalPositionBased, // 🎯 BATCH 2: User's final selection from Advanced panel
             excludedSelectors: excludedSelectors, // IMPORTANT: Sync for cross-device!
             last_refresh: component.last_refresh
           }
@@ -1198,6 +1249,68 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 // Main Toggle Logic
+
+// Show instructional tooltip when capture mode starts
+function showCaptureInstructions() {
+  // Check if tooltip already dismissed this session
+  if (sessionStorage.getItem('spotboard-instructions-shown')) {
+    return;
+  }
+  
+  const tooltip = document.createElement('div');
+  tooltip.id = 'spotboard-capture-instructions';
+  tooltip.style.cssText = `
+    position: fixed !important;
+    top: 20px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    background: #6b46c1 !important;
+    color: white !important;
+    padding: 12px 20px !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2) !important;
+    z-index: 2147483646 !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    text-align: center !important;
+    pointer-events: none !important;
+    opacity: 0 !important;
+    transition: opacity 0.3s ease !important;
+  `;
+  
+  tooltip.textContent = '🎯 Hover over content to mark spots for your board';
+  
+  document.body.appendChild(tooltip);
+  
+  // Fade in
+  setTimeout(() => {
+    tooltip.style.opacity = '1';
+  }, 100);
+  
+  // Auto-dismiss after 4 seconds
+  const dismissTimer = setTimeout(() => {
+    dismissTooltip();
+  }, 4000);
+  
+  // Dismiss on first hover (user understands)
+  const dismissOnHover = () => {
+    clearTimeout(dismissTimer);
+    dismissTooltip();
+    document.removeEventListener('mouseover', dismissOnHover, true);
+  };
+  
+  document.addEventListener('mouseover', dismissOnHover, true);
+  
+  function dismissTooltip() {
+    tooltip.style.opacity = '0';
+    setTimeout(() => {
+      tooltip.remove();
+    }, 300);
+    sessionStorage.setItem('spotboard-instructions-shown', 'true');
+  }
+}
+
 function toggleCapture(forceState?: boolean) {
   isCapturing = forceState !== undefined ? forceState : !isCapturing;
   
@@ -1207,6 +1320,9 @@ function toggleCapture(forceState?: boolean) {
     document.addEventListener('mouseout', handleExit, true);
     document.addEventListener('click', handleClick, true);
     document.addEventListener('keydown', handleKeydown, true);
+    
+    // 🎯 Show instructional tooltip on first capture activation
+    showCaptureInstructions();
   } else {
     log("🔴 Capture Mode: OFF");
     document.removeEventListener('mouseover', handleHover, true);
