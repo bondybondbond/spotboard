@@ -1030,6 +1030,13 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   document.body.appendChild(modal);
   log('✅ Modal appended to DOM successfully');
   
+  // 🎯 Remove yellow banner when entering exclusion mode (purple modal)
+  const banner = document.getElementById('spotboard-capture-banner');
+  if (banner) {
+    banner.remove();
+    log('🗑️ Yellow banner removed - now in exclusion mode');
+  }
+  
   // 🎯 BATCH 2: Advanced toggle functionality
   const advancedToggle = modal.querySelector('#advancedToggle') as HTMLDivElement;
   const advancedPanel = modal.querySelector('#advancedPanel') as HTMLDivElement;
@@ -1277,21 +1284,12 @@ function showCaptureBanner() {
   `;
   
   banner.innerHTML = `
-    <img src="${chrome.runtime.getURL('icon-48.png')}" style="width: 20px; height: 20px;">
+    <img src="${chrome.runtime.getURL('icon-16.png')}" style="width: 20px; height: 20px;">
     <span>Capture Mode Active - Click on any content you want to add to your board</span>
-    <button id="spotboard-cancel-capture" style="margin-left: auto; padding: 4px 12px; background: #000000; color: #FFFF00; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;">Cancel</button>
+    <span style="margin-left: auto; padding: 4px 8px; background: rgba(0, 0, 0, 0.2); border-radius: 4px; font-size: 12px;">[Esc] to exit</span>
   `;
   
   document.body.appendChild(banner);
-  
-  // Cancel button handler
-  const cancelBtn = banner.querySelector('#spotboard-cancel-capture');
-  if (cancelBtn) {
-    cancelBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleCapture(false);
-    });
-  }
 }
 
 function toggleCapture(forceState?: boolean) {
