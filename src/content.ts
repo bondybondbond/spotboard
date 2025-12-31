@@ -1262,21 +1262,36 @@ function showCaptureBanner() {
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
-    background: #fbbf24 !important;
-    color: #92400e !important;
+    background: #FFFF00 !important;
+    color: #000000 !important;
     padding: 10px 20px !important;
-    text-align: center !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 12px !important;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
     font-size: 14px !important;
     font-weight: 600 !important;
     z-index: 2147483646 !important;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-    pointer-events: none !important;
   `;
   
-  banner.textContent = '🎯 Capture Mode Active - Click on any content you want to add to your board';
+  banner.innerHTML = `
+    <img src="${chrome.runtime.getURL('icon-48.png')}" style="width: 20px; height: 20px;">
+    <span>Capture Mode Active - Click on any content you want to add to your board</span>
+    <button id="spotboard-cancel-capture" style="margin-left: auto; padding: 4px 12px; background: #000000; color: #FFFF00; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;">Cancel</button>
+  `;
   
   document.body.appendChild(banner);
+  
+  // Cancel button handler
+  const cancelBtn = banner.querySelector('#spotboard-cancel-capture');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleCapture(false);
+    });
+  }
 }
 
 function toggleCapture(forceState?: boolean) {
