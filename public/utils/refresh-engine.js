@@ -387,20 +387,13 @@ async function tryBackgroundWithSpoof(url, selector) {
       }
     });
     
-    console.log(`✓ [Background] Visibility spoof injected`);
-    
     // Wait 2s for initial page load
     await new Promise(r => setTimeout(r, 2000));
-    console.log(`✓ [Background] Initial 2s wait complete`);
     
     // Handle consent dialog if present
     const consentResult = await handleConsentDialog(tab.id);
     if (consentResult.found) {
-      console.log(`✓ [Background] Consent dialog ${consentResult.action}`);
       await new Promise(r => setTimeout(r, 3000));
-      console.log(`✓ [Background] Post-consent 3s wait complete`);
-    } else {
-      console.log(`✓ [Background] No consent dialog detected`);
     }
 
     // Wait additional time for JS to fully load (complex sites)
@@ -580,19 +573,15 @@ async function tryActiveTab(url, selector, fingerprint = null) {
         
         if (fp) {
           const allMatches = document.querySelectorAll(sel);
-          console.log('[Active Tab] Found', allMatches.length, 'matching elements');
-          
           for (const el of allMatches) {
             const text = el.textContent || '';
             if (text.toLowerCase().includes(fp.toLowerCase())) {
-              console.log('[Active Tab] Found element with fingerprint!');
               element = el;
               break;
             }
           }
           
           if (!element) {
-            console.warn('[Active Tab] No element matched fingerprint, using first match');
             element = document.querySelector(sel);
           }
         } else {
@@ -1154,21 +1143,10 @@ async function refreshComponent(component) {
     }
     
     // Apply cleanup to extracted HTML
-    // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
-    console.log(`🔧 [HTML Pipeline] ${component.name}:`);
-    console.log(`   1. Extracted: ${extractedHtml.length} chars`);
-    
     const withExclusions = applyExclusions(extractedHtml, component.excludedSelectors);
-    console.log(`   2. After exclusions: ${withExclusions.length} chars`);
-    
     const withPreserved = preserveImageClassifications(withExclusions, component.html_cache);
-    console.log(`   2b. After preserving classifications: ${withPreserved.length} chars`);
-    
     const withImageClassification = classifyImagesForRefresh(withPreserved);
-    console.log(`   3. After image classification: ${withImageClassification.length} chars`);
-    
     const afterCleanup = cleanupDuplicates(withImageClassification);
-    console.log(`   4. After cleanup (FINAL): ${afterCleanup.length} chars`);
     
     if (afterCleanup.length < 100) {
       console.error(`⚠️ SUSPICIOUSLY SHORT HTML (${afterCleanup.length} chars):`);

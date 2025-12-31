@@ -21,7 +21,6 @@ function applyExclusions(html, excludedSelectors) {
     return html;
   }
   
-  console.log('🎯 Applying', excludedSelectors.length, 'exclusions during refresh');
   
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = html;
@@ -37,9 +36,6 @@ function applyExclusions(html, excludedSelectors) {
       }
       
       const excluded = tempDiv.querySelectorAll(selector);
-      if (excluded.length > 0) {
-        console.log(`  ↪️ Removing ${excluded.length} elements matching: ${selector}`);
-      }
       excluded.forEach(el => el.remove());
     } catch (e) {
       console.warn('  ⚠️ Could not remove excluded element:', selector, e);
@@ -211,7 +207,6 @@ function cleanupDuplicates(html) {
     
     // Pattern 3: Data URIs with suspicious patterns (inline decorative graphics)
     if (src.startsWith('data:image') && src.length < 500) {
-      console.log('🗑️ Removed small inline image (likely decorative)');
       img.remove();
       return;
     }
@@ -269,7 +264,6 @@ function isSVGRenderable(svg) {
     const height = svg.getAttribute('height');
     
     if (!viewBox && !width && !height) {
-      console.log('  ❌ No dimensions (viewBox/width/height)');
       return false; // Can't scale without dimensions
     }
     
@@ -283,7 +277,6 @@ function isSVGRenderable(svg) {
     const hasCurrentColor = svg.querySelector('[fill="currentColor"],[stroke="currentColor"]');
     
     if (!hasFill && !hasStroke && !hasVisibleStyle && !hasCurrentColor) {
-      console.log('  ❌ No visible styling (fill/stroke/color)');
       return false; // No visible content = broken
     }
     
@@ -292,7 +285,6 @@ function isSVGRenderable(svg) {
     for (const path of paths) {
       const d = path.getAttribute('d');
       if (d && d.length > 1000) {
-        console.log('  ❌ Path too complex (>1000 chars)');
         return false; // Guardian-style broken path data
       }
     }
@@ -300,12 +292,9 @@ function isSVGRenderable(svg) {
     // CHECK 4: Must have actual content (not just empty container)
     const hasContent = svg.querySelector('path, circle, rect, polygon, line, polyline, ellipse, text, image');
     if (!hasContent) {
-      console.log('  ❌ No content elements');
       return false; // Empty SVG
     }
     
-    // PASSED ALL CHECKS
-    console.log('  ✅ SVG is renderable');
     return true;
     
   } catch (error) {
@@ -351,7 +340,6 @@ function fixRelativeUrls(container, sourceUrl) {
         if (lazyUrl && lazyUrl.startsWith('http')) {
           // Found a real URL in lazy attribute - use it as src
           img.setAttribute('src', lazyUrl);
-          console.log(`  ✅ Converted ${attr} to src:`, lazyUrl.substring(0, 80));
           break; // Stop after first match
         }
       }
@@ -623,8 +611,6 @@ function injectCleanupCSS() {
   styleSheet.textContent = cleanupStyles;
   document.head.appendChild(styleSheet);
   
-  console.log('✅ CSS cleanup injected');
-  
   return styleSheet;
 }
 
@@ -641,7 +627,6 @@ function removeCleanupCSS() {
   const sheet = document.getElementById('cleanup-injected-css');
   if (sheet) {
     sheet.remove();
-    console.log('✅ CSS cleanup removed');
   }
 }
 
@@ -701,12 +686,8 @@ function preserveImageClassifications(newHtml, oldHtml) {
   });
   
   if (classificationMap.size === 0) {
-    console.log('🏷️ No existing classifications to preserve');
     return newHtml;
-  }
-  
-  console.log(`🏷️ Preserving image classifications (${classificationMap.size} mappings)`);
-  
+  }  
   // Parse new HTML and apply preserved classifications
   const newTemp = document.createElement('div');
   newTemp.innerHTML = newHtml;
@@ -751,13 +732,9 @@ function preserveImageClassifications(newHtml, oldHtml) {
     if (classification) {
       img.setAttribute('data-scale-context', classification);
       preserved++;
-      const displaySrc = (dataImage || src || '').substring(0, 50);
-      console.log(`  ✅ Preserved "${classification}" for: ${displaySrc}...`);
     }
   });
   
-  const unclassified = newTemp.querySelectorAll('img:not([data-scale-context])').length;
-  console.log(`🏷️ Preserved ${preserved} classifications, ${unclassified} unclassified remain`);
   
   return newTemp.innerHTML;
 }
@@ -812,7 +789,6 @@ function classifyImagesForRefresh(html) {
       } else {
         context = 'preview';    // 150px - Large hero images
       }
-      console.log(`  🏷️ Image sized by attributes: ${width}x${height} (h=${effectiveHeight}) → "${context}"`);
     } else {
       // HEURISTIC 2: Check class names (expanded patterns)
       const className = (img.className || '').toLowerCase();
@@ -829,27 +805,22 @@ function classifyImagesForRefresh(html) {
           /avatar|profile|icon|logo|badge|vote|arrow/.test(src) ||
           /avatar|profile pic|user photo|logo/.test(alt)) {
         context = 'icon';
-        console.log(`  🏷️ Image classified by class (icon pattern): "${context}"`);
       }
       // Preview patterns (150px) - only for explicit hero/feature classes
       else if (/hero|featured|banner|cover|main-image|product-hero/.test(allClasses)) {
         context = 'preview';
-        console.log(`  🏷️ Image classified by class (preview pattern): "${context}"`);
       }
       // Medium patterns (100px) - property/listing images
       else if (/property|listing|house|estate|real-estate/.test(allClasses)) {
         context = 'medium';
-        console.log(`  🏷️ Image classified by class (medium pattern): "${context}"`);
       }
       // Small patterns (48px) - decorative, secondary images
       else if (/small|mini|tiny|decorative|secondary/.test(allClasses)) {
         context = 'small';
-        console.log(`  🏷️ Image classified by class (small pattern): "${context}"`);
       }
       // Thumbnail patterns (80px) - default for cards, products, deals
       else if (/thumb|card|tile|grid-item|product|item-image|deal|offer|preview/.test(allClasses)) {
         context = 'thumbnail';
-        console.log(`  🏷️ Image classified by class (thumbnail pattern): "${context}"`);
       }
       // HEURISTIC 3: Check parent context
       else {
@@ -858,14 +829,11 @@ function classifyImagesForRefresh(html) {
         
         if (nav) {
           context = 'icon';
-          console.log(`  🏷️ Image in nav/header context → "icon"`);
         } else if (article) {
           // In article/card - default to thumbnail (80px)
           context = 'thumbnail';
-          console.log(`  🏷️ Image in article context → "thumbnail"`);
         } else {
           // Default fallback - thumbnail (80px) is safest
-          console.log(`  🏷️ Image defaulting to: "thumbnail"`);
         }
       }
     }
@@ -873,6 +841,5 @@ function classifyImagesForRefresh(html) {
     img.setAttribute('data-scale-context', context);
   });
   
-  console.log('🎯 Refresh image classification complete');
   return temp.innerHTML;
 }
