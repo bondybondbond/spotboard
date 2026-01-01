@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SpotBoard",
-  "version": "1.0.0",
-  "description": "Capture webpage sections into a synced dashboard. User-driven monitoring for publicly accessible content.",
+  "version": "1.1.0",
+  "description": "Stop tab-hopping. Capture live website sections into one dashboard. Free forever, privacy-first, local storage only.",
   "icons": {
     "16": "icon-16.png",
     "48": "icon-48.png",
