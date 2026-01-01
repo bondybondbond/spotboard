@@ -244,6 +244,11 @@ function handleHover(event: MouseEvent) {
   
   const target = event.target as HTMLElement;
   
+  // Ignore SpotBoard banner - never highlight it
+  if (target.closest('[data-spotboard-ignore]')) {
+    return;
+  }
+  
   // FIRST: Don't touch modal at all - this must come before ANY other logic
   if (target.closest('#spotboard-capture-confirmation')) {
     return;
@@ -286,6 +291,11 @@ function handleHover(event: MouseEvent) {
 function handleExit(event: MouseEvent) {
   if (!isCapturing) return;
   const target = event.target as HTMLElement;
+  
+  // Ignore SpotBoard banner
+  if (target.closest('[data-spotboard-ignore]')) {
+    return;
+  }
   
   // FIRST: Don't touch modal at all
   if (target.closest('#spotboard-capture-confirmation')) {
@@ -864,6 +874,11 @@ function handleClick(event: MouseEvent) {
     
   const target = event.target as HTMLElement;
   
+  // Ignore clicks on SpotBoard banner (has pointer-events: none, but belt-and-braces)
+  if (target.closest('[data-spotboard-ignore]')) {
+    return;
+  }
+  
   // If clicking on modal buttons, let them handle it (don't intercept)
   if (target.closest('#spotboard-capture-confirmation')) {
         return;
@@ -1264,6 +1279,7 @@ function showCaptureBanner() {
   
   const banner = document.createElement('div');
   banner.id = 'spotboard-capture-banner';
+  banner.setAttribute('data-spotboard-ignore', 'true'); // Mark as non-capturable
   banner.style.cssText = `
     position: fixed !important;
     top: 0 !important;
@@ -1278,15 +1294,16 @@ function showCaptureBanner() {
     gap: 12px !important;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
     font-size: 14px !important;
-    font-weight: 600 !important;
+    font-weight: 400 !important;
     z-index: 2147483646 !important;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    pointer-events: none !important;
   `;
   
   banner.innerHTML = `
-    <img src="${chrome.runtime.getURL('icon-16.png')}" style="width: 20px; height: 20px;">
-    <span>Capture Mode Active - Click on any content you want to add to your board</span>
-    <span style="margin-left: auto; padding: 4px 8px; background: rgba(0, 0, 0, 0.2); border-radius: 4px; font-size: 12px;">[Esc] to exit</span>
+    <img src="${chrome.runtime.getURL('icon-16.png')}" style="width: 20px; height: 20px; pointer-events: none;">
+    <span style="pointer-events: none;"><strong>Capture Mode Active</strong> - Click on any content you want to add to your board</span>
+    <span style="margin-left: auto; pointer-events: none;">Press <span style="padding: 2px 6px; background: rgba(0, 0, 0, 0.15); border-radius: 3px; font-family: monospace; font-size: 12px;">[Esc]</span> to cancel capture</span>
   `;
   
   document.body.appendChild(banner);

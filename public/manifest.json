@@ -23,5 +23,11 @@
       "matches": ["<all_urls>"],
       "js": ["assets/content.js"]
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icon-16.png", "icon-48.png", "icon-128.png"],
+      "matches": ["<all_urls>"]
+    }
   ]
 }
