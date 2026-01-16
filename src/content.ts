@@ -467,6 +467,18 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       // Calculate area ratio
       const areaRatio = containerArea > 0 ? imageArea / containerArea : 0;
       
+      // 🐛 DEBUG: Log image dimensions for AS.com investigation
+      const imgSrc = img.src.substring(img.src.lastIndexOf('/') + 1, img.src.lastIndexOf('/') + 30);
+      console.log(`  📸 IMG DEBUG: ${imgSrc}`, {
+        rendered: `${Math.round(imgRect.width)}x${Math.round(imgRect.height)}`,
+        container: `${Math.round(containerRect.width)}x${Math.round(containerRect.height)}`,
+        areaRatio: `${(areaRatio * 100).toFixed(1)}%`,
+        imageArea,
+        widthAttr: img.getAttribute('width'),
+        heightAttr: img.getAttribute('height'),
+        className: img.className.substring(0, 40)
+      });
+      
       // 5-tier classification logic (HEIGHT-BASED primary)
       let context: 'icon' | 'small' | 'thumbnail' | 'medium' | 'preview';
       
@@ -496,6 +508,7 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       }
       
       img.setAttribute('data-scale-context', context);
+      console.log(`  ✅ Classified as: ${context.toUpperCase()}`);
       
     } catch (e) {
       console.warn('  ⚠️ Failed to classify image, defaulting to icon:', e);
@@ -640,6 +653,20 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     }
   });
   
+  // 🎯 FIX PLACEHOLDER DIMENSIONS: Remove aspect ratio markers
+  // Sites like AS.com use width="4" height="3" as 4:3 aspect ratio, not 4x3 pixels
+  // These break CSS sizing because max-height:25px doesn't expand 3px images
+  clone.querySelectorAll('img').forEach(img => {
+    const width = parseInt(img.getAttribute('width') || '0');
+    const height = parseInt(img.getAttribute('height') || '0');
+    
+    // Detect placeholder dimensions (< 10px = aspect ratio markers)
+    if ((height > 0 && height < 10) || (width > 0 && width < 10)) {
+      img.removeAttribute('width');
+      img.removeAttribute('height');
+    }
+  });
+
   // 🎯 FIX RELATIVE URLS: Convert ALL relative URLs to absolute
   // Prevents resources from being resolved to chrome-extension:// origin
   const pageUrl = window.location.href;

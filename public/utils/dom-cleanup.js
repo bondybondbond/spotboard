@@ -345,6 +345,20 @@ function fixRelativeUrls(container, sourceUrl) {
       }
     });
     
+    // 🎯 FIX PLACEHOLDER DIMENSIONS: Remove aspect ratio markers (AS.com uses width="4" height="3")
+    // These are NOT actual pixel dimensions - they're 4:3 aspect ratio markers
+    // Without this fix, images render at 4x3 pixels instead of proper sizes
+    container.querySelectorAll('img').forEach(img => {
+      const width = parseInt(img.getAttribute('width')) || 0;
+      const height = parseInt(img.getAttribute('height')) || 0;
+      
+      // Detect placeholder dimensions (< 10px = aspect ratio markers)
+      if ((height > 0 && height < 10) || (width > 0 && width < 10)) {
+        img.removeAttribute('width');
+        img.removeAttribute('height');
+      }
+    });
+    
     // 🎯 FIX IMAGE SRC ATTRIBUTES
     // Also add crossorigin="anonymous" to help SVG images load from cross-origin sources
     container.querySelectorAll('img[src]').forEach(img => {
@@ -773,9 +787,17 @@ function classifyImagesForRefresh(html) {
     const width = parseInt(img.getAttribute('width')) || 0;
     const height = parseInt(img.getAttribute('height')) || 0;
     
-    if (height > 0 || width > 0) {
-      // Use height as primary constraint (better for card layout)
-      // Fall back to width if height not specified
+        // 🔧 FIX: Detect placeholder dimensions (< 10px = aspect ratio markers, not actual sizes)
+    // Sites like AS.com use width="4" height="3" as 4:3 aspect ratio, not 4x3 pixels
+    const isPlaceholderDimension = (height > 0 && height < 10) || (width > 0 && width < 10);
+    
+    if (isPlaceholderDimension) {
+      // Remove placeholder attributes so CSS can properly size the image
+      img.removeAttribute('width');
+      img.removeAttribute('height');
+      // Fall through to class-based heuristics below
+    } else if (height > 0 || width > 0) {
+      // Trust the dimensions for classification (they're real pixel values)
       const effectiveHeight = height > 0 ? height : width;
       
       if (effectiveHeight <= 40) {
@@ -789,52 +811,55 @@ function classifyImagesForRefresh(html) {
       } else {
         context = 'preview';    // 150px - Large hero images
       }
-    } else {
-      // HEURISTIC 2: Check class names (expanded patterns)
-      const className = (img.className || '').toLowerCase();
-      const parentClass = (img.parentElement?.className || '').toLowerCase();
-      const grandparentClass = (img.parentElement?.parentElement?.className || '').toLowerCase();
-      const allClasses = className + ' ' + parentClass + ' ' + grandparentClass;
       
-      // Also check src/alt for common patterns
-      const src = (img.getAttribute('src') || '').toLowerCase();
-      const alt = (img.getAttribute('alt') || '').toLowerCase();
+      img.setAttribute('data-scale-context', context);
+      return; // Done with this image
+    }
+    
+    // HEURISTIC 2: Check class names (for images without valid dimensions)
+    const className = (img.className || '').toLowerCase();
+    const parentClass = (img.parentElement?.className || '').toLowerCase();
+    const grandparentClass = (img.parentElement?.parentElement?.className || '').toLowerCase();
+    const allClasses = className + ' ' + parentClass + ' ' + grandparentClass;
+    
+    // Also check src/alt for common patterns
+    const src = (img.getAttribute('src') || '').toLowerCase();
+    const alt = (img.getAttribute('alt') || '').toLowerCase();
+    
+    // Icon patterns (25px) - logos, avatars, voting buttons, nav icons
+    if (/icon|logo|badge|avatar|symbol|favicon|profile|user|member|author|upvote|vote|score|rating|rank|point|brand|app-icon|site-icon|emoji|arrow|chevron|caret|close|menu|nav-icon|button/.test(allClasses) ||
+        /avatar|profile|icon|logo|badge|vote|arrow/.test(src) ||
+        /avatar|profile pic|user photo|logo/.test(alt)) {
+      context = 'icon';
+    }
+    // Preview patterns (150px) - only for explicit hero/feature classes
+    else if (/hero|featured|banner|cover|main-image|product-hero/.test(allClasses)) {
+      context = 'preview';
+    }
+    // Medium patterns (100px) - property/listing images
+    else if (/property|listing|house|estate|real-estate/.test(allClasses)) {
+      context = 'medium';
+    }
+    // Small patterns (48px) - decorative, secondary images
+    else if (/small|mini|tiny|decorative|secondary/.test(allClasses)) {
+      context = 'small';
+    }
+    // Thumbnail patterns (80px) - default for cards, products, deals
+    else if (/thumb|card|tile|grid-item|product|item-image|deal|offer|preview/.test(allClasses)) {
+      context = 'thumbnail';
+    }
+    // HEURISTIC 3: Check parent context
+    else {
+      const article = img.closest('article, [class*="card"], [class*="listing"], [class*="property"], [class*="deal"]');
+      const nav = img.closest('nav, header, footer, [class*="menu"], [class*="nav"], [class*="sidebar"]');
       
-      // Icon patterns (25px) - logos, avatars, voting buttons, nav icons
-      if (/icon|logo|badge|avatar|symbol|favicon|profile|user|member|author|upvote|vote|score|rating|rank|point|brand|app-icon|site-icon|emoji|arrow|chevron|caret|close|menu|nav-icon|button/.test(allClasses) ||
-          /avatar|profile|icon|logo|badge|vote|arrow/.test(src) ||
-          /avatar|profile pic|user photo|logo/.test(alt)) {
+      if (nav) {
         context = 'icon';
-      }
-      // Preview patterns (150px) - only for explicit hero/feature classes
-      else if (/hero|featured|banner|cover|main-image|product-hero/.test(allClasses)) {
-        context = 'preview';
-      }
-      // Medium patterns (100px) - property/listing images
-      else if (/property|listing|house|estate|real-estate/.test(allClasses)) {
-        context = 'medium';
-      }
-      // Small patterns (48px) - decorative, secondary images
-      else if (/small|mini|tiny|decorative|secondary/.test(allClasses)) {
-        context = 'small';
-      }
-      // Thumbnail patterns (80px) - default for cards, products, deals
-      else if (/thumb|card|tile|grid-item|product|item-image|deal|offer|preview/.test(allClasses)) {
+      } else if (article) {
+        // In article/card - default to thumbnail (80px)
         context = 'thumbnail';
-      }
-      // HEURISTIC 3: Check parent context
-      else {
-        const article = img.closest('article, [class*="card"], [class*="listing"], [class*="property"], [class*="deal"]');
-        const nav = img.closest('nav, header, footer, [class*="menu"], [class*="nav"], [class*="sidebar"]');
-        
-        if (nav) {
-          context = 'icon';
-        } else if (article) {
-          // In article/card - default to thumbnail (80px)
-          context = 'thumbnail';
-        } else {
-          // Default fallback - thumbnail (80px) is safest
-        }
+      } else {
+        // Default fallback - thumbnail (80px) is safest
       }
     }
     
