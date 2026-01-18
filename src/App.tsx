@@ -57,13 +57,44 @@ function App() {
     });
   }, []);
 
-  const handleToggleCapture = () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0] && tabs[0].id) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: 'TOGGLE_CAPTURE' });
+  const handleToggleCapture = async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) return;
+
+    // Check if we're on a restricted page (chrome://, chrome-extension://, etc.)
+    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://')) {
+      alert('⚠️ Cannot capture content from Chrome internal pages. Please visit a website first.');
+      return;
+    }
+
+    try {
+      // Test if content script is already loaded by sending a ping
+      await chrome.tabs.sendMessage(tab.id, { type: 'PING' });
+      
+      // Content script exists, proceed with capture
+      chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_CAPTURE' });
+      window.close();
+    } catch (error) {
+      // Content script not loaded - inject it now
+      console.log('📌 Content script not found, injecting...');
+      
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['assets/content.js']
+        });
+
+        // Wait 100ms for content script to initialize
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Now send the toggle message
+        chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_CAPTURE' });
         window.close();
+      } catch (injectError) {
+        console.error('❌ Failed to inject content script:', injectError);
+        alert('⚠️ Could not activate capture mode. Please refresh the page and try again.');
       }
-    });
+    }
   };
 
   const handleDelete = (component: Component) => {
@@ -111,31 +142,99 @@ function App() {
       {components.length === 0 && (
         <div style={{ 
           background: '#e3f2fd', 
-          padding: '10px', 
+          padding: '12px', 
           borderRadius: '6px', 
           marginBottom: '12px',
           fontSize: '13px',
           color: '#1565c0',
           border: '1px solid #90caf9'
         }}>
-          👋 <strong>Welcome to SpotBoard!</strong>
-          <br />
-          Click any website element to save it to your board
+          <div style={{ marginBottom: '8px', fontWeight: '600', fontSize: '14px' }}>
+            👋 Welcome to SpotBoard!
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <span style={{ 
+                background: '#1565c0', 
+                color: 'white', 
+                borderRadius: '50%', 
+                width: '18px', 
+                height: '18px', 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                fontSize: '11px',
+                fontWeight: '600',
+                flexShrink: 0
+              }}>1</span>
+              <span>Click <strong>"Save a Spot"</strong> button below</span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <span style={{ 
+                background: '#1565c0', 
+                color: 'white', 
+                borderRadius: '50%', 
+                width: '18px', 
+                height: '18px', 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                fontSize: '11px',
+                fontWeight: '600',
+                flexShrink: 0
+              }}>2</span>
+              <span>Hover over any section on this page</span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <span style={{ 
+                background: '#1565c0', 
+                color: 'white', 
+                borderRadius: '50%', 
+                width: '18px', 
+                height: '18px', 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                fontSize: '11px',
+                fontWeight: '600',
+                flexShrink: 0
+              }}>3</span>
+              <span>Click to save it to your board</span>
+            </div>
+          </div>
         </div>
       )}
       
+      <button 
+        onClick={handleToggleCapture} 
+        style={{ 
+          width: '100%', 
+          marginBottom: '10px',
+          padding: '14px',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '6px',
+          fontWeight: '600',
+          fontSize: '15px',
+          cursor: 'pointer',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+        }}
+      >
+        ✂️ Save a Spot
+      </button>
       <button 
         onClick={handleOpenCanvas} 
         style={{ 
           width: '100%', 
           marginBottom: '10px', 
-          padding: '12px',
-          background: 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)',
-          color: 'white',
-          border: 'none',
+          padding: '10px',
+          background: 'white',
+          color: '#667eea',
+          border: '2px solid #667eea',
           borderRadius: '6px',
-          fontWeight: '600',
-          fontSize: '14px',
+          fontWeight: '500',
+          fontSize: '13px',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
@@ -143,25 +242,8 @@ function App() {
           gap: '8px'
         }}
       >
-        <img src="/logo.png" alt="SpotBoard" style={{ width: '20px', height: '20px' }} />
+        <img src="/logo.png" alt="SpotBoard" style={{ width: '18px', height: '18px' }} />
         Open Board
-      </button>
-      <button 
-        onClick={handleToggleCapture} 
-        style={{ 
-          width: '100%', 
-          marginBottom: '10px',
-          padding: '12px',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          color: 'white',
-          border: 'none',
-          borderRadius: '6px',
-          fontWeight: '600',
-          fontSize: '14px',
-          cursor: 'pointer'
-        }}
-      >
-        ✂️ Save a Spot
       </button>
       {currentDomain && currentDomain.includes('.') && (
         <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>

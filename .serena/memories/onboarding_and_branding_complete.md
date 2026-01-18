@@ -2,13 +2,19 @@
 
 ## Status: CHROME WEB STORE SUBMISSION READY
 
-## What Was Implemented (27/12/2025)
+## What Was Implemented
 
-### Minimal Onboarding Approach
+### Minimal Onboarding Approach (27/12/2025)
 - First-time user tooltip in popup: Shows when `components.length === 0`
 - Empty board state with clear instructions + examples
 - Orange/bold reload reminder for user education
 - Decision: Ship with tooltips FIRST, gather real user feedback, iterate based on actual confusion points
+
+### Auto-Inject on Every Page (18/01/2026)
+- Extension content script now auto-loads on ALL pages without manual clicks
+- Eliminates "extension not responding" confusion for first-time users
+- Hover/click capture mode immediately available on page load
+- Implemented via manifest.json content_scripts configuration
 
 ### Logo Implementation (5 Touchpoints)
 1. **Extension icons** (manifest.json): 16px, 48px, 128px for different Chrome contexts

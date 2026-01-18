@@ -508,6 +508,20 @@ function loadComponentsFromSync() {
   }
 })(); // Close async IIFE
 
+// 🎯 BATCH 1.5: Auto-refresh dashboard when new components captured
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'sync') {
+    // Check if a new comp-* key was added (new component captured)
+    for (const key in changes) {
+      if (key.startsWith('comp-') && !changes[key].oldValue && changes[key].newValue) {
+        console.log('🎉 New component detected! Reloading dashboard...');
+        location.reload();
+        return; // Only reload once
+      }
+    }
+  }
+});
+
 // Attach refresh handler when page loads
 document.addEventListener('DOMContentLoaded', () => {
   const refreshBtn = document.getElementById('refresh-all-btn');

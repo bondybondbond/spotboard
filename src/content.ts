@@ -351,19 +351,44 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
     z-index: 2147483647 !important;
   `;
   
+  // 🎯 BATCH 1.5: Enhanced notification with "View on SpotBoard" button
   modalContent.innerHTML = `
     <div style="font-size: 16px; margin-bottom: 20px; line-height: 1.5;">
       ${message}
     </div>
-    <button id="closeNotification" style="width: 100%; padding: 12px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600;">
-      OK
-    </button>
+    <div style="display: flex; gap: 12px; flex-direction: column;">
+      <button id="viewBoardBtn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600;">
+        View on SpotBoard
+      </button>
+      <button id="closeNotification" style="width: 100%; padding: 12px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600;">
+        Close
+      </button>
+    </div>
   `;
   
   modal.appendChild(modalContent);
   document.body.appendChild(modal);
   
-  // Close modal handlers
+  // View Board button - smart navigation
+  const viewBtn = modal.querySelector('#viewBoardBtn');
+  if (viewBtn) {
+    viewBtn.addEventListener('click', () => {
+      const dashboardUrl = chrome.runtime.getURL('dashboard.html');
+      
+      // Check if dashboard already open
+      chrome.runtime.sendMessage({ action: 'focusDashboard' }, (response) => {
+        if (!response || !response.found) {
+          // Dashboard not open, create new tab
+          chrome.runtime.sendMessage({ action: 'openDashboard' });
+        }
+        // If found, background script already focused it
+      });
+      
+      modal.remove();
+    });
+  }
+  
+  // Close button
   const closeBtn = modal.querySelector('#closeNotification');
   if (closeBtn) {
     closeBtn.addEventListener('click', () => modal.remove());
@@ -1250,7 +1275,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                 lockedElement = null;
                 resetExclusions();
                                 
-                showStyledNotification(`✅ Saved: ${name}`, 'success');
+                showStyledNotification(`✅ Spotted: ${name}`, 'success');
                 toggleCapture(false);
               });
             });
@@ -1369,6 +1394,12 @@ function toggleCapture(forceState?: boolean) {
 
 // Message Listener
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Respond to ping to confirm content script is loaded
+  if (request.type === 'PING') {
+    sendResponse({ status: 'ready' });
+    return true; // Keep message channel open for async response
+  }
+  
   if (request.message === "TOGGLE_CAPTURE" || request.type === "TOGGLE_CAPTURE") {
     toggleCapture();
   }
