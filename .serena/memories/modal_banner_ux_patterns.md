@@ -1,4 +1,4 @@
-# Modal & Capture Banner UX Patterns (Dec 31, 2024)
+# Modal & Capture Banner UX Patterns (Updated Jan 17, 2025)
 
 Long site names break modal layouts, site CSS hides extension UI elements, and dismissible tooltips add complexity without value.
 
@@ -34,3 +34,21 @@ Long site names break modal layouts, site CSS hides extension UI elements, and d
 3. **Text styling:** Only "Capture Mode Active" bold (`<strong>`), rest normal weight. Changed button to static "Press [Esc] to cancel capture"
 
 **Key pattern:** Extension UI injected into pages needs `web_accessible_resources` in manifest for any assets (icons, images) to load correctly.
+
+## Welcome Modal Visual Hierarchy - RESOLVED (Jan 17, 2025)
+
+**Problem:** Purple modal header competed with purple dashboard header visible in blurred background - two focal points fighting for attention.
+
+**Solution - Maximum Contrast Backdrop:**
+- Changed from `rgba(0, 0, 0, 0.5)` to `rgba(50, 50, 60, 0.85)`
+- **85% opacity** dense grey overlay completely neutralizes background colors
+- Reduced blur from 4px to 3px (better context visibility without distraction)
+- **Result:** Modal becomes ONLY colorful element on screen
+
+**Info Button Evolution:**
+- **Before:** White border + light background + box-shadow (decorative but cluttered)
+- **After:** Clean SVG icon only - no chrome, just the blue circle with "i"
+- **Hover:** Scale 1.1x + 80% opacity (no background changes)
+- **Impact:** Cleaner, more professional appearance that matches modern UX patterns
+
+**Key principle:** When showing branded modal over branded background, aggressive backdrop dimming (80%+ opacity) creates single focal point. Icon-only buttons work better than decorated buttons in minimal UI contexts.

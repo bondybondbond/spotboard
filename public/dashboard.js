@@ -615,3 +615,45 @@ if (boardNameElement) {
     boardNameElement.style.background = '';
   });
 }
+
+// ===== WELCOME MODAL LOGIC =====
+// Show tutorial modal on first visit or when (?) info button clicked
+
+const welcomeModal = document.getElementById('welcome-modal');
+const gotItBtn = document.getElementById('got-it-btn');
+const infoBtn = document.getElementById('info-btn');
+
+// Check if this is first visit
+const hasSeenWelcome = localStorage.getItem('hasSeenWelcome');
+
+if (!hasSeenWelcome) {
+  // First visit - show modal
+  welcomeModal.style.display = 'flex';
+}
+
+// "Got it" button - dismiss modal and mark as seen
+if (gotItBtn) {
+  gotItBtn.addEventListener('click', () => {
+    welcomeModal.style.display = 'none';
+    localStorage.setItem('hasSeenWelcome', 'true');
+  });
+}
+
+// (?) Info button - reopen modal
+if (infoBtn) {
+  infoBtn.addEventListener('click', () => {
+    welcomeModal.style.display = 'flex';
+  });
+}
+
+// Close on backdrop click
+const backdrop = document.querySelector('.welcome-modal-backdrop');
+if (backdrop) {
+  backdrop.addEventListener('click', () => {
+    welcomeModal.style.display = 'none';
+    // Only set flag if user deliberately closes (not first visit auto-show)
+    if (!hasSeenWelcome) {
+      localStorage.setItem('hasSeenWelcome', 'true');
+    }
+  });
+}

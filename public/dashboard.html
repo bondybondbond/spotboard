@@ -368,6 +368,188 @@
         max-height: 400px;
       }
     }
+
+    /* Info Button Hover State */
+    #info-btn:hover {
+      transform: scale(1.1);
+      opacity: 0.8;
+    }
+
+    #info-btn:active {
+      transform: scale(0.95);
+    }
+
+    /* Welcome Modal Styles */
+    #welcome-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .welcome-modal-backdrop {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(50, 50, 60, 0.85);  /* Dense grey overlay for max contrast */
+      backdrop-filter: blur(3px);
+    }
+
+    .welcome-modal-content {
+      position: relative;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+      max-width: 700px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      z-index: 1;
+    }
+
+    .welcome-modal-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      border-radius: 16px 16px 0 0;
+    }
+
+    .welcome-modal-body {
+      padding: 28px;
+    }
+
+    .pin-instruction-box {
+      background: linear-gradient(135deg, #f0f4ff 0%, #e8f0ff 100%);
+      border: 3px solid #667eea;
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .toolbar-mockup-inline {
+      background: #e8eaed;
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin: 12px auto;
+      max-width: 320px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: relative;
+    }
+
+    .puzzle-icon-inline {
+      width: 20px;
+      height: 20px;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .arrow-inline {
+      position: absolute;
+      right: -40px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #667eea;
+      font-size: 32px;
+      font-weight: 900;
+      animation: bounce-inline 1.5s infinite;
+      text-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+    }
+
+    @keyframes bounce-inline {
+      0%, 100% { transform: translateY(-50%) translateX(0); }
+      50% { transform: translateY(-50%) translateX(-5px); }
+    }
+
+    .steps-grid-inline {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .step-card-inline {
+      background: #f8f9fa;
+      border-radius: 10px;
+      padding: 16px 12px;
+      text-align: center;
+      border: 2px solid #e8eaed;
+    }
+
+    .step-number-inline {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 16px;
+      margin: 0 auto 10px auto;
+    }
+
+    .step-icon-inline {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin: 12px auto;
+    }
+
+    .step-selection-inline {
+      width: 60px;
+      height: 60px;
+      border: 3px solid #4caf50;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      margin: 12px auto;
+      background: #e8f5e9;
+    }
+
+    .step-dashboard-inline {
+      width: 70px;
+      height: 50px;
+      background: linear-gradient(135deg, #f0f4ff 0%, #e8f0ff 100%);
+      border: 2px solid #667eea;
+      border-radius: 6px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      padding: 6px;
+      margin: 12px auto;
+    }
+
+    .step-dashboard-inline::before,
+    .step-dashboard-inline::after {
+      content: '';
+      background: white;
+      border-radius: 3px;
+      border: 1px solid #667eea;
+    }
   </style>
 </head>
 <body>
@@ -377,9 +559,14 @@
         <img src="logo.png" alt="SpotBoard" style="width: 24px; height: 24px;" />
         SpotBoard | <span id="board-name" style="cursor: pointer; padding: 2px 6px; border-radius: 4px;" title="Click to edit board name">My Dashboard</span>
       </h1>
-      <button id="refresh-all-btn" style="padding: 8px 16px; background: white; color: #667eea; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-        🔄 Refresh All
-      </button>
+      <div style="display: flex; gap: 10px;">
+        <button id="info-btn" style="padding: 0; background: none; border: none; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center;" title="Show tutorial">
+          <img src="info-icon.svg" alt="Info" style="width: 28px; height: 28px; display: block;" />
+        </button>
+        <button id="refresh-all-btn" style="padding: 8px 16px; background: white; color: #667eea; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          🔄 Refresh All
+        </button>
+      </div>
     </div>
   </div>
   
@@ -390,6 +577,80 @@
       <p style="color: #666; margin-top: 8px;">💡 Try capturing something you want to see updated over time.</p>
       <p style="color: #666;">E.g.: BBC's "Most Read", Product Hunt launches, Wikipedia's "In the news"</p>
       <p style="color: #e65100; margin-top: 12px; font-weight: 600;">❗ Remember to reload this page after you have captured something new!</p>
+    </div>
+  </div>
+
+  <!-- Welcome Tutorial Modal -->
+  <div id="welcome-modal" style="display: none;">
+    <div class="welcome-modal-backdrop"></div>
+    <div class="welcome-modal-content">
+      <!-- Header -->
+      <div class="welcome-modal-header">
+        <img src="logo.png" alt="SpotBoard" style="width: 32px; height: 32px;" />
+        <h1 style="margin: 0; font-size: 20px; font-weight: 600; color: white;">Welcome to SpotBoard</h1>
+      </div>
+
+      <!-- Content -->
+      <div class="welcome-modal-body">
+        <!-- Pin Instruction Box -->
+        <div class="pin-instruction-box">
+          <h2 style="color: #667eea; font-size: 18px; font-weight: 700; margin-bottom: 6px;">We recommend you to pin SpotBoard to your toolbar</h2>
+          <div style="font-size: 13px; color: #5f6368; margin-bottom: 12px;">...so it's <strong>easier</strong> to capture your spots!</div>
+          
+          <div class="toolbar-mockup-inline">
+            <span class="arrow-inline">←</span>
+            <div style="flex: 1; background: white; border-radius: 16px; padding: 5px 12px; font-size: 12px; color: #5f6368;">google.com</div>
+            <div class="puzzle-icon-inline">🧩</div>
+          </div>
+
+          <div style="font-size: 12px; color: #5f6368; margin-top: 10px;">
+            Click puzzle piece (🧩) → Find "SpotBoard" → Click pin (📌)
+          </div>
+        </div>
+
+        <!-- Tutorial Steps -->
+        <h2 style="text-align: center; font-size: 19px; color: #1a1a1a; font-weight: 600; margin: 24px 0 20px;">How to get started with your first capture in 3 steps:</h2>
+        
+        <div class="steps-grid-inline">
+          <!-- Step 1 -->
+          <div class="step-card-inline">
+            <div class="step-number-inline">1</div>
+            <div style="font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 6px;">Click on 'save a spot'</div>
+            <div class="step-icon-inline">✂️</div>
+            <div style="font-size: 11px; color: #5f6368; line-height: 1.4;">in the extension on any website</div>
+          </div>
+
+          <!-- Step 2 -->
+          <div class="step-card-inline">
+            <div class="step-number-inline">2</div>
+            <div style="font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 6px;">Select the website section</div>
+            <div class="step-selection-inline">✓</div>
+            <div style="font-size: 11px; color: #5f6368; line-height: 1.4;">you want to track, then click to confirm</div>
+          </div>
+
+          <!-- Step 3 -->
+          <div class="step-card-inline">
+            <div class="step-number-inline">3</div>
+            <div style="font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 6px;">Go to the board</div>
+            <div class="step-dashboard-inline"></div>
+            <div style="font-size: 11px; color: #5f6368; line-height: 1.4;">via the extension to see your captured spots.<br>Click 'Refresh' to get the latest updates.</div>
+          </div>
+        </div>
+
+        <!-- CTA -->
+        <div style="text-align: center; margin: 24px 0 16px;">
+          <button id="got-it-btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 36px; font-size: 15px; font-weight: 600; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); width: 100%; max-width: 280px;">
+            Got it, let's start!
+          </button>
+        </div>
+
+        <!-- Trust Signals -->
+        <div style="display: flex; justify-content: center; gap: 14px; padding-top: 14px; border-top: 1px solid #e8eaed; flex-wrap: wrap; font-size: 11px; color: #5f6368;">
+          <span><span style="color: #667eea; font-weight: bold;">✓</span> No account needed</span>
+          <span><span style="color: #667eea; font-weight: bold;">✓</span> Your data stays local</span>
+          <span><span style="color: #667eea; font-weight: bold;">✓</span> Free to use</span>
+        </div>
+      </div>
     </div>
   </div>
 
