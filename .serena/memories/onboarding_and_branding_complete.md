@@ -4,6 +4,13 @@
 
 ## What Was Implemented
 
+### Enhanced Success Modal & Dashboard Auto-Refresh (18/01/2026)
+**"Spotted!" Branding:** Success modal now uses "Spotted!" instead of generic "Component captured" - aligns with SpotBoard brand
+**Smart Navigation:** "View on SpotBoard" button intelligently finds existing dashboard tab before opening new one (prevents tab proliferation)
+**Auto-Refresh Dashboard:** Dashboard auto-updates when new component captured via chrome.storage.onChanged listener - eliminates manual reload friction
+**UX Flow:** Capture now 2 clicks (Spot → View) instead of 4-5 clicks - massive reduction in onboarding friction
+**Files:** public/content.ts (modal), public/dashboard.js (auto-refresh), src/background.ts (tab switching)
+
 ### Minimal Onboarding Approach (27/12/2025)
 - First-time user tooltip in popup: Shows when `components.length === 0`
 - Empty board state with clear instructions + examples
@@ -65,10 +72,14 @@
 - ✅ Tooltips for first-time users
 - ✅ Logo across all touchpoints
 - ✅ Empty state messaging with examples
-- ✅ Reload reminder prominent
+- ✅ Reload reminder prominent (now auto-refreshes!)
 - ✅ Icon files for Chrome Web Store
 - ✅ Build system verified (public/ → dist/)
-- 🎯 Ready for 10-user testing within 48h of launch
+- ✅ "Spotted!" branding throughout success flow
+- ✅ Smart tab navigation (no duplicate dashboards)
+- ✅ Auto-refresh dashboard on capture
+- ✅ Auto-inject on every page (no manual activation)
+- 🎯 Ready for next 6 user tests with v1.2.0 improvements
 
 ## Next Steps (Post-Launch)
 - Gather feedback: "What was confusing on first use?"

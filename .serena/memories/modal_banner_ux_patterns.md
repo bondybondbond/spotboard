@@ -35,6 +35,36 @@ Long site names break modal layouts, site CSS hides extension UI elements, and d
 
 **Key pattern:** Extension UI injected into pages needs `web_accessible_resources` in manifest for any assets (icons, images) to load correctly.
 
+## Success Modal with Smart Navigation - IMPLEMENTED (Jan 18, 2026)
+
+**Problem:** Users clicking "View Board" would open duplicate dashboard tabs, cluttering their browser. Generic "Component captured" messaging didn't align with "SpotBoard" brand.
+
+**Solution - Smart Tab Management:**
+- Background script finds existing dashboard tab before opening new one
+- `chrome.tabs.query()` searches all tabs for dashboard URL
+- If found: `chrome.tabs.update()` focuses existing tab
+- If not found: Opens new dashboard tab
+- **Result:** Single dashboard tab stays clean, users land on familiar tab
+
+**Branding Enhancement:**
+- Changed "Component captured" → "Spotted!" ✂️ (matches SpotBoard brand)
+- Primary CTA: "View on SpotBoard" (calls smart navigation)
+- Secondary CTA: "Close" (dismisses modal)
+- **Visual hierarchy:** Green button primary, grey button secondary
+
+**Auto-Refresh Integration:**
+- Dashboard listens for new `comp-*` keys via chrome.storage.onChanged
+- Auto-reloads when new component detected
+- Eliminates manual "reload page" step for first-time users
+- **Impact:** Capture flow reduced from 4-5 clicks to 2 clicks (Spot → View)
+
+**Files:**
+- `public/content.ts` - Success modal UI + message sending
+- `src/background.ts` - Tab search/focus handler
+- `public/dashboard.js` - Auto-refresh listener
+
+**Key Pattern:** Extension background scripts can manage tab state across extension components. Use message passing to coordinate between content scripts (modal) and background script (tab management).
+
 ## Welcome Modal Visual Hierarchy - RESOLVED (Jan 17, 2025)
 
 **Problem:** Purple modal header competed with purple dashboard header visible in blurred background - two focal points fighting for attention.
