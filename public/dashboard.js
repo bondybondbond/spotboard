@@ -354,11 +354,67 @@ function loadComponentsFromSync() {
           if (updated.length === 0) {
             container.innerHTML = `
               <div class="empty-state">
-                <h2>Your board is empty</h2>
-                <p>Click the SpotBoard extension icon on any website to capture a component.</p>
-                <p style="color: #666; margin-top: 8px;">💡 Try capturing something you want to see updated over time.</p>
-                <p style="color: #666;">E.g.: BBC's "Most Read", Product Hunt launches, Wikipedia's "In the news"</p>
-                <p style="color: #e65100; margin-top: 12px; font-weight: 600;">❗ Remember to reload this page after you have captured something new!</p>
+                <!-- Main headline -->
+                <h2 style="font-size: 22px; font-weight: 600; color: #1a1a1a; margin-bottom: 12px;">Your board is empty</h2>
+                <p style="font-size: 14px; color: #5f6368; margin-bottom: 24px;">Here's what others track:</p>
+                
+                <!-- Categories -->
+                <div style="text-align: left; max-width: 500px; margin: 0 auto;">
+                  <!-- News -->
+                  <div style="margin-bottom: 16px;">
+                    <div style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">📰 News & Headlines</div>
+                    <div style="font-size: 13px; color: #5f6368;">
+                      <a href="https://bbc.co.uk/news" target="_blank" style="color: #1a73e8; text-decoration: none;">BBC</a> · 
+                      <a href="https://nbcnews.com" target="_blank" style="color: #1a73e8; text-decoration: none;">NBC News</a> · 
+                      <a href="https://techcrunch.com" target="_blank" style="color: #1a73e8; text-decoration: none;">TechCrunch</a>
+                    </div>
+                  </div>
+                  
+                  <!-- Sports -->
+                  <div style="margin-bottom: 16px;">
+                    <div style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🏆 Sports Scores</div>
+                    <div style="font-size: 13px; color: #5f6368;">
+                      <a href="https://espn.com" target="_blank" style="color: #1a73e8; text-decoration: none;">ESPN</a> · 
+                      <a href="https://skysports.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Sky Sports</a> · 
+                      <a href="https://as.com" target="_blank" style="color: #1a73e8; text-decoration: none;">AS</a>
+                    </div>
+                  </div>
+                  
+                  <!-- Tech -->
+                  <div style="margin-bottom: 16px;">
+                    <div style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🚀 Tech News & Launches</div>
+                    <div style="font-size: 13px; color: #5f6368;">
+                      <a href="https://producthunt.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Product Hunt</a> · 
+                      <a href="https://github.com" target="_blank" style="color: #1a73e8; text-decoration: none;">GitHub</a> · 
+                      <a href="https://wired.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Wired</a>
+                    </div>
+                  </div>
+                  
+                  <!-- Deals -->
+                  <div style="margin-bottom: 16px;">
+                    <div style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🛍️ Daily Deals</div>
+                    <div style="font-size: 13px; color: #5f6368;">
+                      <a href="https://amazon.co.uk" target="_blank" style="color: #1a73e8; text-decoration: none;">Amazon</a> · 
+                      <a href="https://gumtree.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Gumtree</a> · 
+                      <a href="https://hotukdeals.com" target="_blank" style="color: #1a73e8; text-decoration: none;">HotUKDeals</a>
+                    </div>
+                  </div>
+                  
+                  <!-- Weather -->
+                  <div style="margin-bottom: 24px;">
+                    <div style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🌦️ Weather Forecast</div>
+                    <div style="font-size: 13px; color: #5f6368;">
+                      <a href="https://accuweather.com" target="_blank" style="color: #1a73e8; text-decoration: none;">AccuWeather</a> · 
+                      <a href="https://yr.no" target="_blank" style="color: #1a73e8; text-decoration: none;">YR.no</a> · 
+                      <a href="https://theweathernetwork.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Weather Network</a>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Help tip -->
+                <p style="font-size: 14px; color: #5f6368; margin-top: 16px;">
+                  💡 <strong>Need help?</strong> Click the ℹ️ button in the top bar anytime to see how to capture.
+                </p>
               </div>
             `;
           }
