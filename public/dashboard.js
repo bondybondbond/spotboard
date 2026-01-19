@@ -716,6 +716,27 @@ if (infoBtn) {
   });
 }
 
+// ===== BOARD OPENS COUNTER (Batch 3) =====
+// Track how often user visits dashboard (resets every 7 days)
+function trackBoardOpen() {
+  const opens = parseInt(localStorage.getItem('board_opens_7days') || '0');
+  const lastReset = parseInt(localStorage.getItem('board_opens_reset') || '0');
+  const now = Date.now();
+
+  // Reset counter every 7 days
+  if (now - lastReset > 7 * 24 * 60 * 60 * 1000) {
+    localStorage.setItem('board_opens_7days', '1');
+    localStorage.setItem('board_opens_reset', now.toString());
+    console.log('🔄 Board opens counter reset (new 7-day period)');
+  } else {
+    localStorage.setItem('board_opens_7days', (opens + 1).toString());
+    console.log(`📊 Board opened ${opens + 1} times in last 7 days`);
+  }
+}
+
+// Call immediately when dashboard loads
+trackBoardOpen();
+
 // Close on backdrop click
 const backdrop = document.querySelector('.welcome-modal-backdrop');
 if (backdrop) {
