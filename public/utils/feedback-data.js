@@ -102,4 +102,43 @@ async function getAllHiddenFields() {
   };
 }
 
-console.log('✅ Feedback data calculator loaded');
+// ===== BATCH 6: Tally Form URLs and Field Mappings =====
+const TALLY_POSITIVE_URL = 'https://tally.so/r/GxppGe';
+const TALLY_NEGATIVE_URL = 'https://tally.so/r/7RKNlZ';
+
+// Hidden field IDs (same across both forms)
+// Note: Tally uses field names directly
+const HIDDEN_FIELD_IDS = {
+  extension_version: 'extension_version',
+  total_cards: 'total_cards',
+  active_cards: 'active_cards',
+  'paused_card_rate_%': 'paused_card_rate_%',
+  all_tracked_sites: 'all_tracked_sites',
+  avg_card_age_days: 'avg_card_age_days',
+  days_since_install: 'days_since_install',
+  board_opens_7days: 'board_opens_7days',
+  refresh_clicks_7days: 'refresh_clicks_7days',
+};
+
+// ===== BATCH 7: Build Tally URL with Hidden Fields =====
+// Builds pre-populated Tally URL with all 9 hidden fields
+async function buildTallyURL(sentiment) {
+  // Select base URL based on sentiment
+  const baseURL = sentiment === 'positive' ? TALLY_POSITIVE_URL : TALLY_NEGATIVE_URL;
+  
+  // Get all 9 hidden fields
+  const hiddenFields = await getAllHiddenFields();
+
+  // Build URL parameters
+  const params = new URLSearchParams();
+  Object.entries(hiddenFields).forEach(([key, value]) => {
+    const fieldId = HIDDEN_FIELD_IDS[key];
+    if (fieldId) {
+      params.append(fieldId, value.toString());
+    }
+  });
+
+  return `${baseURL}?${params.toString()}`;
+}
+
+console.log('✅ Feedback data calculator loaded (with Batch 6 & 7)');
