@@ -3,6 +3,11 @@
 
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
+    // Track install date for feedback system (use chrome.storage in service worker)
+    const installDate = Date.now().toString();
+    chrome.storage.local.set({ 'install_date': installDate });
+    console.log('SpotBoard installed at:', new Date(parseInt(installDate)).toISOString());
+    
     // First-time install - open dashboard with tutorial modal
     chrome.tabs.create({
       url: chrome.runtime.getURL('dashboard.html')

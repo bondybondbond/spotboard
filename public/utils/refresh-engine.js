@@ -1200,6 +1200,9 @@ async function refreshAll() {
   btn.textContent = '⏳ Refreshing...';
   btn.style.background = '#6c757d';
   
+  // Track refresh click (Batch 4)
+  trackRefreshClick();
+  
   try {
     // Get components from hybrid storage (sync metadata + local data)
     // NEW: Load from per-component keys instead of array

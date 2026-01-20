@@ -716,26 +716,48 @@ if (infoBtn) {
   });
 }
 
-// ===== BOARD OPENS COUNTER (Batch 3) =====
-// Track how often user visits dashboard (resets every 7 days)
-function trackBoardOpen() {
-  const opens = parseInt(localStorage.getItem('board_opens_7days') || '0');
-  const lastReset = parseInt(localStorage.getItem('board_opens_reset') || '0');
-  const now = Date.now();
+// ===== ROLLING WINDOW TRACKING HELPER =====
+// Stores timestamp arrays instead of counters
+// Survives version updates because localStorage persists
+// Provides TRUE rolling 7-day windows (no artificial resets)
+function addEventTimestamp(storageKey, maxAge = 30) {
+  const raw = localStorage.getItem(storageKey) || '[]';
+  const timestamps = JSON.parse(raw);
+  
+  // Add current timestamp
+  timestamps.push(Date.now());
+  
+  // Clean up old timestamps (keep last 30 days max for storage efficiency)
+  const cutoff = Date.now() - (maxAge * 24 * 60 * 60 * 1000);
+  const cleaned = timestamps.filter(t => t > cutoff);
+  
+  localStorage.setItem(storageKey, JSON.stringify(cleaned));
+  
+  // Calculate last 7 days for logging
+  const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+  const count7d = cleaned.filter(t => t > sevenDaysAgo).length;
+  
+  return count7d;
+}
 
-  // Reset counter every 7 days
-  if (now - lastReset > 7 * 24 * 60 * 60 * 1000) {
-    localStorage.setItem('board_opens_7days', '1');
-    localStorage.setItem('board_opens_reset', now.toString());
-    console.log('🔄 Board opens counter reset (new 7-day period)');
-  } else {
-    localStorage.setItem('board_opens_7days', (opens + 1).toString());
-    console.log(`📊 Board opened ${opens + 1} times in last 7 days`);
-  }
+// ===== BOARD OPENS COUNTER (Batch 3 - ROLLING WINDOW) =====
+// Track dashboard visits using timestamp array
+// Survives version updates ✅ No artificial resets ✅
+function trackBoardOpen() {
+  const count = addEventTimestamp('board_open_timestamps');
+  console.log(`📊 Board opened ${count} times in last 7 days`);
 }
 
 // Call immediately when dashboard loads
 trackBoardOpen();
+
+// ===== REFRESH CLICKS COUNTER (Batch 4 - ROLLING WINDOW) =====
+// Track "Refresh All" clicks using timestamp array  
+// Survives version updates ✅ No artificial resets ✅
+function trackRefreshClick() {
+  const count = addEventTimestamp('refresh_click_timestamps');
+  console.log(`📊 Refresh clicked ${count} times in last 7 days`);
+}
 
 // Close on backdrop click
 const backdrop = document.querySelector('.welcome-modal-backdrop');

@@ -1176,6 +1176,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           name: name,
           html_cache: cleanedHTML,
           last_refresh: new Date().toISOString(),
+          created_at: new Date().toISOString(), // Track creation time separately from refresh
           favicon: faviconUrl
         };
         
@@ -1211,7 +1212,8 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
             headingFingerprint: metadata.headingFingerprint,
             positionBased: finalPositionBased, // 🎯 BATCH 2: User's final selection from Advanced panel
             excludedSelectors: excludedSelectors, // IMPORTANT: Sync for cross-device!
-            last_refresh: component.last_refresh
+            last_refresh: component.last_refresh,
+            created_at: component.created_at // Track creation time for analytics
           }
         };
         
