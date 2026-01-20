@@ -550,6 +550,129 @@
       border-radius: 3px;
       border: 1px solid #667eea;
     }
+
+    /* ===== V2: Feedback Button (Light Yellow + SVG) ===== */
+    #feedback-bubble {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      min-height: 60px;
+      padding: 12px 20px;
+      background: #FFEB3B;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #333333;
+      z-index: 9999;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    #feedback-bubble svg {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+    }
+
+    #feedback-bubble:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Feedback overlay (subtle darkening) */
+    .sentiment-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.15);
+      z-index: 9998;
+    }
+
+    /* Feedback drawer (bottom-right, slides up) */
+    .sentiment-drawer {
+      position: fixed;
+      bottom: 90px;
+      right: 20px;
+      width: 420px;
+      max-width: calc(100vw - 40px);
+      background: white;
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      z-index: 9999;
+      animation: slideUpDrawer 0.3s ease-out;
+    }
+
+    @keyframes slideUpDrawer {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .sentiment-drawer h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+
+    .drawer-subtext {
+      margin: 0 0 20px;
+      font-size: 14px;
+      color: #666;
+    }
+
+    /* Three sentiment buttons (stacked vertically) */
+    .sentiment-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .sentiment-buttons button {
+      width: 100%;
+      min-height: 48px;
+      padding: 12px 20px;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: filter 0.2s, transform 0.2s;
+      text-align: left;
+    }
+
+    #sentiment-positive {
+      background: #4caf50;
+      color: white;
+    }
+
+    #sentiment-negative {
+      background: #f44336;
+      color: white;
+    }
+
+    #sentiment-delay {
+      background: #9E9E9E;
+      color: white;
+    }
+
+    .sentiment-buttons button:hover {
+      filter: brightness(0.9);
+      transform: translateY(-1px);
+    }
   </style>
 </head>
 <body>
@@ -706,6 +829,33 @@
           <span><span style="color: #667eea; font-weight: bold;">✓</span> Your data stays local</span>
           <span><span style="color: #667eea; font-weight: bold;">✓</span> Free to use</span>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feedback Button (v2) -->
+  <button id="feedback-bubble" aria-label="Open feedback form">
+    <svg width="24" height="24" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M63.65 8.07C20.99 8.29 3.72 30.53 3.39 58.23c-.18 15.47 9.79 28.83 25.07 36.98c7.45 5.27-1.42 22.54-8.52 26.95c0 0 25.1-1.71 32.02-19.4h0c3.82.56 7.75.85 11.78.85c33.28 0 60.17-17.68 60.17-45.38S106.72 7.86 63.65 8.07z" fill="#ffffff" stroke="#000000" stroke-width="6" stroke-linejoin="round" stroke-miterlimit="10"/>
+      <g fill="#54646d">
+        <circle cx="32.6" cy="57" r="8"/>
+        <circle cx="64.6" cy="57" r="8"/>
+        <circle cx="95.4" cy="57" r="8"/>
+      </g>
+    </svg>
+    <span>Feedback</span>
+  </button>
+
+  <!-- Feedback Drawer (v2) -->
+  <div id="sentiment-picker" style="display: none;">
+    <div class="sentiment-overlay"></div>
+    <div class="sentiment-drawer">
+      <h3>Quick feedback on SpotBoard 💬</h3>
+      <p class="drawer-subtext">⏱️ 3 quick questions (~1 minute)</p>
+      <div class="sentiment-buttons">
+        <button id="sentiment-positive">😊 Share what's working</button>
+        <button id="sentiment-negative">😞 Report an issue</button>
+        <button id="sentiment-delay">⏰ Remind me later</button>
       </div>
     </div>
   </div>

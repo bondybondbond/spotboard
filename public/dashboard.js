@@ -770,3 +770,94 @@ if (backdrop) {
     }
   });
 }
+
+// ===== V2: FEEDBACK BUBBLE LOGIC =====
+
+// Snooze feedback with smart durations based on user action
+function snoozeFeedback(days, reason) {
+  const snoozeUntil = Date.now() + (days * 24 * 60 * 60 * 1000);
+  localStorage.setItem('feedback_snoozed_until', snoozeUntil.toString());
+  localStorage.setItem('feedback_snooze_reason', reason);
+  console.log(`🔕 Feedback snoozed for ${days} days (reason: ${reason})`);
+}
+
+// Initialize feedback bubble (show/hide based on conditions)
+async function initFeedbackBubble() {
+  const bubble = document.getElementById('feedback-bubble');
+  const picker = document.getElementById('sentiment-picker');
+  const positiveBtn = document.getElementById('sentiment-positive');
+  const negativeBtn = document.getElementById('sentiment-negative');
+  const delayBtn = document.getElementById('sentiment-delay');
+
+  if (!bubble || !picker) return; // Elements not found
+
+  // Check display conditions
+  const snoozedUntil = parseInt(localStorage.getItem('feedback_snoozed_until') || '0');
+  const { install_date } = await chrome.storage.local.get('install_date');
+  const installDate = parseInt(install_date || Date.now());
+  const daysSinceInstall = Math.floor((Date.now() - installDate) / (1000 * 60 * 60 * 24));
+  
+  const syncData = await chrome.storage.sync.get(null);
+  const totalCards = Object.keys(syncData).filter(k => k.startsWith('comp-')).length;
+
+  // Hide bubble if: snoozed, too new (<3 days), or no cards
+  if (Date.now() < snoozedUntil || daysSinceInstall < 3 || totalCards === 0) {
+    bubble.style.display = 'none';
+    console.log('🔕 Feedback bubble hidden:', {
+      snoozed: Date.now() < snoozedUntil,
+      tooNew: daysSinceInstall < 3,
+      noCards: totalCards === 0
+    });
+    return;
+  }
+
+  // Show bubble (conditions met)
+  bubble.style.display = 'flex';
+  console.log('✅ Feedback bubble visible');
+
+  // Show drawer on bubble click
+  bubble.addEventListener('click', () => {
+    picker.style.display = 'block';
+  });
+
+  // Handle positive sentiment (opens external for now - Phase 3 will embed)
+  positiveBtn.addEventListener('click', async () => {
+    const url = await buildTallyURL('positive');
+    window.open(url, '_blank');
+    // TODO Phase 3: Track survey started, snooze 60 days only on completion
+    snoozeFeedback(60, 'survey_started'); // For now, assume completion
+    picker.style.display = 'none';
+    bubble.style.display = 'none';
+  });
+
+  // Handle negative sentiment (opens external for now - Phase 3 will embed)
+  negativeBtn.addEventListener('click', async () => {
+    const url = await buildTallyURL('negative');
+    window.open(url, '_blank');
+    // TODO Phase 3: Track survey started, snooze 60 days only on completion
+    snoozeFeedback(60, 'survey_started'); // For now, assume completion
+    picker.style.display = 'none';
+    bubble.style.display = 'none';
+  });
+
+  // Handle "Remind me later" (NEW in v2)
+  delayBtn.addEventListener('click', () => {
+    snoozeFeedback(7, 'remind_later');
+    picker.style.display = 'none';
+    // Keep bubble visible (will reappear in 7 days)
+  });
+
+  // Close drawer on overlay click (snooze 14 days for dismissal)
+  const overlay = document.querySelector('.sentiment-overlay');
+  if (overlay) {
+    overlay.addEventListener('click', () => {
+      snoozeFeedback(14, 'dismissed');
+      picker.style.display = 'none';
+    });
+  }
+}
+
+// Initialize feedback bubble when DOM ready
+document.addEventListener('DOMContentLoaded', () => {
+  initFeedbackBubble();
+});
