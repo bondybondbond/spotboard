@@ -30,8 +30,8 @@ export async function calculateTier1Fields() {
 
   // Calculate basic metrics
   const totalCards = components.length;
-  const activeCards = components.filter((c) => !c.pauseRefresh).length;
-  const pausedCards = components.filter((c) => c.pauseRefresh).length;
+  const activeCards = components.filter((c) => !c.refreshPaused).length;
+  const pausedCards = components.filter((c) => c.refreshPaused).length;
   
   // Calculate paused card rate as percentage
   const pausedCardRate = totalCards > 0 

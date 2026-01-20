@@ -15,6 +15,11 @@ async function calculateTier1Fields() {
   const totalCards = components.length;
   const activeCards = components.filter((c) => !c.refreshPaused).length;
   const pausedCards = components.filter((c) => c.refreshPaused).length;
+  
+  // Calculate paused card rate as percentage
+  const pausedCardRate = totalCards > 0 
+    ? Math.round((pausedCards / totalCards) * 100) 
+    : 0;
 
   // Extract all tracked sites with counts
   const siteData = {};
@@ -48,7 +53,7 @@ async function calculateTier1Fields() {
     extension_version: chrome.runtime.getManifest().version,
     total_cards: totalCards,
     active_cards: activeCards,
-    paused_cards: pausedCards,
+    'paused_card_rate_%': pausedCardRate, // Percentage, not count
     all_tracked_sites: allTrackedSites,
     avg_card_age_days: avgCardAgeDays,
   };

@@ -62,7 +62,7 @@ async function calculateTier1Fields() {
     extension_version: chrome.runtime.getManifest().version,
     total_cards: totalCards,
     active_cards: activeCards,
-    paused_card_rate: pausedCardRate, // Percentage (0-100), not count
+    'paused_card_rate_%': pausedCardRate, // Percentage (0-100), not count
     all_tracked_sites: allTrackedSites,
     avg_card_age_days: avgCardAgeDays,
   };
