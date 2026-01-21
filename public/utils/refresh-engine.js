@@ -770,7 +770,7 @@ async function refreshComponent(component) {
           };
         }
         if (component.positionBased) {
-          console.log('📍 Position-based capture - skipping fingerprint verification');
+          // Position-based capture - skip fingerprint verification
         }
         
         // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
@@ -829,11 +829,9 @@ async function refreshComponent(component) {
         if (matches.length > 1) {
           // 🎯 BATCH 3: Position-based captures skip fingerprint verification
           if (component.positionBased) {
-            console.log(`📍 Position-based capture with ${matches.length} matches - using first element (no fingerprint check)`);
             element = matches[0];
           } else {
             const originalFingerprint = extractFingerprint(component.html_cache);
-            console.log(`🔍 Multiple matches (${matches.length}) for selector, using fingerprint: "${originalFingerprint}"`);
             
             // Try to find element whose fingerprint matches
             for (const candidate of matches) {
@@ -843,14 +841,12 @@ async function refreshComponent(component) {
               if (originalFingerprint && candidateFingerprint && 
                   candidateFingerprint.toLowerCase().includes(originalFingerprint.toLowerCase())) {
                 element = candidate;
-                console.log(`✅ Found matching element with fingerprint: "${candidateFingerprint}"`);
                 break;
               }
             }
             
             // If no fingerprint match, fall back to first match (old behavior)
             if (!element) {
-              console.log(`⚠️ No fingerprint match found, using first element`);
               element = matches[0];
             }
           }
@@ -867,9 +863,7 @@ async function refreshComponent(component) {
         const extractedImgCount = (extractedHtml.match(/<img/gi) || []).length;
         const hasImagesMissing = originalImgCount >= 3 && extractedImgCount === 0;
         
-        if (hasImagesMissing) {
-          console.log(`🖼️ [Images Missing] Original had ${originalImgCount} images, extracted has ${extractedImgCount} - likely JS-rendered`);
-        }
+        // Images missing check (silent)
         
         // Check if we got a skeleton/loading placeholder instead of real content
         const isSkeletonContent = extractedHtml.includes('class="skeleton') || 
@@ -932,16 +926,12 @@ async function refreshComponent(component) {
         }
         
         // Skeleton check triggers: skeleton class, empty container, missing images, wrapper skeleton
-        if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing) {
-          console.log(`🔍 Skeleton detected: ${component.name} (imgs: ${originalImgCount}→${extractedImgCount})`);
-        }
         
         if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing) {
           // Extract fingerprint FIRST to pass to tab refresh
           const originalFingerprint = extractFingerprint(component.html_cache);
           
           // Try tab-based refresh as fallback
-          console.log('[Skeleton Fallback] Attempting tab refresh for', component.label, 'with fingerprint:', originalFingerprint);
           const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount);
           
           if (tabHtml) {
@@ -955,9 +945,7 @@ async function refreshComponent(component) {
                 keepOriginal: true
               };
             }
-            if (component.positionBased) {
-              console.log('📍 [Skeleton Fallback] Position-based capture - skipping fingerprint verification');
-            }
+            // Position-based captures skip fingerprint check
             
             // Tab refresh worked and verified!
             // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
@@ -1018,7 +1006,7 @@ async function refreshComponent(component) {
         // Try heading-based detection for dynamic ID patterns (Amazon CardInstance pattern)
         // 🎯 BATCH 3: Skip heading fallback for position-based captures (they don't use headings)
         if (!component.positionBased && component.headingFingerprint) {
-          console.log(`🔍 [Heading Fallback] Selector not found, trying heading-based detection for: "${component.headingFingerprint}"`);
+          // Trying heading-based detection
           
           const allHeadings = doc.querySelectorAll(`
             h1, h2, h3, h4, caption,
@@ -1039,7 +1027,7 @@ async function refreshComponent(component) {
             if (headingLower.includes(fingerprintLower) || 
                 (headingText.length >= 8 && fingerprintLower.includes(headingLower))) {
               targetHeading = heading;
-              console.log(`✅ [Heading Fallback] Found heading: "${heading.textContent.substring(0, 50)}"`);
+              // Found heading match
               break;
             }
           }
@@ -1066,7 +1054,7 @@ async function refreshComponent(component) {
               
               if (hasDataAttr || hasCardClass) {
                 container = current;
-                console.log(`✅ [Heading Fallback] Found container at level ${i + 1}`);
+                // Found container
                 break;
               }
             }
@@ -1074,7 +1062,7 @@ async function refreshComponent(component) {
             // If no specific container found, use parent 3 levels up
             if (!container && targetHeading.parentElement?.parentElement?.parentElement) {
               container = targetHeading.parentElement.parentElement.parentElement;
-              console.log(`⚠️ [Heading Fallback] Using default parent (3 levels up)`);
+              // Using default parent (3 levels up)
             }
             
             if (container) {
@@ -1082,28 +1070,28 @@ async function refreshComponent(component) {
               
               // Validate minimum size - if too small, try climbing higher
               if (extractedHtml.length < 1000) {
-                console.log(`⚠️ [Heading Fallback] Container too small (${extractedHtml.length} chars), searching higher...`);
+                // Container too small, searching higher
                 
                 let largerContainer = container.parentElement;
                 while (largerContainer && largerContainer.outerHTML.length < 2000 && largerContainer.parentElement) {
-                  console.log(`  Level up: ${largerContainer.className?.substring(0, 30)} (${largerContainer.outerHTML.length} chars)`);
+                  // Climbing up DOM tree
                   largerContainer = largerContainer.parentElement;
                 }
                 
                 if (largerContainer && largerContainer.outerHTML.length > extractedHtml.length) {
                   const largerHtml = largerContainer.outerHTML;
-                  console.log(`✅ [Heading Fallback] Found larger container: ${largerHtml.length} chars (${Math.round(largerHtml.length / extractedHtml.length)}x bigger)`);
+                  // Found larger container
                   container = largerContainer;
                   extractedHtml = largerHtml;
                 } else {
-                  console.log(`⚠️ [Heading Fallback] No larger container found, using small one`);
+                  // Using small container
                 }
               }
               
-              console.log(`✅ [Heading Fallback] Successfully extracted via heading: ${extractedHtml.length} chars`);
+              // Successfully extracted via heading
             }
           } else {
-            console.log(`❌ [Heading Fallback] Heading not found in page`);
+            // Heading not found - will use skeleton fallback
           }
         }
         

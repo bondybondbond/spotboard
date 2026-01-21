@@ -13,9 +13,6 @@ async function migrateStorageIfNeeded() {
     chrome.storage.sync.get(null, (syncData) => {
       // Check if old format exists (components array)
       if (syncData.components && Array.isArray(syncData.components)) {
-        console.log('🔄 Migrating to per-component storage format...');
-        console.log('📊 Components to migrate:', syncData.components.length);
-        
         const oldComponents = syncData.components;
         const newFormat = {};
         
@@ -41,19 +38,15 @@ async function migrateStorageIfNeeded() {
         chrome.storage.local.set({ 
           'backup-pre-migration': JSON.stringify(syncData) 
         }, () => {
-          console.log('💾 Backup created before migration');
-          
           // Save new format and remove old
           chrome.storage.sync.set(newFormat, () => {
             chrome.storage.sync.remove('components', () => {
-              console.log('✅ Migration complete:', Object.keys(newFormat).length, 'components');
               resolve(newFormat);
             });
           });
         });
       } else {
         // Already new format or empty
-        console.log('✅ Storage already in new format');
         resolve(syncData);
       }
     });
@@ -87,12 +80,7 @@ async function validateStorageFormat() {
         }
       });
       
-      console.log('🔍 Storage validation complete:');
-      console.log('  Total components:', Object.keys(syncData).filter(k => k.startsWith('comp-')).length);
-      console.log('  Total sync storage used:', totalSize, 'bytes');
-      
       if (issues.length === 0) {
-        console.log('✅ All components valid');
         resolve({ valid: true, issues: [] });
       } else {
         console.warn('⚠️ Issues found:', issues);
@@ -115,7 +103,6 @@ function loadComponentsFromSync() {
         }
       });
       
-      console.log('📦 Loaded components from sync:', components.length);
       resolve(components);
     });
   });
@@ -307,9 +294,7 @@ function loadComponentsFromSync() {
           const compData = result[`comp-${component.id}`];
           if (compData) {
             compData.refreshPaused = component.refreshPaused;
-            chrome.storage.sync.set({ [`comp-${component.id}`]: compData }, () => {
-              console.log(`✅ ${component.refreshPaused ? 'Paused' : 'Resumed'}:`, component.id);
-            });
+            chrome.storage.sync.set({ [`comp-${component.id}`]: compData });
           }
         });
         
@@ -336,9 +321,7 @@ function loadComponentsFromSync() {
           components.push(...updated);
           
           // Delete from sync storage (remove the component's key)
-          chrome.storage.sync.remove(`comp-${componentId}`, () => {
-            console.log('✅ Deleted from sync:', componentId);
-          });
+          chrome.storage.sync.remove(`comp-${componentId}`);
           
           // Update local storage (remove HTML data)
           chrome.storage.local.get(['componentsData'], (result) => {
@@ -438,7 +421,13 @@ function loadComponentsFromSync() {
         input.focus();
         input.select();
         
+        let saved = false; // Flag to prevent double-save
+        
         const saveLabel = () => {
+          // Guard: prevent double-execution (Enter key + blur event)
+          if (saved) return;
+          saved = true;
+          
           const newLabel = input.value.trim();
           
           // Restore title element
@@ -455,9 +444,7 @@ function loadComponentsFromSync() {
               const compData = result[`comp-${component.id}`];
               if (compData) {
                 compData.customLabel = newLabel;
-                chrome.storage.sync.set({ [`comp-${component.id}`]: compData }, () => {
-                  console.log('✅ Label updated in sync:', component.id);
-                });
+                chrome.storage.sync.set({ [`comp-${component.id}`]: compData });
               } else {
                 console.warn('⚠️ Component not found in sync storage:', component.id);
               }
@@ -570,7 +557,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     // Check if a new comp-* key was added (new component captured)
     for (const key in changes) {
       if (key.startsWith('comp-') && !changes[key].oldValue && changes[key].newValue) {
-        console.log('🎉 New component detected! Reloading dashboard...');
         location.reload();
         return; // Only reload once
       }
@@ -745,7 +731,7 @@ function addEventTimestamp(storageKey, maxAge = 30) {
 // Survives version updates ✅ No artificial resets ✅
 function trackBoardOpen() {
   const count = addEventTimestamp('board_open_timestamps');
-  console.log(`📊 Board opened ${count} times in last 7 days`);
+  // Board open tracking (no console spam)
 }
 
 // Call immediately when dashboard loads
@@ -756,7 +742,7 @@ trackBoardOpen();
 // Survives version updates ✅ No artificial resets ✅
 function trackRefreshClick() {
   const count = addEventTimestamp('refresh_click_timestamps');
-  console.log(`📊 Refresh clicked ${count} times in last 7 days`);
+  // Refresh click tracking (no console spam)
 }
 
 // Close on backdrop click
@@ -788,9 +774,7 @@ function snoozeFeedback(days, reason) {
     year: 'numeric'
   });
   
-  console.log(`🔕 Feedback snoozed for ${days} days (reason: ${reason})`);
-  console.log(`   Will reappear on: ${snoozeDate}`);
-  console.log('   📊 Snooze scenarios: completed=60d, remind_later=7d, dismissed=7d, partial_completion=3d');
+  // Feedback snoozed (user sees UI confirmation)
 }
 
 // PHASE 2: Store original drawer HTML for reset (matches dashboard.html)
@@ -844,12 +828,7 @@ function logAnalyticsSummary() {
   const completed = analytics.survey_completed || 0;
   const completionRate = started > 0 ? ((completed / started) * 100).toFixed(1) : 0;
   
-  console.log('📊 Feedback Analytics Summary:');
-  console.log(`   Surveys started: ${started}`);
-  console.log(`   Surveys completed: ${completed}`);
-  console.log(`   Completion rate: ${completionRate}%`);
-  console.log(`   Snooze reasons:`, analytics.snooze_reasons || {});
-  console.log(`   Avg time to complete: ${analytics.avg_completion_time || 'N/A'}s`);
+  // Feedback analytics available in storage
 }
 
 // PHASE 3: Track survey started timestamp
@@ -860,7 +839,6 @@ function trackSurveyStarted() {
   // Analytics: Increment started count
   incrementAnalytic('survey_started');
   
-  console.log('📊 Survey started at:', new Date(timestamp).toISOString());
   logAnalyticsSummary();
 }
 
@@ -891,7 +869,7 @@ function reattachButtonListeners() {
           style="border: none; border-radius: 8px; display: block;">
         </iframe>
       `;
-      console.log('📊 Positive survey embedded in drawer');
+
     });
   }
   
@@ -914,7 +892,7 @@ function reattachButtonListeners() {
           style="border: none; border-radius: 8px; display: block;">
         </iframe>
       `;
-      console.log('📊 Negative survey embedded in drawer');
+
     });
   }
   
@@ -934,7 +912,7 @@ function resetDrawerToOriginal() {
   
   drawer.classList.remove('survey-embedded');
   drawer.innerHTML = ORIGINAL_DRAWER_HTML;
-  console.log('🔄 Drawer reset to original state');
+
   
   // Re-attach button listeners after resetting HTML
   reattachButtonListeners();
@@ -948,7 +926,7 @@ function showThankYouOverlay() {
   const picker = document.getElementById('sentiment-picker');
   if (!picker) return;
   
-  console.log('🎯 Creating thank you overlay...');
+
   
   // Remove any existing overlay first
   const existingOverlay = document.getElementById('thank-you-close-overlay');
@@ -993,25 +971,21 @@ function showThankYouOverlay() {
     const bubble = document.getElementById('feedback-bubble');
     if (bubble) bubble.style.display = 'none';
     overlay.remove();
-    console.log('✅ Thank you overlay closed by user - feedback hidden for 60 days');
+
   });
   
   document.body.appendChild(overlay);
-  console.log('✅ Thank you overlay displayed - waiting for user to close');
+
 }
 
 window.addEventListener('message', (event) => {
-  // Debug: Log ALL messages to see what's coming through
-  if (event.data && typeof event.data === 'object') {
-    console.log('📬 Received message:', event.data);
-  }
+  // Check incoming messages
   
   // Check for Tally submission event (try both possible formats)
   const isSubmitted = event.data?.type === 'Tally.FormSubmitted' || 
                      (typeof event.data === 'string' && event.data.includes('Tally.FormSubmitted'));
   
   if (isSubmitted) {
-    console.log('🎉 TALLY FORM SUBMITTED EVENT DETECTED!');
     surveyCompleted = true;
     
     // Calculate completion time
@@ -1023,7 +997,6 @@ window.addEventListener('message', (event) => {
       const newAvg = Math.round((totalTime + completionTime) / ((analytics.survey_completed || 0) + 1));
       analytics.avg_completion_time = newAvg;
       saveAnalytics(analytics);
-      console.log(`⏱️ Completion time: ${completionTime}s`);
     }
     
     // PHASE 3: Clear survey started flag on completion
@@ -1032,15 +1005,12 @@ window.addEventListener('message', (event) => {
     // Analytics: Increment completed count
     incrementAnalytic('survey_completed');
     
-    console.log('✅ Survey completed - form submitted');
-    console.log('🧹 Cleared survey_started flag');
     logAnalyticsSummary();
     
     // Snooze for 60 days
     snoozeFeedback(60, 'completed');
     
     // Show thank you overlay with close button
-    console.log('🎯 About to show thank you overlay...');
     showThankYouOverlay();
   }
 });
@@ -1062,7 +1032,7 @@ async function initFeedbackBubble() {
   
   if (surveyStartedAt > 0 && Date.now() >= snoozedUntil) {
     // Survey was started but never completed AND not currently snoozed
-    console.log('⏸️ Detected partial completion - applying 3-day retry');
+    // Partial completion detected - retry in 3 days
     snoozeFeedback(3, 'partial_completion');
     localStorage.removeItem('feedback_survey_started'); // Clear flag after snoozing
   }
@@ -1079,20 +1049,12 @@ async function initFeedbackBubble() {
   // Hide bubble if: snoozed, too new (<3 days), or no cards
   if (Date.now() < updatedSnoozeUntil || daysSinceInstall < 3 || totalCards === 0) {
     bubble.style.display = 'none';
-    const snoozeReason = localStorage.getItem('feedback_snooze_reason');
-    console.log('🔕 Feedback bubble hidden:', {
-      snoozed: Date.now() < updatedSnoozeUntil,
-      snoozeReason: snoozeReason || 'none',
-      daysLeft: Math.ceil((updatedSnoozeUntil - Date.now()) / (1000 * 60 * 60 * 24)),
-      tooNew: daysSinceInstall < 3,
-      noCards: totalCards === 0
-    });
     return;
   }
 
   // Show bubble (conditions met)
   bubble.style.display = 'flex';
-  console.log('✅ Feedback bubble visible');
+  // Feedback bubble visible
 
   // Toggle drawer on bubble click (open/close)
   bubble.addEventListener('click', () => {
@@ -1110,9 +1072,9 @@ async function initFeedbackBubble() {
         
         if (confirmed) {
           picker.style.display = 'none';
-          console.log('🔕 User confirmed close via feedback button - drawer closed');
+          // User confirmed close
         } else {
-          console.log('⏸️ User cancelled close - continuing survey');
+          // User cancelled - continue survey
         }
       } else {
         // No active survey or survey completed - just close
@@ -1123,7 +1085,7 @@ async function initFeedbackBubble() {
       const drawer = document.querySelector('.sentiment-drawer');
       if (drawer && drawer.classList.contains('survey-embedded')) {
         resetDrawerToOriginal();
-        console.log('🔄 Reopening feedback - reset to selection screen');
+        // Feedback reopened
       }
       picker.style.display = 'block';
     }
@@ -1157,16 +1119,15 @@ async function initFeedbackBubble() {
           // Let next dashboard load detect partial completion and apply 3-day retry
           resetDrawerToOriginal();
           picker.style.display = 'none';
-          console.log('↩️ User confirmed close - drawer closed, survey_started flag preserved for 3-day retry');
+          // User closed drawer - flag preserved for retry
         } else {
           // User cancelled - keep survey open
-          console.log('⏸️ User cancelled close - continuing survey');
         }
       } else {
         // User dismissed without opening survey - snooze 7 days
         snoozeFeedback(7, 'dismissed');
         picker.style.display = 'none';
-        console.log('🔕 Dismissed without opening - snoozed 7 days');
+        // Dismissed without opening
       }
     });
   }

@@ -145,4 +145,4 @@ async function buildTallyURL(sentiment) {
   return `${baseURL}?${params.toString()}`;
 }
 
-console.log('✅ Feedback data calculator loaded (11 hidden fields: user_id, browser_language, + 9 metrics)');
+// Feedback data calculator initialized
