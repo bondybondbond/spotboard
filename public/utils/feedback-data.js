@@ -50,6 +50,7 @@ async function calculateTier1Fields() {
       : 0;
 
   return {
+    browser_language: navigator.language || 'unknown', // e.g. "en-US", "es-ES"
     extension_version: chrome.runtime.getManifest().version,
     total_cards: totalCards,
     active_cards: activeCards,
@@ -92,7 +93,7 @@ async function calculateTier2Fields() {
 }
 
 // ===== COMBINED CALCULATOR (Batch 5) =====
-// Returns all 10 hidden fields for Tally form (now includes user_id)
+// Returns all 11 hidden fields for Tally form (includes user_id + browser_language)
 async function getAllHiddenFields() {
   const tier1 = await calculateTier1Fields();
   const tier2 = await calculateTier2Fields();
@@ -111,6 +112,7 @@ const TALLY_NEGATIVE_URL = 'https://tally.so/r/7RKNlZ';
 // Note: Tally uses field names directly
 const HIDDEN_FIELD_IDS = {
   user_id: 'user_id', // Anonymous installation UUID
+  browser_language: 'browser_language', // e.g. "en-US", "es-ES"
   extension_version: 'extension_version',
   total_cards: 'total_cards',
   active_cards: 'active_cards',
@@ -123,7 +125,7 @@ const HIDDEN_FIELD_IDS = {
 };
 
 // ===== BATCH 7: Build Tally URL with Hidden Fields =====
-// Builds pre-populated Tally URL with all 10 hidden fields (including user_id)
+// Builds pre-populated Tally URL with all 11 hidden fields (user_id + browser_language + 9 others)
 async function buildTallyURL(sentiment) {
   // Select base URL based on sentiment
   const baseURL = sentiment === 'positive' ? TALLY_POSITIVE_URL : TALLY_NEGATIVE_URL;
@@ -143,4 +145,4 @@ async function buildTallyURL(sentiment) {
   return `${baseURL}?${params.toString()}`;
 }
 
-console.log('✅ Feedback data calculator loaded (10 hidden fields including user_id)');
+console.log('✅ Feedback data calculator loaded (11 hidden fields: user_id, browser_language, + 9 metrics)');

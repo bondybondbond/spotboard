@@ -1,19 +1,22 @@
 # Tally Feedback System - Complete Implementation
 
 ## Overview
-Full Tally.so integration with 10 hidden fields for user feedback collection. Privacy-safe, rolling windows survive updates, anonymous user tracking.
+Full Tally.so integration with 11 hidden fields for user feedback collection. Privacy-safe, rolling windows survive updates, anonymous user tracking, browser language detection.
 
 ## Files Modified
 1. **src/background.ts** - Generates UUID on install
 2. **public/utils/feedback-data.js** - Calculates all hidden fields
 3. **public/dashboard.js** - Tracks board opens/refresh clicks, manages feedback UI
 
-## Hidden Fields (10 Total)
+## Hidden Fields (11 Total)
 ### Anonymous Tracking
 - **user_id**: crypto.randomUUID() generated on install, stored in chrome.storage.local
   - Privacy-safe: random string, not personally identifiable
   - Clears on uninstall
   - Enables duplicate submission detection
+- **browser_language**: navigator.language (e.g. "en-US", "es-ES")
+  - Non-identifying browser setting
+  - Helps understand language-specific feedback patterns
 
 ### Extension Metadata (Tier 1)
 - **extension_version**: Current version from manifest
