@@ -35,3 +35,4 @@ test-*.js
 # Temporary submission files
 .do not upload/
 _do not upload/
+.do_not_upload/

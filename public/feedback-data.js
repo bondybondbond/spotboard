@@ -68,10 +68,4 @@ async function calculateTier1Fields() {
   };
 }
 
-// Console test function
-async function testTier1Fields() {
-  console.log("[Feedback] Testing Tier 1 fields calculation...");
-  const fields = await calculateTier1Fields();
-  console.log("[Feedback] Tier 1 Fields:", fields);
-  return fields;
-}
+

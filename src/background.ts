@@ -3,10 +3,17 @@
 
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
+    // Generate anonymous user ID for feedback tracking (privacy-safe UUID)
+    const userId = crypto.randomUUID(); // Built-in Web Crypto API
+    
     // Track install date for feedback system (use chrome.storage in service worker)
     const installDate = Date.now().toString();
-    chrome.storage.local.set({ 'install_date': installDate });
+    chrome.storage.local.set({ 
+      'install_date': installDate,
+      'user_id': userId  // Anonymous installation identifier
+    });
     console.log('SpotBoard installed at:', new Date(parseInt(installDate)).toISOString());
+    console.log('Anonymous user ID:', userId);
     
     // First-time install - open dashboard with tutorial modal
     chrome.tabs.create({

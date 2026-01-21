@@ -642,7 +642,9 @@
     }
 
     .sentiment-buttons button {
-      width: 100%;
+      width: 85%; /* Narrower than full width - adds breathing room */
+      max-width: 350px; /* Cap at 350px for larger viewports */
+      margin: 0 auto; /* Center buttons */
       min-height: 48px;
       padding: 12px 20px;
       font-size: 15px;
@@ -651,27 +653,49 @@
       border-radius: 8px;
       cursor: pointer;
       transition: filter 0.2s, transform 0.2s;
-      text-align: left;
+      text-align: center; /* Center align text */
+      display: flex; /* Enable flexbox for emoji spacing */
+      align-items: center;
+      justify-content: center; /* Center content horizontally */
+      gap: 12px; /* Space between emoji and text */
     }
 
     #sentiment-positive {
-      background: #4caf50;
+      background: #00AA48; /* Green from mockup */
       color: white;
+      box-shadow: 0 2px 4px rgba(0, 170, 72, 0.3);
     }
 
     #sentiment-negative {
-      background: #f44336;
-      color: white;
+      background: #FFF8EB; /* Beige from mockup */
+      color: #1a1a1a; /* Dark text for light background */
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
     #sentiment-delay {
-      background: #9E9E9E;
+      background: #7F7F7F; /* Gray from mockup */
       color: white;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
     }
 
     .sentiment-buttons button:hover {
-      filter: brightness(0.9);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
       transform: translateY(-1px);
+    }
+
+    /* Emoji styling for visibility */
+    .button-emoji {
+      font-size: 20px; /* Larger emoji for better visibility */
+      text-shadow: 0 1px 2px rgba(0,0,0,0.1); /* Subtle depth */
+      flex-shrink: 0;
+    }
+
+    /* PHASE 2: Survey embedded state - padding for breathing room */
+    .sentiment-drawer.survey-embedded {
+      padding: 16px; /* Add horizontal/vertical padding back */
+      width: 480px; /* Slightly wider for better survey display */
+      max-height: calc(100vh - 120px); /* Leave room for button + margin */
+      overflow: hidden; /* Prevent scrollbar on drawer */
     }
   </style>
 </head>
@@ -850,12 +874,21 @@
   <div id="sentiment-picker" style="display: none;">
     <div class="sentiment-overlay"></div>
     <div class="sentiment-drawer">
-      <h3>Quick feedback on SpotBoard 💬</h3>
-      <p class="drawer-subtext">⏱️ 3 quick questions (~1 minute)</p>
+      <h3>What do you think about SpotBoard?</h3>
+      <p class="drawer-subtext">3 quick questions • About 1 minute</p>
       <div class="sentiment-buttons">
-        <button id="sentiment-positive">😊 Share what's working</button>
-        <button id="sentiment-negative">😞 Report an issue</button>
-        <button id="sentiment-delay">⏰ Remind me later</button>
+        <button id="sentiment-positive">
+          <span class="button-emoji">👍</span>
+          <span>I like it!</span>
+        </button>
+        <button id="sentiment-negative">
+          <span class="button-emoji">👎</span>
+          <span>It could be better</span>
+        </button>
+        <button id="sentiment-delay">
+          <span class="button-emoji">⏰</span>
+          <span>Remind me later</span>
+        </button>
       </div>
     </div>
   </div>

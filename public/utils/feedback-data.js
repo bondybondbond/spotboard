@@ -72,8 +72,8 @@ function countEventsInWindow(storageKey, windowDays) {
 // ===== TIER 2: Requires Tracking Code (Batch 2-4) =====
 // NOW USING ROLLING WINDOWS - survives version updates!
 async function calculateTier2Fields() {
-  // Read install_date from chrome.storage.local (service worker compatible)
-  const { install_date } = await chrome.storage.local.get('install_date');
+  // Read install_date and user_id from chrome.storage.local (service worker compatible)
+  const { install_date, user_id } = await chrome.storage.local.get(['install_date', 'user_id']);
   const installDate = parseInt(install_date || Date.now());
   const daysSinceInstall = Math.floor(
     (Date.now() - installDate) / (1000 * 60 * 60 * 24)
@@ -84,6 +84,7 @@ async function calculateTier2Fields() {
   const refreshClicks = countEventsInWindow('refresh_click_timestamps', 7);
 
   return {
+    user_id: user_id || 'unknown', // Fallback for old installs without UUID
     days_since_install: daysSinceInstall,
     board_opens_7days: boardOpens,
     refresh_clicks_7days: refreshClicks,
@@ -91,7 +92,7 @@ async function calculateTier2Fields() {
 }
 
 // ===== COMBINED CALCULATOR (Batch 5) =====
-// Returns all 9 hidden fields for Tally form
+// Returns all 10 hidden fields for Tally form (now includes user_id)
 async function getAllHiddenFields() {
   const tier1 = await calculateTier1Fields();
   const tier2 = await calculateTier2Fields();
@@ -109,6 +110,7 @@ const TALLY_NEGATIVE_URL = 'https://tally.so/r/7RKNlZ';
 // Hidden field IDs (same across both forms)
 // Note: Tally uses field names directly
 const HIDDEN_FIELD_IDS = {
+  user_id: 'user_id', // Anonymous installation UUID
   extension_version: 'extension_version',
   total_cards: 'total_cards',
   active_cards: 'active_cards',
@@ -121,7 +123,7 @@ const HIDDEN_FIELD_IDS = {
 };
 
 // ===== BATCH 7: Build Tally URL with Hidden Fields =====
-// Builds pre-populated Tally URL with all 9 hidden fields
+// Builds pre-populated Tally URL with all 10 hidden fields (including user_id)
 async function buildTallyURL(sentiment) {
   // Select base URL based on sentiment
   const baseURL = sentiment === 'positive' ? TALLY_POSITIVE_URL : TALLY_NEGATIVE_URL;
@@ -141,4 +143,4 @@ async function buildTallyURL(sentiment) {
   return `${baseURL}?${params.toString()}`;
 }
 
-console.log('✅ Feedback data calculator loaded (with Batch 6 & 7)');
+console.log('✅ Feedback data calculator loaded (10 hidden fields including user_id)');
