@@ -120,10 +120,20 @@ function loadComponentsFromSync() {
       console.error('⚠️ Storage validation failed:', validation.issues);
     }
     
-    // Step 3: Load from new per-component format
+    // Step 3: Load component metadata from sync storage
     const metadata = await loadComponentsFromSync();
+    
+    // GA4: Track welcome_viewed for first-time users
+    const { hasSeenWelcome } = await chrome.storage.local.get('hasSeenWelcome');
+    if (!hasSeenWelcome && window.GA4 && window.GA4.sendEvent) {
+      window.GA4.sendEvent('welcome_viewed', {
+        has_components: metadata.length > 0
+      });
+      await chrome.storage.local.set({ hasSeenWelcome: true });
+      console.log('📊 GA4: welcome_viewed sent (first dashboard open)');
+    }
   
-    // Step 4: Load local HTML data
+    // Step 4: Load component data from local storage
     const localResult = await new Promise(resolve => {
       chrome.storage.local.get(['componentsData'], resolve);
     });
@@ -741,9 +751,32 @@ trackBoardOpen();
 // ===== REFRESH CLICKS COUNTER (Batch 4 - ROLLING WINDOW) =====
 // Track "Refresh All" clicks using timestamp array  
 // Survives version updates ✅ No artificial resets ✅
-function trackRefreshClick() {
+async function trackRefreshClick() {
   const count = addEventTimestamp('refresh_click_timestamps');
   // Refresh click tracking (no console spam)
+  
+  // GA4: Track first refresh within 24h (Batch 3 activation event)
+  try {
+    const result = await chrome.storage.local.get(['firstRefreshCompleted', 'install_date']);
+    const { firstRefreshCompleted, install_date } = result;
+    
+    if (!firstRefreshCompleted && install_date) {
+      const hoursSinceInstall = (Date.now() - parseInt(install_date)) / 3600000;
+      
+      // Only track if within 24 hours of install
+      if (hoursSinceInstall <= 24) {
+        if (window.GA4 && window.GA4.sendEvent) {
+          window.GA4.sendEvent('first_refresh_24h', {
+            time_since_install_hours: Math.round(hoursSinceInstall)
+          });
+          console.log('📊 GA4: first_refresh_24h sent (hours since install:', Math.round(hoursSinceInstall), ')');
+        }
+        await chrome.storage.local.set({ firstRefreshCompleted: true });
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error tracking first refresh:', error);
+  }
 }
 
 // Close on backdrop click

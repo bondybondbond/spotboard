@@ -153,6 +153,13 @@ class RefreshToastManager {
 const toastManager = new RefreshToastManager();
 
 /**
+ * GA4 Tracking: First refresh within 24h (one-time activation event)
+ * Also serves as placeholder for Batch 4 refresh tracking
+ */
+// trackRefreshClick moved to dashboard.js to avoid duplicate function override
+// GA4 first_refresh_24h tracking now handled in dashboard.js
+
+/**
  * Check if URL will likely need active tab for refresh
  * Used to show user warning before refresh starts
  * 

@@ -1264,21 +1264,42 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                     console.error('   Keys in storage:', Object.keys(verifyResult.componentsData || {}));
                     showStyledNotification(`⚠️ Warning: Save may have failed - please refresh dashboard`, 'error');
                   } else {
-                    console.log('✅ VERIFICATION PASSED: Component saved with', savedData.html_cache.length, 'bytes HTML');
+                    // GA4: Track first capture (one-time event)
+                    console.log('🔍 DEBUG: Verification passed, checking GA4 first_capture...');
+                    chrome.storage.local.get(['firstCaptureCompleted'], (captureFlags) => {
+                      console.log('🔍 DEBUG: firstCaptureCompleted flag:', captureFlags.firstCaptureCompleted);
+                      if (!captureFlags.firstCaptureCompleted) {
+                        console.log('🔍 DEBUG: Sending first_capture message to background...');
+                        chrome.runtime.sendMessage({
+                          type: 'GA4_EVENT',
+                          eventName: 'first_capture',
+                          params: {
+                            url_domain: new URL(window.location.href).hostname,
+                            capture_mode: finalPositionBased ? 'position' : 'selector'
+                          }
+                        }, (response) => {
+                          console.log('🔍 DEBUG: Background response:', response);
+                        });
+                        chrome.storage.local.set({ firstCaptureCompleted: true });
+                        console.log('📊 GA4: first_capture sent');
+                      } else {
+                        console.log('🔍 DEBUG: first_capture already tracked, skipping');
+                      }
+                    });
+                    
+                    log('✅ Full data saved to local storage');
+                    log('✅ Component saved successfully (hybrid)!');
+                    
+                    // Clear green flash and unlock
+                    target.style.outline = '';
+                    target.style.cursor = '';
+                    lockedElement = null;
+                    resetExclusions();
+                    
+                    showStyledNotification(`✅ Spotted: ${name}`, 'success');
+                    toggleCapture(false);
                   }
                 });
-                
-                log('✅ Full data saved to local storage');
-                log('✅ Component saved successfully (hybrid)!');
-                
-                // Clear green flash and unlock
-                target.style.outline = '';
-                target.style.cursor = '';
-                lockedElement = null;
-                resetExclusions();
-                                
-                showStyledNotification(`✅ Spotted: ${name}`, 'success');
-                toggleCapture(false);
               });
             });
           });

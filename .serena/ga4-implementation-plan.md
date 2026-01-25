@@ -252,8 +252,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
 ## 🔄 Batch 3: Activation Events (Leading Indicators)
 
-**Status:** ⏳ Not Started  
-**Time:** 60-75 mins  
+**Status:** ✅ COMPLETED (2026-01-26)  
+**Time:** 90 mins actual (debugging file location issues)  
 **Goal:** Track onboarding funnel
 
 ### Events to Implement
@@ -335,9 +335,28 @@ if (!firstRefreshCompleted && firstInstallDate) {
 5. Click "Refresh All" → See `first_refresh_24h` (if <24h)
 
 ### Success Criteria
-- [x] All 4 events fire in sequence for new user
-- [x] Events include custom dimensions from Batch 2
-- [x] "First-time" flags prevent duplicate events
+- [x] All 4 events fire in sequence for new user ✅ VERIFIED
+- [x] Events include custom dimensions from Batch 2 ✅ VERIFIED
+- [x] "First-time" flags prevent duplicate events ✅ VERIFIED
+
+**✅ BATCH 3 COMPLETE (2026-01-26)**
+
+**Implementation Summary:**
+- ✅ `extension_installed` - Added to src/background.ts onInstalled listener with GA4 functions
+- ✅ `welcome_viewed` - Added to dashboard.js (line 133) with hasSeenWelcome flag
+- ✅ `first_capture` - Added to content.ts (line 940) with firstCaptureCompleted flag
+- ✅ `first_refresh_24h` - Added to dashboard.js trackRefreshClick() with firstRefreshCompleted flag
+
+**Key Learnings:**
+- src/background.ts compiles to dist/assets/background.js (NOT public/background.js)
+- dashboard.js trackRefreshClick() was overriding refresh-engine.js version
+- Storage key mismatch: install_date vs firstInstallDate required fixing
+
+**Files Modified:**
+- src/background.ts (GA4 functions + message handler)
+- public/dashboard.js (welcome_viewed + first_refresh_24h)
+- src/content.ts (first_capture)
+- public/utils/refresh-engine.js (removed duplicate function)
 
 ---
 
