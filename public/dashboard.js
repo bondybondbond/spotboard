@@ -759,6 +759,37 @@ if (backdrop) {
 
 // ===== V2: FEEDBACK BUBBLE LOGIC =====
 
+// ===== HELPER FUNCTIONS FOR FEEDBACK TRIGGERS =====
+
+// Count events within last N days from timestamp array (copied from feedback-data.js)
+function countEventsInWindow(storageKey, windowDays) {
+  const raw = localStorage.getItem(storageKey) || '[]';
+  const timestamps = JSON.parse(raw);
+  const cutoff = Date.now() - (windowDays * 24 * 60 * 60 * 1000);
+  
+  return timestamps.filter(t => t > cutoff).length;
+}
+
+// Check if board opens happened on at least N different days
+function checkDifferentDays(storageKey, minDays, windowDays) {
+  const raw = localStorage.getItem(storageKey) || '[]';
+  const timestamps = JSON.parse(raw);
+  const cutoff = Date.now() - (windowDays * 24 * 60 * 60 * 1000);
+  
+  // Filter to last N days
+  const recentTimestamps = timestamps.filter(t => t > cutoff);
+  
+  // Extract unique dates (YYYY-MM-DD format)
+  const uniqueDates = new Set(
+    recentTimestamps.map(ts => {
+      const d = new Date(ts);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })
+  );
+  
+  return uniqueDates.size >= minDays;
+}
+
 // Snooze feedback with smart durations based on user action
 function snoozeFeedback(days, reason) {
   const snoozeUntil = Date.now() + (days * 24 * 60 * 60 * 1000);
@@ -1008,7 +1039,7 @@ window.addEventListener('message', (event) => {
     logAnalyticsSummary();
     
     // Snooze for 60 days
-    snoozeFeedback(60, 'completed');
+    snoozeFeedback(45, 'completed');
     
     // Show thank you overlay with close button
     showThankYouOverlay();
@@ -1039,22 +1070,52 @@ async function initFeedbackBubble() {
 
   // Check display conditions
   const updatedSnoozeUntil = parseInt(localStorage.getItem('feedback_snoozed_until') || '0');
-  const { install_date } = await chrome.storage.local.get('install_date');
-  const installDate = parseInt(install_date || Date.now());
-  const daysSinceInstall = Math.floor((Date.now() - installDate) / (1000 * 60 * 60 * 24));
+  const firstFeedbackShown = localStorage.getItem('first_feedback_shown') === 'true';
   
-  const syncData = await chrome.storage.sync.get(null);
-  const totalCards = Object.keys(syncData).filter(k => k.startsWith('comp-')).length;
-
-  // Hide bubble if: snoozed, too new (<3 days), or no cards
-  if (Date.now() < updatedSnoozeUntil || daysSinceInstall < 3 || totalCards === 0) {
+  // ALWAYS hide if snoozed (applies to both first-time and returning)
+  if (Date.now() < updatedSnoozeUntil) {
     bubble.style.display = 'none';
     return;
   }
-
-  // Show bubble (conditions met)
-  bubble.style.display = 'flex';
-  // Feedback bubble visible
+  
+  // If user already saw feedback once, show again immediately after snooze expires
+  // (No need to re-check criteria - they already qualified once)
+  if (firstFeedbackShown) {
+    bubble.style.display = 'flex';
+    // Feedback shown (returning user after snooze)
+  } else {
+    // FIRST TIME: Apply strict criteria
+    const { install_date } = await chrome.storage.local.get('install_date');
+    const installDate = parseInt(install_date || Date.now());
+    const daysSinceInstall = Math.floor((Date.now() - installDate) / (1000 * 60 * 60 * 24));
+    
+    const syncData = await chrome.storage.sync.get(null);
+    const totalCards = Object.keys(syncData).filter(k => k.startsWith('comp-')).length;
+    
+    // Rolling window counts (last 7 days)
+    const boardOpens = countEventsInWindow('board_open_timestamps', 7);
+    const refreshClicks = countEventsInWindow('refresh_click_timestamps', 7);
+    const openedDifferentDays = checkDifferentDays('board_open_timestamps', 2, 7);
+    
+    // Criteria: 3+ opens AND 2+ clicks AND 3+ days install AND 2+ cards AND opened on 2+ different days
+    const meetsFirstTimeCriteria = 
+      daysSinceInstall >= 3 && 
+      totalCards >= 2 && 
+      boardOpens >= 3 && 
+      refreshClicks >= 2 && 
+      openedDifferentDays;
+    
+    if (meetsFirstTimeCriteria) {
+      // All criteria met - show for first time and set flag
+      bubble.style.display = 'flex';
+      localStorage.setItem('first_feedback_shown', 'true');
+      // First feedback shown (criteria met)
+    } else {
+      // Criteria not met - hide
+      bubble.style.display = 'none';
+      return;
+    }
+  }
 
   // Toggle drawer on bubble click (open/close)
   bubble.addEventListener('click', () => {
