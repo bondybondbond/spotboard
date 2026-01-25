@@ -737,6 +737,7 @@ function trackBoardOpen() {
 // Call immediately when dashboard loads
 trackBoardOpen();
 
+// ===== GA4 TEST EVENT (Batch 1) =====
 // ===== REFRESH CLICKS COUNTER (Batch 4 - ROLLING WINDOW) =====
 // Track "Refresh All" clicks using timestamp array  
 // Survives version updates ✅ No artificial resets ✅
