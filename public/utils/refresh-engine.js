@@ -1310,10 +1310,6 @@ async function refreshAll() {
               error_type: errorType,
               fallback_used: fallbackUsed
             }
-          }, (response) => {
-            if (response?.success) {
-              console.log('📊 GA4: refresh_failed tracked');
-            }
           });
         } catch (ga4Error) {
           console.warn('GA4 tracking error:', ga4Error);

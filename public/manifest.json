@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SpotBoard",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Stop clicking through pages daily. Capture website sections, refresh when YOU want. Privacy-first, local storage only.",
   "icons": {
     "16": "icon-16.png",

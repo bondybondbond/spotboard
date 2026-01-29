@@ -130,7 +130,6 @@ function loadComponentsFromSync() {
         has_components: metadata.length > 0
       });
       await chrome.storage.local.set({ hasSeenWelcome: true });
-      console.log('📊 GA4: welcome_viewed sent (first dashboard open)');
     }
   
     // Step 4: Load component data from local storage
@@ -168,8 +167,6 @@ function loadComponentsFromSync() {
         paused_card_rate_pct: stats.pausedRate,
         board_opens_7days: boardOpens7d
       });
-      
-      console.log('📊 GA4: board_opened tracked (fresh navigation)');
     } 
     // Manual reload (F5/Ctrl+R) - track separately
     else if (navigationType === 'reload') {
@@ -178,8 +175,6 @@ function loadComponentsFromSync() {
         active_cards: stats.active,
         refresh_method: 'manual_reload'
       });
-      
-      console.log('📊 GA4: board_refreshed tracked (F5/Ctrl+R reload)');
     }
     
     // Mark session as active (cleared on tab close)
@@ -850,7 +845,6 @@ async function trackRefreshClick() {
           window.GA4.sendEvent('first_refresh_24h', {
             time_since_install_hours: Math.round(hoursSinceInstall)
           });
-          console.log('📊 GA4: first_refresh_24h sent (hours since install:', Math.round(hoursSinceInstall), ')');
         }
         await chrome.storage.local.set({ firstRefreshCompleted: true });
       }

@@ -46,7 +46,6 @@ async function getOrCreateClientId() {
   const newClientId = crypto.randomUUID();
   await chrome.storage.local.set({ clientId: newClientId });
   
-  console.log('🆔 Generated new client_id:', newClientId);
   return newClientId;
 }
 
@@ -79,7 +78,6 @@ async function getOrCreateSessionId() {
   };
   
   await chrome.storage.session.set({ sessionData: newSessionData });
-  console.log('🔄 New session started:', newSessionId);
   
   return newSessionId;
 }
@@ -259,7 +257,6 @@ async function sendEvent(eventName, customParams = {}) {
       return false;
     }
     
-    console.log('✅ GA4 event sent:', eventName, customParams);
     return true;
     
   } catch (error) {
@@ -294,7 +291,6 @@ async function incrementRollingMetric(metricName, windowDays = 7) {
   // Save back to storage
   await chrome.storage.local.set({ [key]: recentEvents });
   
-  console.log(`📈 ${metricName}: ${recentEvents.length} events in last ${windowDays} days`);
   return recentEvents.length;
 }
 
@@ -333,5 +329,3 @@ window.GA4 = {
   getRollingMetric,
   getToolbarPinStatus
 };
-
-console.log('📊 GA4 module loaded');

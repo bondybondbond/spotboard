@@ -1,7 +1,8 @@
 # SpotBoard Privacy Policy
 
 **Effective Date:** December 27, 2024  
-**Last Updated:** December 29, 2024
+**Last Updated:** January 29, 2026  
+**Version:** 1.2.1 (GA4 Analytics Added)
 
 ## Overview
 SpotBoard is a Chrome extension that allows you to capture specific sections of websites that **you explicitly select** and display them in a personal dashboard. We are committed to protecting your privacy and being transparent about our data practices.
@@ -67,26 +68,58 @@ SpotBoard collects only the information necessary to provide its core functional
 - Location data
 - Health information
 
-**We don't CURRENTLY collect (but may add with your consent):**
-- Analytics or usage statistics (planned for future improvement)
-- Error diagnostics (to help fix bugs faster)
-
 **We only collect what you explicitly capture:**
 - URLs of pages you select to capture
 - HTML content of sections you choose to save
 - Custom labels and notes you add
 
-**About Future Analytics:**
-We plan to add **optional** analytics in the future to understand:
-- How many components users capture (to measure engagement)
-- Which features are used vs ignored (to prioritize improvements)
-- Error rates (to fix bugs faster)
+## Analytics & Usage Tracking
 
-**When we add analytics:**
-- This policy will be updated with specifics
-- You'll have opt-in or opt-out control
-- We'll NEVER sell or share analytics data
-- We'll NEVER track which specific sites you visit
+**As of v1.2.1**, SpotBoard uses Google Analytics 4 (GA4) to measure anonymous feature usage and improve the product. This helps us understand what works well and what needs improvement.
+
+### What Analytics We Collect
+**Anonymous device identifiers:**
+- Random UUID (generated locally, not tied to your identity)
+- Session ID (resets after 30 minutes of inactivity)
+- Extension version number
+- Browser language setting
+
+**Feature usage counts:**
+- Number of components captured/refreshed/deleted
+- Dashboard opens and refresh clicks
+- Error rates (e.g., failed captures/refreshes)
+
+**Board statistics:**
+- Total number of components you have
+- How many are active vs paused
+- Average age of your components
+
+### What Analytics We DON'T Collect
+**We NEVER track:**
+- Your browsing history or which specific sites you visit
+- The actual content you capture (HTML, text, images)
+- Personal information (name, email, location)
+- Specific URLs beyond domain names (e.g., we see "bbc.com" not "bbc.com/news/article-12345")
+- Authentication credentials or sensitive data
+- Any data outside SpotBoard's interface
+
+### How Analytics Data is Used
+- **Retention analysis**: Understanding which features keep users engaged
+- **Error debugging**: Identifying common failure patterns to fix bugs
+- **Feature prioritization**: Deciding what to build next based on actual usage
+- **Performance optimization**: Measuring load times and system health
+
+### Your Analytics Privacy Controls
+**You cannot opt out individually**, but you can:
+- Uninstall the extension (stops all tracking immediately)
+- Use browser privacy features like "Do Not Track" (GA4 respects this setting)
+- Review exactly what events we track in our [open-source code](https://github.com/bondybondbond/spotboard)
+
+**We promise:**
+- ✅ NEVER sell or share analytics data with third parties
+- ✅ NEVER use analytics for advertising or profiling
+- ✅ NEVER track specific websites you visit
+- ✅ Keep analytics anonymous (no way to identify individual users)
 
 
 

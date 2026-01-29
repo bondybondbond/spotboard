@@ -66,7 +66,6 @@ async function sendGA4Event(eventName: string, customParams: Record<string, unkn
       body: JSON.stringify(payload)
     });
     
-    console.log('✅ GA4 event sent from background:', eventName, customParams);
     return response.ok;
   } catch (error) {
     console.error('❌ GA4 background error:', error);
@@ -86,7 +85,6 @@ async function cacheToolbarPinStatus(): Promise<void> {
       const settings = await chrome.action.getUserSettings();
       const isPinned = settings.isOnToolbar || false;
       await chrome.storage.session.set({ toolbarPinStatus: isPinned });
-      console.log('📍 Toolbar pin status:', isPinned ? 'PINNED' : 'NOT PINNED');
     }
   } catch (error) {
     console.warn('⚠️ Unable to detect toolbar pin status:', error);
@@ -135,7 +133,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // GA4 event handler from content scripts
   if (request.type === 'GA4_EVENT') {
-    console.log('📬 Background received GA4_EVENT:', request.eventName);
     sendGA4Event(request.eventName, request.params)
       .then(success => sendResponse({ success }))
       .catch(error => sendResponse({ success: false, error: String(error) }));
