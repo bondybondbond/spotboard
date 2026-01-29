@@ -362,7 +362,7 @@ if (!firstRefreshCompleted && firstInstallDate) {
 
 ## 📊 Batch 4: Core Loop Events (Retention Signals)
 
-**Status:** ⏳ Not Started  
+**Status:** ⏳ IN PROGRESS (5/6 events complete)  
 **Time:** 60-75 mins  
 **Goal:** Track daily active behavior
 
@@ -465,16 +465,24 @@ sendEvent('component_deleted', {
 5. Delete card → See `component_deleted`
 
 ### Success Criteria
-- [x] All 6 events fire correctly
+- [ ] All 6 events fire correctly (5/6 done)
 - [x] Custom dimensions populated
 - [x] No performance lag (events fire async)
+
+**✅ Events Completed (2026-01-27):**
+- ✅ `board_opened` (line 152 in dashboard.js)
+- ✅ `capture_completed` (line 1293 in content.ts)
+- ✅ `refresh_clicked` (line 770 in dashboard.js)
+- ✅ `refresh_completed` (line 1391 in refresh-engine.js)
+- ✅ `component_clicked` (line 290 in dashboard.js) - tracks card content clicks with url_domain and card_age_days
+component_deleteddashboard.js:345✅ NEW
 
 ---
 
 ## 🐛 Batch 5: Error Tracking (Debugging)
 
-**Status:** ⏳ Not Started  
-**Time:** 45-60 mins  
+**Status:** ✅ COMPLETED (2026-01-28)  
+**Time:** 90 mins actual  
 **Goal:** Track failures to improve UX
 
 ### Events to Implement
@@ -488,7 +496,7 @@ sendEvent('component_deleted', {
 ### Tasks
 
 #### 5.1 Capture Failed
-**File:** `public/content.ts`
+**File:** `src/content.ts` (line ~1267)
 
 In capture error handler:
 ```javascript
@@ -500,7 +508,7 @@ sendEvent('capture_failed', {
 ```
 
 #### 5.2 Refresh Failed
-**File:** `public/refresh-engine.js`
+**File:** `public/utils/refresh-engine.js` (line ~1280)
 
 After 3 fallbacks fail:
 ```javascript
@@ -512,7 +520,7 @@ sendEvent('refresh_failed', {
 ```
 
 #### 5.3 Extension Error
-**File:** `background.js`
+**File:** `src/background.ts` (line ~161)
 
 Global error handler:
 ```javascript
@@ -538,6 +546,31 @@ function sanitizeError(message) {
 - [x] Error events fire correctly
 - [x] Error messages sanitized (no PII/URLs)
 - [x] Events include `url_domain` for debugging
+
+**✅ BATCH 5 COMPLETE (2026-01-28)**
+
+**Implementation Summary:**
+- ✅ `capture_failed` - Added to src/content.ts (line 1267) in storage verification failure block
+- ✅ `refresh_failed` - Added to public/utils/refresh-engine.js (line 1280) in refreshAll() loop to track ALL failures (graceful + crashes)
+- ✅ `extension_error` - Added to src/background.ts (line 161) with global unhandledrejection listener and sanitization
+- ✅ `board_opened` inflation fix - Added sessionStorage guard to skip GA4 tracking on programmatic reloads (refresh-engine.js line 1452 + dashboard.js line 150)
+
+**Key Learnings:**
+- **Critical bug fix:** Initial refresh_failed only tracked exceptions in catch block, missing graceful failures that return `{success: false}`. Moved tracking to refreshAll() loop where all results are processed—now catches skeleton content, selector failures, fingerprint mismatches, etc.
+- **Error classification:** 5 error types tracked - skeleton_content, timeout, network_error, selector_not_found, fingerprint_mismatch
+- **Board_opened inflation:** Auto-reload after refresh was double-counting engagement. Fixed with sessionStorage flag to distinguish real visits from programmatic reloads.
+- **Privacy compliance:** All error messages sanitized to remove URLs, emails, and PII before GA4 transmission
+
+**Files Modified:**
+- src/content.ts (capture_failed event)
+- public/utils/refresh-engine.js (refresh_failed tracking + sessionStorage flag)
+- src/background.ts (extension_error listener)
+- public/dashboard.js (board_opened guard against auto-reload)
+
+**Testing Results:**
+- ✅ refresh_failed verified with Facebook component (skeleton content detection)
+- ✅ Board_opened no longer inflated by auto-reloads (sessionStorage guard working)
+- ✅ All events compile and fire correctly
 
 ---
 
@@ -613,6 +646,119 @@ sendEvent('refresh_clicked', {
 - [x] Storage stays under 1KB
 
 ---
+# ✅ BATCH 6 COMPLETION SUMMARY
+
+**Date:** 2026-01-28  
+**Status:** COMPLETE  
+**Time:** 35 mins (vs 45-60 estimated)
+
+---
+
+## Implementation Summary
+
+### Core Changes
+- **public/ga4.js** - Added `incrementRollingMetric()` and `getRollingMetric()` functions using timestamp arrays
+- **public/dashboard.js** - Updated `board_opened` and `refresh_clicked` events to include 7-day counts
+- **src/background.ts** - Added toolbar pin status detection on startup/install/update
+
+### New GA4 Parameters (Auto-Included in ALL Events)
+1. `board_opens_7days` - Number of dashboard opens in last 7 days
+2. `refresh_clicks_7days` - Number of refresh clicks in last 7 days  
+3. `is_pinned` - Boolean toolbar pin status (BONUS feature)
+
+### How Rolling Metrics Work
+**Old approach (broken):**
+```javascript
+board_opens: 3
+lastResetDate: "2026-01-13"
+// Every Monday → reset to 0 (data lost!)
+```
+
+**New approach (correct):**
+```javascript
+board_open_events: [1737025800000, 1737112200000, 1737198600000]
+// Calculate any window on-demand, auto-prunes old timestamps
+```
+
+**Benefits:**
+- Survives extension updates (no artificial resets)
+- True rolling 7-day window (not "since Monday")
+- Flexible for future 1d/30d windows
+- Storage efficient (auto-cleanup keeps last 30 days max)
+
+### Toolbar Pin Status Detection
+**Detection points:**
+- ✅ Extension install
+- ✅ Extension update (forced reload)
+- ✅ Browser startup (chrome.runtime.onStartup)
+- ❌ NOT real-time (user pins/unpins) - requires extension reload
+
+**Why this is sufficient:**
+Analytics tracks cohorts ("kept it pinned" vs "unpinned early"), not live behavior monitoring. Pin status on install/update reveals retention patterns.
+
+---
+
+## Testing Results
+
+### Rolling Metrics Verified
+```
+📈 board_opens: 1 events in last 7 days
+✅ GA4 event sent: board_opened {board_opens_7days: 1, total_cards: 3, ...}
+
+📈 refresh_clicks: 1 events in last 7 days  
+✅ GA4 event sent: refresh_clicked {refresh_clicks_7days: 1, active_cards: 3, ...}
+```
+
+### Persistence Test
+- ✅ Counts increment naturally (1→2→3...)
+- ✅ Survive browser restart (timestamp arrays persist)
+- ✅ No Monday resets
+- ✅ GA4 receives both parameters correctly
+
+### Pin Status Verified
+```
+Background console:
+📍 Toolbar pin status: PINNED
+
+All GA4 events now include:
+is_pinned: true
+```
+
+---
+
+## Success Criteria (All Met)
+- ✅ Rolling metrics increment correctly
+- ✅ Old events pruned automatically  
+- ✅ Storage stays under 1KB per metric
+- ✅ Pin status detected and cached
+- ✅ All events include pin status parameter
+
+---
+
+## Files Modified
+```
+public/ga4.js (lines ~250-310)
+  + incrementRollingMetric()
+  + getRollingMetric()
+  + getToolbarPinStatus()
+  + Updated sendEvent() to include is_pinned
+  + Exported new functions
+
+public/dashboard.js (lines 156, 797)
+  + board_opened: Added board_opens_7days tracking
+  + refresh_clicked: Added refresh_clicks_7days tracking
+
+src/background.ts (lines 80-110)
+  + cacheToolbarPinStatus() function
+  + chrome.runtime.onStartup listener
+  + Updated onInstalled to cache pin status
+```
+
+
+## Storage Keys Used
+- `board_opens_events` - Array of timestamps (chrome.storage.local)
+- `refresh_clicks_events` - Array of timestamps (chrome.storage.local)
+- `toolbarPinStatus` - Boolean cached per session (chrome.storage.session)
 
 ## 📋 Post-Implementation Checklist
 

@@ -147,11 +147,52 @@ function loadComponentsFromSync() {
     ...localData[meta.id] // Add html_cache from local storage
   }));
   
+    // 📊 GA4: Track board opened/refreshed with intelligent detection
+  const isReloadFromRefresh = sessionStorage.getItem('reloadFromRefresh');
+  sessionStorage.removeItem('reloadFromRefresh'); // Clear flag immediately
+  
+  if (!isReloadFromRefresh) {
+    // Detect navigation type using Performance API
+    const navigationType = performance.getEntriesByType('navigation')[0]?.type;
+    const sessionActive = sessionStorage.getItem('dashboard_session_active');
+    
+    const stats = await getBoardStats();
+    
+    // Fresh navigation (not reload) AND (new session OR explicit navigate)
+    if (navigationType !== 'reload' && !sessionActive) {
+      const boardOpens7d = await GA4.incrementRollingMetric('board_opens');
+      
+      sendEvent('board_opened', {
+        total_cards: stats.total,
+        active_cards: stats.active,
+        paused_card_rate_pct: stats.pausedRate,
+        board_opens_7days: boardOpens7d
+      });
+      
+      console.log('📊 GA4: board_opened tracked (fresh navigation)');
+    } 
+    // Manual reload (F5/Ctrl+R) - track separately
+    else if (navigationType === 'reload') {
+      sendEvent('board_refreshed', {
+        total_cards: stats.total,
+        active_cards: stats.active,
+        refresh_method: 'manual_reload'
+      });
+      
+      console.log('📊 GA4: board_refreshed tracked (F5/Ctrl+R reload)');
+    }
+    
+    // Mark session as active (cleared on tab close)
+    sessionStorage.setItem('dashboard_session_active', 'true');
+  }
+  
     // Inject CSS cleanup for whitespace compression
     injectCleanupCSS();
   
     if (components.length === 0) {
-      // Empty state already shown by default
+      // Show empty state (hidden by default in CSS to prevent flash)
+      const emptyState = container.querySelector('.empty-state');
+      if (emptyState) emptyState.style.display = 'block';
       return;
     }
   
@@ -278,6 +319,18 @@ function loadComponentsFromSync() {
         fixRelativeUrls(contentDiv, component.url);
         // Force remove all cursor styles
         removeCursorStyles(contentDiv);
+        
+        // GA4: Track component clicks (when user clicks card content to visit source)
+        contentDiv.addEventListener('click', (e) => {
+          // Only track if clicking a link or the content itself (not buttons)
+          if (e.target.closest('a') || e.target === contentDiv || contentDiv.contains(e.target)) {
+            const cardAgeDays = Math.floor((Date.now() - new Date(component.created_at || component.last_refresh || Date.now()).getTime()) / (1000 * 60 * 60 * 24));
+            sendEvent('component_clicked', {
+              url_domain: new URL(component.url).hostname,
+              card_age_days: cardAgeDays
+            });
+          }
+        });
       }
       
       // Pause/Resume functionality
@@ -322,6 +375,13 @@ function loadComponentsFromSync() {
       const deleteBtn = card.querySelector('.delete-btn');
       deleteBtn.addEventListener('click', () => {
         if (confirm(`Delete "${component.customLabel || component.name}"? This cannot be undone.`)) {
+          // GA4: Track component deletion
+          const cardAgeDays = Math.floor((Date.now() - new Date(component.created_at || component.last_refresh || Date.now()).getTime()) / (1000 * 60 * 60 * 24));
+          sendEvent('component_deleted', {
+            url_domain: new URL(component.url).hostname,
+            card_age_days: cardAgeDays
+          });
+          
           // Remove from in-memory array FIRST so subsequent deletes work correctly
           const componentId = component.id;
           const updated = components.filter(c => c.id !== componentId);
@@ -346,17 +406,17 @@ function loadComponentsFromSync() {
           // Show empty state if no components left
           if (updated.length === 0) {
             container.innerHTML = `
-              <div class="empty-state">
+              <div class="empty-state" style="display: block;">
                 <!-- Main headline -->
-                <h2 style="font-size: 22px; font-weight: 600; color: #1a1a1a; margin-bottom: 12px;">Your board is empty</h2>
-                <p style="font-size: 14px; color: #5f6368; margin-bottom: 24px;">Here's what others track:</p>
+                <h2 style="font-size: 26px; font-weight: 600; color: #1a1a1a; margin-bottom: 12px;">Your board is empty</h2>
+                <p style="font-size: 18px; color: #5f6368; margin-bottom: 24px;">Here's what others track:</p>
                 
                 <!-- Categories -->
                 <div style="text-align: left; max-width: 500px; margin: 0 auto;">
                   <!-- News -->
                   <div style="margin-bottom: 16px;">
-                    <div style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">📰 News & Headlines</div>
-                    <div style="font-size: 13px; color: #5f6368;">
+                    <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">📰 News & Headlines</div>
+                    <div style="font-size: 17px; color: #5f6368;">
                       <a href="https://bbc.co.uk/news" target="_blank" style="color: #1a73e8; text-decoration: none;">BBC</a> · 
                       <a href="https://nbcnews.com" target="_blank" style="color: #1a73e8; text-decoration: none;">NBC News</a> · 
                       <a href="https://techcrunch.com" target="_blank" style="color: #1a73e8; text-decoration: none;">TechCrunch</a>
@@ -365,8 +425,8 @@ function loadComponentsFromSync() {
                   
                   <!-- Sports -->
                   <div style="margin-bottom: 16px;">
-                    <div style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🏆 Sports Scores</div>
-                    <div style="font-size: 13px; color: #5f6368;">
+                    <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🏆 Sports Scores</div>
+                    <div style="font-size: 17px; color: #5f6368;">
                       <a href="https://espn.com" target="_blank" style="color: #1a73e8; text-decoration: none;">ESPN</a> · 
                       <a href="https://skysports.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Sky Sports</a> · 
                       <a href="https://as.com" target="_blank" style="color: #1a73e8; text-decoration: none;">AS</a>
@@ -375,8 +435,8 @@ function loadComponentsFromSync() {
                   
                   <!-- Tech -->
                   <div style="margin-bottom: 16px;">
-                    <div style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🚀 Tech News & Launches</div>
-                    <div style="font-size: 13px; color: #5f6368;">
+                    <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🚀 Tech News & Launches</div>
+                    <div style="font-size: 17px; color: #5f6368;">
                       <a href="https://producthunt.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Product Hunt</a> · 
                       <a href="https://github.com" target="_blank" style="color: #1a73e8; text-decoration: none;">GitHub</a> · 
                       <a href="https://wired.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Wired</a>
@@ -385,8 +445,8 @@ function loadComponentsFromSync() {
                   
                   <!-- Deals -->
                   <div style="margin-bottom: 16px;">
-                    <div style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🛍️ Daily Deals</div>
-                    <div style="font-size: 13px; color: #5f6368;">
+                    <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🛍️ Daily Deals</div>
+                    <div style="font-size: 17px; color: #5f6368;">
                       <a href="https://amazon.co.uk" target="_blank" style="color: #1a73e8; text-decoration: none;">Amazon</a> · 
                       <a href="https://gumtree.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Gumtree</a> · 
                       <a href="https://hotukdeals.com" target="_blank" style="color: #1a73e8; text-decoration: none;">HotUKDeals</a>
@@ -395,8 +455,8 @@ function loadComponentsFromSync() {
                   
                   <!-- Weather -->
                   <div style="margin-bottom: 24px;">
-                    <div style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🌦️ Weather Forecast</div>
-                    <div style="font-size: 13px; color: #5f6368;">
+                    <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🌦️ Weather Forecast</div>
+                    <div style="font-size: 17px; color: #5f6368;">
                       <a href="https://accuweather.com" target="_blank" style="color: #1a73e8; text-decoration: none;">AccuWeather</a> · 
                       <a href="https://yr.no" target="_blank" style="color: #1a73e8; text-decoration: none;">YR.no</a> · 
                       <a href="https://theweathernetwork.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Weather Network</a>
@@ -405,7 +465,7 @@ function loadComponentsFromSync() {
                 </div>
                 
                 <!-- Help tip -->
-                <p style="font-size: 14px; color: #5f6368; margin-top: 16px;">
+                <p style="font-size: 18px; color: #5f6368; margin-top: 16px;">
                   💡 <strong>Need help?</strong> Click the ℹ️ button in the top bar anytime to see how to capture.
                 </p>
               </div>
@@ -560,6 +620,11 @@ function loadComponentsFromSync() {
     `;
   }
 })(); // Close async IIFE
+
+// 📊 GA4: Clear session flag on tab close (for board_opened tracking)
+window.addEventListener('beforeunload', () => {
+  sessionStorage.removeItem('dashboard_session_active');
+});
 
 // 🎯 BATCH 1.5: Auto-refresh dashboard when new components captured
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -755,6 +820,22 @@ async function trackRefreshClick() {
   const count = addEventTimestamp('refresh_click_timestamps');
   // Refresh click tracking (no console spam)
   
+  // GA4: Track every refresh click (Batch 4 core loop event)
+  try {
+    if (window.GA4 && window.GA4.getBoardStats && window.GA4.sendEvent && window.GA4.incrementRollingMetric) {
+      const stats = await window.GA4.getBoardStats();
+      const refreshClicks7d = await window.GA4.incrementRollingMetric('refresh_clicks');
+      
+      window.GA4.sendEvent('refresh_clicked', {
+        total_cards: stats.total,
+        active_cards: stats.active,
+        refresh_clicks_7days: refreshClicks7d
+      });
+    }
+  } catch (e) {
+    console.warn('GA4 refresh_clicked failed:', e);
+  }
+  
   // GA4: Track first refresh within 24h (Batch 3 activation event)
   try {
     const result = await chrome.storage.local.get(['firstRefreshCompleted', 'install_date']);
@@ -822,6 +903,43 @@ function checkDifferentDays(storageKey, minDays, windowDays) {
   );
   
   return uniqueDates.size >= minDays;
+}
+
+// Show temporary toast notification (bottom-right corner)
+function showToast(message, duration = 3000) {
+  const toast = document.createElement('div');
+  toast.textContent = message;
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #333;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 10002;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+  `;
+  
+  document.body.appendChild(toast);
+  
+  // Trigger slide-in animation
+  setTimeout(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+  }, 10);
+  
+  // Auto-dismiss after duration
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(10px)';
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
 }
 
 // Snooze feedback with smart durations based on user action
@@ -966,6 +1084,9 @@ function reattachButtonListeners() {
       snoozeFeedback(7, 'remind_later');
       if (picker) picker.style.display = 'none';
       if (bubble) bubble.style.display = 'none';
+      
+      // Show confirmation toast
+      showToast('No problem - we\'ll ask again later! 👋');
     });
   }
 }
@@ -1090,67 +1211,8 @@ async function initFeedbackBubble() {
 
   if (!bubble || !picker) return; // Elements not found
 
-  // PHASE 3: Check for partial completion (started but not finished)
-  const surveyStartedAt = parseInt(localStorage.getItem('feedback_survey_started') || '0');
-  const snoozedUntil = parseInt(localStorage.getItem('feedback_snoozed_until') || '0');
-  const snoozeReason = localStorage.getItem('feedback_snooze_reason');
+  // ===== ATTACH EVENT LISTENERS FIRST (always, regardless of visibility) =====
   
-  if (surveyStartedAt > 0 && Date.now() >= snoozedUntil) {
-    // Survey was started but never completed AND not currently snoozed
-    // Partial completion detected - retry in 3 days
-    snoozeFeedback(3, 'partial_completion');
-    localStorage.removeItem('feedback_survey_started'); // Clear flag after snoozing
-  }
-
-  // Check display conditions
-  const updatedSnoozeUntil = parseInt(localStorage.getItem('feedback_snoozed_until') || '0');
-  const firstFeedbackShown = localStorage.getItem('first_feedback_shown') === 'true';
-  
-  // ALWAYS hide if snoozed (applies to both first-time and returning)
-  if (Date.now() < updatedSnoozeUntil) {
-    bubble.style.display = 'none';
-    return;
-  }
-  
-  // If user already saw feedback once, show again immediately after snooze expires
-  // (No need to re-check criteria - they already qualified once)
-  if (firstFeedbackShown) {
-    bubble.style.display = 'flex';
-    // Feedback shown (returning user after snooze)
-  } else {
-    // FIRST TIME: Apply strict criteria
-    const { install_date } = await chrome.storage.local.get('install_date');
-    const installDate = parseInt(install_date || Date.now());
-    const daysSinceInstall = Math.floor((Date.now() - installDate) / (1000 * 60 * 60 * 24));
-    
-    const syncData = await chrome.storage.sync.get(null);
-    const totalCards = Object.keys(syncData).filter(k => k.startsWith('comp-')).length;
-    
-    // Rolling window counts (last 7 days)
-    const boardOpens = countEventsInWindow('board_open_timestamps', 7);
-    const refreshClicks = countEventsInWindow('refresh_click_timestamps', 7);
-    const openedDifferentDays = checkDifferentDays('board_open_timestamps', 2, 7);
-    
-    // Criteria: 3+ opens AND 2+ clicks AND 3+ days install AND 2+ cards AND opened on 2+ different days
-    const meetsFirstTimeCriteria = 
-      daysSinceInstall >= 3 && 
-      totalCards >= 2 && 
-      boardOpens >= 3 && 
-      refreshClicks >= 2 && 
-      openedDifferentDays;
-    
-    if (meetsFirstTimeCriteria) {
-      // All criteria met - show for first time and set flag
-      bubble.style.display = 'flex';
-      localStorage.setItem('first_feedback_shown', 'true');
-      // First feedback shown (criteria met)
-    } else {
-      // Criteria not met - hide
-      bubble.style.display = 'none';
-      return;
-    }
-  }
-
   // Toggle drawer on bubble click (open/close)
   bubble.addEventListener('click', () => {
     if (picker.style.display === 'block') {
@@ -1167,9 +1229,6 @@ async function initFeedbackBubble() {
         
         if (confirmed) {
           picker.style.display = 'none';
-          // User confirmed close
-        } else {
-          // User cancelled - continue survey
         }
       } else {
         // No active survey or survey completed - just close
@@ -1180,21 +1239,19 @@ async function initFeedbackBubble() {
       const drawer = document.querySelector('.sentiment-drawer');
       if (drawer && drawer.classList.contains('survey-embedded')) {
         resetDrawerToOriginal();
-        // Feedback reopened
       }
       picker.style.display = 'block';
     }
   });
 
-  // PHASE 2: Initial button listener attachment (uses top-level function)
+  // Sentiment button listeners
   reattachButtonListeners();
 
-  // PHASE 2: Close drawer on overlay click with confirmation for active surveys
+  // Close drawer on overlay click with confirmation for active surveys
   const overlay = document.querySelector('.sentiment-overlay');
   if (overlay) {
     overlay.addEventListener('click', () => {
       if (surveyCompleted) {
-        // Survey completed - just close
         picker.style.display = 'none';
         return;
       }
@@ -1203,30 +1260,125 @@ async function initFeedbackBubble() {
       const isSurveyEmbedded = drawer && drawer.classList.contains('survey-embedded');
       
       if (isSurveyEmbedded) {
-        // User has active survey - confirm before closing (prevents accidental loss)
         const confirmed = confirm(
           "Are you sure you want to leave this feedback?\n\n" +
           "Your progress will be lost. Click OK to close, or Cancel to continue."
         );
         
         if (confirmed) {
-          // PHASE 3: User abandoned survey - don't clear flag yet
-          // Let next dashboard load detect partial completion and apply 3-day retry
           resetDrawerToOriginal();
           picker.style.display = 'none';
-          // User closed drawer - flag preserved for retry
-        } else {
-          // User cancelled - keep survey open
         }
       } else {
         // User dismissed without opening survey - snooze 7 days
         snoozeFeedback(7, 'dismissed');
         picker.style.display = 'none';
-        // Dismissed without opening
+        showToast('No problem - we\'ll ask again later! 👋');
       }
     });
   }
+
+  // ===== NOW CHECK VISIBILITY CRITERIA =====
+
+  // PHASE 3: Check for partial completion (started but not finished)
+  const surveyStartedAt = parseInt(localStorage.getItem('feedback_survey_started') || '0');
+  const snoozedUntil = parseInt(localStorage.getItem('feedback_snoozed_until') || '0');
+  
+  if (surveyStartedAt > 0 && Date.now() >= snoozedUntil) {
+    snoozeFeedback(3, 'partial_completion');
+    localStorage.removeItem('feedback_survey_started');
+  }
+
+  // Check display conditions
+  const updatedSnoozeUntil = parseInt(localStorage.getItem('feedback_snoozed_until') || '0');
+  const firstFeedbackShown = localStorage.getItem('first_feedback_shown') === 'true';
+  
+  // ALWAYS hide if snoozed
+  if (Date.now() < updatedSnoozeUntil) {
+    bubble.style.display = 'none';
+    return; // OK to return now - listeners already attached
+  }
+  
+  // Returning user - show immediately after snooze expires
+  if (firstFeedbackShown) {
+    bubble.style.display = 'flex';
+    return;
+  }
+  
+  // FIRST TIME: Apply strict criteria
+  const { install_date } = await chrome.storage.local.get('install_date');
+  const installDate = parseInt(install_date || Date.now());
+  const daysSinceInstall = Math.floor((Date.now() - installDate) / (1000 * 60 * 60 * 24));
+  
+  const syncData = await chrome.storage.sync.get(null);
+  const totalCards = Object.keys(syncData).filter(k => k.startsWith('comp-')).length;
+  
+  // Rolling window counts (last 7 days)
+  const boardOpens = countEventsInWindow('board_open_timestamps', 7);
+  const refreshClicks = countEventsInWindow('refresh_click_timestamps', 7);
+  const openedDifferentDays = checkDifferentDays('board_open_timestamps', 2, 7);
+  
+  // Criteria: 3+ opens AND 2+ clicks AND 3+ days install AND 2+ cards AND opened on 2+ different days
+  const meetsFirstTimeCriteria = 
+    daysSinceInstall >= 3 && 
+    totalCards >= 2 && 
+    boardOpens >= 3 && 
+    refreshClicks >= 2 && 
+    openedDifferentDays;
+  
+  if (meetsFirstTimeCriteria) {
+    bubble.style.display = 'flex';
+    localStorage.setItem('first_feedback_shown', 'true');
+  } else {
+    bubble.style.display = 'none';
+  }
 }
+
+// ===== TEST FUNCTION: Force show feedback banner (bypasses all criteria) =====
+window.testFeedbackBanner = function() {
+  const bubble = document.getElementById('feedback-bubble');
+  const picker = document.getElementById('sentiment-picker');
+  
+  if (!bubble || !picker) {
+    console.error('❌ Feedback elements not found in DOM');
+    return;
+  }
+  
+  // Reset to clean state first
+  const drawer = document.querySelector('.sentiment-drawer');
+  if (drawer && drawer.classList.contains('survey-embedded')) {
+    resetDrawerToOriginal();
+  }
+  picker.style.display = 'none';
+  
+  // Force show bubble (but let user click it manually)
+  bubble.style.display = 'flex';
+  
+  // Ensure button listeners are attached
+  reattachButtonListeners();
+  
+  console.log('✅ Feedback button visible - click it to open drawer');
+  console.log('📊 Current criteria status:');
+  console.log('💡 Tip: After opening, click outside overlay or feedback button to close');
+  
+  // Show current stats for debugging
+  chrome.storage.local.get(['install_date'], async (data) => {
+    const installDate = parseInt(data.install_date || Date.now());
+    const daysSinceInstall = Math.floor((Date.now() - installDate) / (1000 * 60 * 60 * 24));
+    const boardOpens = countEventsInWindow('board_open_timestamps', 7);
+    const refreshClicks = countEventsInWindow('refresh_click_timestamps', 7);
+    
+    const syncData = await chrome.storage.sync.get(null);
+    const totalCards = Object.keys(syncData).filter(k => k.startsWith('comp-')).length;
+    
+    console.table({
+      'Days Since Install': `${daysSinceInstall} (need 3+)`,
+      'Board Opens (7d)': `${boardOpens} (need 3+)`,
+      'Refresh Clicks (7d)': `${refreshClicks} (need 2+)`,
+      'Total Cards': `${totalCards} (need 2+)`,
+    });
+  });
+};
 
 // Initialize feedback bubble when DOM ready
 document.addEventListener('DOMContentLoaded', () => {

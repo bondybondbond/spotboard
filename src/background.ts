@@ -77,7 +77,32 @@ async function sendGA4Event(eventName: string, customParams: Record<string, unkn
 // ================================
 // EXTENSION LIFECYCLE
 // ================================
+// ================================
+// TOOLBAR PIN STATUS DETECTION
+// ================================
+async function cacheToolbarPinStatus(): Promise<void> {
+  try {
+    if (chrome.action?.getUserSettings) {
+      const settings = await chrome.action.getUserSettings();
+      const isPinned = settings.isOnToolbar || false;
+      await chrome.storage.session.set({ toolbarPinStatus: isPinned });
+      console.log('📍 Toolbar pin status:', isPinned ? 'PINNED' : 'NOT PINNED');
+    }
+  } catch (error) {
+    console.warn('⚠️ Unable to detect toolbar pin status:', error);
+  }
+}
+
+// Cache pin status on browser startup
+chrome.runtime.onStartup.addListener(async () => {
+  console.log('🚀 Browser started, checking toolbar pin status');
+  await cacheToolbarPinStatus();
+});
+
 chrome.runtime.onInstalled.addListener(async (details) => {
+  // Cache toolbar pin status on install/update
+  await cacheToolbarPinStatus();
+  
   if (details.reason === 'install') {
     // Generate anonymous user ID for feedback tracking (privacy-safe UUID)
     const userId = crypto.randomUUID();
@@ -144,6 +169,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ opened: true });
     return true;
   }
+});
+
+// ================================
+// GLOBAL ERROR TRACKING (Batch 5)
+// ================================
+// Track unhandled promise rejections
+addEventListener('unhandledrejection', async (event) => {
+  console.error('❌ Unhandled Promise Rejection:', event.reason);
+  
+  // Sanitize error message (remove URLs and sensitive data)
+  const sanitizeError = (msg: string): string => {
+    return msg
+      .replace(/https?:\/\/[^\s]+/g, '[URL]') // Remove URLs
+      .replace(/chrome-extension:\/\/[^\s]+/g, '[EXT_URL]') // Remove extension URLs
+      .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '[EMAIL]') // Remove emails
+      .substring(0, 200); // Limit length
+  };
+  
+  const errorMsg = event.reason?.message || String(event.reason) || 'Unknown error';
+  const errorStack = event.reason?.stack?.split('\n')[0] || 'unknown';
+  
+  await sendGA4Event('extension_error', {
+    error_message: sanitizeError(errorMsg),
+    error_source: sanitizeError(errorStack)
+  });
 });
 
 // Export empty object to satisfy TypeScript module requirements

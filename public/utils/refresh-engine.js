@@ -1176,6 +1176,9 @@ async function refreshComponent(component) {
     console.error(`   URL: ${component.url}`);
     console.error(`   Selector: ${component.selector}`);
     console.error(`   Error details:`, error.message);
+    
+    // Note: GA4 tracking happens in refreshAll() loop (tracks all failures including graceful ones)
+    
     return {
       success: false,
       error: error.message,
@@ -1189,6 +1192,7 @@ async function refreshComponent(component) {
  */
 async function refreshAll() {
   const btn = document.getElementById('refresh-all-btn');
+  const refreshStartTime = Date.now(); // GA4: Track refresh duration
   
   // Show loading state on button
   btn.disabled = true;
@@ -1272,6 +1276,49 @@ async function refreshAll() {
       const refreshResult = await refreshComponent(comp);
       results.push(refreshResult);
       componentRefreshMap.set(comp.id, refreshResult);
+      
+      // 🎯 BATCH 5: Track individual refresh failures
+      if (!refreshResult.success) {
+        try {
+          const errorMsg = refreshResult.error?.toLowerCase() || '';
+          let errorType = 'unknown';
+          
+          // Classify error from result
+          if (errorMsg.includes('skeleton') || errorMsg.includes('empty container')) {
+            errorType = 'skeleton_content';
+          } else if (errorMsg.includes('timeout') || errorMsg.includes('timed out')) {
+            errorType = 'timeout';
+          } else if (errorMsg.includes('http') || errorMsg.includes('fetch') || errorMsg.includes('network')) {
+            errorType = 'network_error';
+          } else if (errorMsg.includes('not found') || errorMsg.includes('selector')) {
+            errorType = 'selector_not_found';
+          } else if (errorMsg.includes('different element') || errorMsg.includes('fingerprint')) {
+            errorType = 'fingerprint_mismatch';
+          }
+          
+          // Determine which fallback was attempted
+          let fallbackUsed = 'direct'; // Default assumption
+          if (errorMsg.includes('tab') || errorMsg.includes('background') || errorMsg.includes('active')) {
+            fallbackUsed = 'all_exhausted';
+          }
+          
+          chrome.runtime.sendMessage({
+            type: 'GA4_EVENT',
+            eventName: 'refresh_failed',
+            params: {
+              url_domain: new URL(comp.url).hostname,
+              error_type: errorType,
+              fallback_used: fallbackUsed
+            }
+          }, (response) => {
+            if (response?.success) {
+              console.log('📊 GA4: refresh_failed tracked');
+            }
+          });
+        } catch (ga4Error) {
+          console.warn('GA4 tracking error:', ga4Error);
+        }
+      }
       
       // Mark this component as complete
       toastManager.completeComponent(refreshResult.success);
@@ -1383,12 +1430,27 @@ async function refreshAll() {
       : `Refresh complete: ${successCount}/${activeComponents.length}`;
     console.log(logMessage);
     
+    // GA4: Track refresh completion (Batch 4)
+    try {
+      if (typeof window.GA4 !== 'undefined') {
+        const failCount = results.filter(r => !r.success).length;
+        await window.GA4.sendEvent('refresh_completed', {
+          success_count: successCount,
+          fail_count: failCount,
+          duration_ms: Date.now() - refreshStartTime
+        });
+      }
+    } catch (e) {
+      console.warn('GA4 refresh_completed failed:', e);
+    }
+    
     // Update button
     btn.textContent = `✅ Done`;
     btn.style.background = '#28a745';
     
     // Auto-reload after success toast displays
     setTimeout(() => {
+      sessionStorage.setItem('reloadFromRefresh', 'true'); // Flag to skip board_opened tracking
       location.reload();
     }, 3500);
     

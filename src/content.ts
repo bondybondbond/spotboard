@@ -1262,6 +1262,22 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                     console.error('❌ VERIFICATION FAILED: Component not found in local storage after save!');
                     console.error('   Component ID:', component.id);
                     console.error('   Keys in storage:', Object.keys(verifyResult.componentsData || {}));
+                    
+                    // 🎯 BATCH 5: Track capture failure
+                    chrome.runtime.sendMessage({
+                      type: 'GA4_EVENT',
+                      eventName: 'capture_failed',
+                      params: {
+                        url_domain: new URL(window.location.href).hostname,
+                        error_type: 'storage_verification_failed',
+                        selector_type: selector.includes('#') ? 'id' : selector.includes('[data-') ? 'data-attr' : 'class'
+                      }
+                    }, (response) => {
+                      if (response?.success) {
+                        console.log('📊 GA4: capture_failed tracked');
+                      }
+                    });
+                    
                     showStyledNotification(`⚠️ Warning: Save may have failed - please refresh dashboard`, 'error');
                   } else {
                     // GA4: Track first capture (one-time event)
@@ -1284,6 +1300,17 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                         console.log('📊 GA4: first_capture sent');
                       } else {
                         console.log('🔍 DEBUG: first_capture already tracked, skipping');
+                      }
+                    });
+                    
+                    // 📊 GA4: Track every capture (not just first)
+                    chrome.runtime.sendMessage({
+                      type: 'GA4_EVENT',
+                      eventName: 'capture_completed',
+                      params: {
+                        url_domain: new URL(window.location.href).hostname,
+                        capture_mode: finalPositionBased ? 'position' : 'selector',
+                        has_exclusions: excludedSelectors.length > 0
                       }
                     });
                     

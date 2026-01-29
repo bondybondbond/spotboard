@@ -105,6 +105,37 @@ function getBrowserLanguage() {
 }
 
 /**
+ * Gets toolbar pin status (cached per session)
+ * Must be called from background.js at session start
+ * @returns {Promise<boolean>} True if extension pinned to toolbar
+ */
+async function getToolbarPinStatus() {
+  // Check cache first (set by background.js on session start)
+  const { toolbarPinStatus } = await chrome.storage.session.get('toolbarPinStatus');
+  
+  if (toolbarPinStatus !== undefined) {
+    return toolbarPinStatus;
+  }
+  
+  // Fallback: Try to detect (only works in background context)
+  try {
+    if (chrome.action && chrome.action.getUserSettings) {
+      const settings = await chrome.action.getUserSettings();
+      const isPinned = settings.isOnToolbar || false;
+      
+      // Cache for this session
+      await chrome.storage.session.set({ toolbarPinStatus: isPinned });
+      return isPinned;
+    }
+  } catch (error) {
+    console.warn('⚠️ Unable to detect toolbar pin status:', error);
+  }
+  
+  // Unknown status
+  return false;
+}
+
+/**
  * Calculates days since extension was first installed
  * @returns {Promise<number>} Number of days (0 if install date not recorded)
  */
@@ -198,6 +229,7 @@ async function sendEvent(eventName, customParams = {}) {
     const clientId = await getOrCreateClientId();
     const sessionId = await getOrCreateSessionId();
     const daysSinceInstall = await getDaysSinceInstall();
+    const isPinned = await getToolbarPinStatus();
     
     // Construct GA4 Measurement Protocol payload
     const payload = {
@@ -210,6 +242,7 @@ async function sendEvent(eventName, customParams = {}) {
           extension_version: getExtensionVersion(),
           browser_language: getBrowserLanguage(),
           days_since_install: daysSinceInstall,
+          is_pinned: isPinned,
           ...customParams
         }
       }]
@@ -236,6 +269,54 @@ async function sendEvent(eventName, customParams = {}) {
 }
 
 // ================================
+// ROLLING WINDOW METRICS
+// ================================
+
+/**
+ * Increments a rolling metric by adding current timestamp
+ * Auto-prunes events older than specified window
+ * 
+ * @param {string} metricName - Metric identifier (e.g., 'board_opens')
+ * @param {number} windowDays - Window size in days (default: 7)
+ * @returns {Promise<number>} Count of events in window
+ */
+async function incrementRollingMetric(metricName, windowDays = 7) {
+  const key = `${metricName}_events`;
+  const { [key]: events = [] } = await chrome.storage.local.get(key);
+  
+  // Add current timestamp
+  events.push(Date.now());
+  
+  // Remove events older than window
+  const cutoff = Date.now() - (windowDays * 24 * 60 * 60 * 1000);
+  const recentEvents = events.filter(ts => ts > cutoff);
+  
+  // Save back to storage
+  await chrome.storage.local.set({ [key]: recentEvents });
+  
+  console.log(`📈 ${metricName}: ${recentEvents.length} events in last ${windowDays} days`);
+  return recentEvents.length;
+}
+
+/**
+ * Gets count of events within rolling window (read-only)
+ * 
+ * @param {string} metricName - Metric identifier (e.g., 'board_opens')
+ * @param {number} windowDays - Window size in days (default: 7)
+ * @returns {Promise<number>} Count of events in window
+ */
+async function getRollingMetric(metricName, windowDays = 7) {
+  const key = `${metricName}_events`;
+  const { [key]: events = [] } = await chrome.storage.local.get(key);
+  
+  // Filter to events within window
+  const cutoff = Date.now() - (windowDays * 24 * 60 * 60 * 1000);
+  const recentEvents = events.filter(ts => ts > cutoff);
+  
+  return recentEvents.length;
+}
+
+// ================================
 // EXPORTS
 // ================================
 
@@ -247,7 +328,10 @@ window.GA4 = {
   getExtensionVersion,
   getBrowserLanguage,
   getDaysSinceInstall,
-  getBoardStats
+  getBoardStats,
+  incrementRollingMetric,
+  getRollingMetric,
+  getToolbarPinStatus
 };
 
 console.log('📊 GA4 module loaded');
