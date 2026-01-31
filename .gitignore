@@ -36,3 +36,6 @@ test-*.js
 .do not upload/
 _do not upload/
 .do_not_upload/
+
+# Project documentation (private)
+/docs/

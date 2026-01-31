@@ -16,15 +16,8 @@
 // ================================
 // CONFIGURATION
 // ================================
-
-// SpotBoard GA4 Property - Dashboard Stream
-const GA4_MEASUREMENT_ID = 'G-JLJS09NDZ6';
-const GA4_API_SECRET = 'vrH5dBRiSf6xAuVrJpzKlw';
-
-const GA4_ENDPOINT = `https://www.google-analytics.com/mp/collect?measurement_id=${GA4_MEASUREMENT_ID}&api_secret=${GA4_API_SECRET}`;
-
-// Session timeout in milliseconds (30 minutes)
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+// GA4_MEASUREMENT_ID, GA4_API_SECRET, GA4_ENDPOINT, and SESSION_TIMEOUT_MS
+// are loaded from utils/constants.js (must be loaded before this file in dashboard.html)
 
 // ================================
 // CLIENT ID MANAGEMENT

@@ -3,6 +3,8 @@
  * Handles HTML sanitization, duplicate removal, URL fixing, and CSS injection
  */
 
+// DEBUG flag is loaded from utils/constants.js (must be loaded before this file)
+
 /**
  * Apply user exclusions to HTML content
  * Removes DOM elements that user explicitly excluded during capture or editing
@@ -867,4 +869,23 @@ function classifyImagesForRefresh(html) {
   });
   
   return temp.innerHTML;
+}
+
+
+/**
+ * Apply the full sanitization pipeline to refreshed HTML content.
+ * Consolidates the 4-step sequence that was previously duplicated across
+ * all refresh paths in refresh-engine.js.
+ * 
+ * Pipeline: applyExclusions → preserveImageClassifications → classifyImagesForRefresh → cleanupDuplicates
+ * 
+ * @param {string} inputHtml - The raw HTML from a refresh (fetch, background tab, or active tab)
+ * @param {Object} component - The component metadata object (needs .excludedSelectors and .html_cache)
+ * @returns {string} Sanitized HTML ready for storage and display
+ */
+function applySanitizationPipeline(inputHtml, component) {
+  const withExclusions = applyExclusions(inputHtml, component.excludedSelectors);
+  const withPreserved = preserveImageClassifications(withExclusions, component.html_cache);
+  const withImageClassification = classifyImagesForRefresh(withPreserved);
+  return cleanupDuplicates(withImageClassification);
 }

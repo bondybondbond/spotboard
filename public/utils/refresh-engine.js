@@ -3,7 +3,7 @@
  * Handles component refresh logic, tab management, and toast notifications
  * 
  * Dependencies:
- * - dom-cleanup.js (cleanupDuplicates, applyExclusions)
+ * - dom-cleanup.js (applySanitizationPipeline, cleanupDuplicates)
  * - fingerprint.js (extractFingerprint)
  */
 
@@ -226,7 +226,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
       // Check if images are missing (site may still detect background tab)
       const resultImgCount = (result.match(/<img/gi) || []).length;
       if (expectedImgCount >= 3 && resultImgCount === 0) {
-        console.log(`🖼️ [Background Tab] Images missing (expected ${expectedImgCount}, got ${resultImgCount}) - falling back to active tab`);
+        if (DEBUG) console.log(`🖼️ [Background Tab] Images missing (expected ${expectedImgCount}, got ${resultImgCount}) - falling back to active tab`);
         // Fall through to active tab
       } else {
         return result;
@@ -781,12 +781,10 @@ async function refreshComponent(component) {
         }
         
         // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
-        const withExclusions = applyExclusions(tabHtml, component.excludedSelectors);
-        const withPreserved = preserveImageClassifications(withExclusions, component.html_cache);
-        const withImageClassification = classifyImagesForRefresh(withPreserved);
+        const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
         return {
           success: true,
-          html_cache: cleanupDuplicates(withImageClassification),
+          html_cache: sanitizedHtml,
           last_refresh: new Date().toISOString(),
           status: 'active'
         };
@@ -956,13 +954,10 @@ async function refreshComponent(component) {
             
             // Tab refresh worked and verified!
             // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
-            const withExclusions = applyExclusions(tabHtml, component.excludedSelectors);
-            const withPreserved = preserveImageClassifications(withExclusions, component.html_cache);
-            const withImageClassification = classifyImagesForRefresh(withPreserved);
-            const cleaned = cleanupDuplicates(withImageClassification);
+            const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
             return {
               success: true,
-              html_cache: cleaned,
+              html_cache: sanitizedHtml,
               last_refresh: new Date().toISOString(),
               status: 'active'
             };
@@ -980,7 +975,7 @@ async function refreshComponent(component) {
         
         // SELF-HEALING: Auto-generate headingFingerprint if missing
         if (!component.headingFingerprint) {
-          console.log(`🔧 [Self-Healing] No headingFingerprint found, attempting to generate...`);
+          if (DEBUG) console.log(`🔧 [Self-Healing] No headingFingerprint found, attempting to generate...`);
           
           const tempDiv = document.createElement('div');
           tempDiv.innerHTML = component.html_cache || '';
@@ -992,7 +987,7 @@ async function refreshComponent(component) {
           
           if (cachedHeading) {
             const headingText = cachedHeading.textContent.trim();
-            console.log(`✅ [Self-Healing] Generated headingFingerprint: "${headingText}"`);
+            if (DEBUG) console.log(`✅ [Self-Healing] Generated headingFingerprint: "${headingText}"`);
             component.headingFingerprint = headingText;
             
             // Save to storage for future refreshes (per-component key)
@@ -1001,12 +996,12 @@ async function refreshComponent(component) {
               if (compData) {
                 compData.headingFingerprint = headingText;
                 chrome.storage.sync.set({ [`comp-${component.id}`]: compData }, () => {
-                  console.log(`💾 [Self-Healing] Saved headingFingerprint to storage`);
+                  if (DEBUG) console.log(`💾 [Self-Healing] Saved headingFingerprint to storage`);
                 });
               }
             });
           } else {
-            console.log(`⚠️ [Self-Healing] Could not find heading in cached HTML`);
+            if (DEBUG) console.log(`⚠️ [Self-Healing] Could not find heading in cached HTML`);
           }
         }
         
@@ -1120,16 +1115,13 @@ async function refreshComponent(component) {
               };
             }
             // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
-            console.log(`🔧 [2nd Tab Fallback HTML Pipeline] ${component.name}:`);
-            console.log(`   1. Tab HTML: ${tabHtml.length} chars`);
+            if (DEBUG) console.log(`🔧 [2nd Tab Fallback HTML Pipeline] ${component.name}:`);
+            if (DEBUG) console.log(`   1. Tab HTML: ${tabHtml.length} chars`);
             
-            const withExclusions = applyExclusions(tabHtml, component.excludedSelectors);
-            const withPreserved = preserveImageClassifications(withExclusions, component.html_cache);
-            const withImageClassification = classifyImagesForRefresh(withPreserved);
-            const cleaned = cleanupDuplicates(withImageClassification);
+            const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
             return {
               success: true,
-              html_cache: cleaned,
+              html_cache: sanitizedHtml,
               last_refresh: new Date().toISOString(),
               status: 'active'
             };
@@ -1154,19 +1146,16 @@ async function refreshComponent(component) {
     }
     
     // Apply cleanup to extracted HTML
-    const withExclusions = applyExclusions(extractedHtml, component.excludedSelectors);
-    const withPreserved = preserveImageClassifications(withExclusions, component.html_cache);
-    const withImageClassification = classifyImagesForRefresh(withPreserved);
-    const afterCleanup = cleanupDuplicates(withImageClassification);
+    const sanitizedHtml = applySanitizationPipeline(extractedHtml, component);
     
-    if (afterCleanup.length < 100) {
-      console.error(`⚠️ SUSPICIOUSLY SHORT HTML (${afterCleanup.length} chars):`);
-      console.error(`   Content:`, afterCleanup);
+    if (sanitizedHtml.length < 100) {
+      console.error(`⚠️ SUSPICIOUSLY SHORT HTML (${sanitizedHtml.length} chars):`);
+      console.error(`   Content:`, sanitizedHtml);
     }
     
     return {
       success: true,
-      html_cache: afterCleanup,
+      html_cache: sanitizedHtml,
       last_refresh: new Date().toISOString(),
       status: 'active'
     };
@@ -1424,7 +1413,7 @@ async function refreshAll() {
     const logMessage = pausedComponents.length > 0 
       ? `Refresh complete: ${successCount}/${activeComponents.length} (${pausedComponents.length} paused)`
       : `Refresh complete: ${successCount}/${activeComponents.length}`;
-    console.log(logMessage);
+    if (DEBUG) console.log(logMessage);
     
     // GA4: Track refresh completion (Batch 4)
     try {

@@ -3,11 +3,15 @@
 
 // ================================
 // GA4 CONFIGURATION (Service Worker Compatible)
+// Source of truth: public/utils/constants.js
+// Service worker can't load <script> tags, so these are duplicated here.
+// If credentials change, update BOTH this file and constants.js.
 // ================================
 const GA4_MEASUREMENT_ID = 'G-JLJS09NDZ6';
 const GA4_API_SECRET = 'vrH5dBRiSf6xAuVrJpzKlw';
 const GA4_ENDPOINT = `https://www.google-analytics.com/mp/collect?measurement_id=${GA4_MEASUREMENT_ID}&api_secret=${GA4_API_SECRET}`;
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const DEBUG = false;
 
 async function getOrCreateClientId(): Promise<string> {
   const result = await chrome.storage.local.get('clientId') as { clientId?: string };
@@ -93,7 +97,7 @@ async function cacheToolbarPinStatus(): Promise<void> {
 
 // Cache pin status on browser startup
 chrome.runtime.onStartup.addListener(async () => {
-  console.log('🚀 Browser started, checking toolbar pin status');
+  if (DEBUG) console.log('🚀 Browser started, checking toolbar pin status');
   await cacheToolbarPinStatus();
 });
 
@@ -111,14 +115,14 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       'install_date': installDate,
       'user_id': userId
     });
-    console.log('SpotBoard installed at:', new Date(parseInt(installDate)).toISOString());
-    console.log('Anonymous user ID:', userId);
+    if (DEBUG) console.log('SpotBoard installed at:', new Date(parseInt(installDate)).toISOString());
+    if (DEBUG) console.log('Anonymous user ID:', userId);
     
     // GA4: Track extension install
     await sendGA4Event('extension_installed', {
       referrer: 'chrome_web_store'
     });
-    console.log('📊 GA4: extension_installed sent');
+    if (DEBUG) console.log('📊 GA4: extension_installed sent');
     
     // First-time install - open dashboard with tutorial modal
     chrome.tabs.create({
