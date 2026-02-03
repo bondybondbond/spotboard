@@ -18,5 +18,5 @@ const GA4_ENDPOINT = `https://www.google-analytics.com/mp/collect?measurement_id
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 
 // Debug flag - set to true during development to enable verbose logging
-// Used by: dom-cleanup.js, refresh-engine.js
+// Used by: dom-cleanup.js, refresh-engine.js, dashboard.js (engagement tracking)
 const DEBUG = false;

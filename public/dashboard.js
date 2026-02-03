@@ -108,6 +108,58 @@ function loadComponentsFromSync() {
   });
 }
 
+// ⏱️ ENGAGEMENT TIME TRACKING: Initialize timer variables (MUST be before async IIFE)
+let engagementStartTime = null;
+const MAX_ENGAGEMENT_MS = 30 * 60 * 1000; // 30 minutes cap
+
+// Restore engagement time from previous page loads within same session
+const storedEngagement = sessionStorage.getItem('cumulative_engagement_ms');
+let cumulativeEngagementMs = storedEngagement ? parseInt(storedEngagement, 10) : 0;
+
+// Helper: Persist engagement time to sessionStorage
+function persistEngagementTime() {
+  sessionStorage.setItem('cumulative_engagement_ms', cumulativeEngagementMs.toString());
+}
+
+// Helper: Update cumulative engagement time
+function updateEngagementTime() {
+  if (engagementStartTime !== null && !document.hidden) {
+    const sessionNow = Date.now();
+    const elapsed = sessionNow - engagementStartTime;
+    cumulativeEngagementMs = Math.min(
+      cumulativeEngagementMs + elapsed,
+      MAX_ENGAGEMENT_MS
+    );
+    persistEngagementTime(); // Persist after each update
+    engagementStartTime = sessionNow;
+  }
+}
+
+// Helper: Start engagement timer
+function startEngagementTimer() {
+  if (document.hidden) return;
+  engagementStartTime = Date.now();
+}
+
+// Helper: Pause engagement timer
+function pauseEngagementTimer() {
+  updateEngagementTime();
+  engagementStartTime = null;
+}
+
+// Helper: Get current engagement time
+function getEngagementTime() {
+  updateEngagementTime();
+  const timeMs = Math.round(cumulativeEngagementMs);
+  if (DEBUG) {
+    console.log(`⏱️ Engagement time: ${timeMs}ms (${(timeMs/1000).toFixed(1)}s)`);
+  }
+  return timeMs;
+}
+
+// Start engagement tracking immediately when script loads
+startEngagementTimer();
+
 // Load and display components from hybrid storage (sync metadata + local data)
 (async () => {
   try {
@@ -128,7 +180,7 @@ function loadComponentsFromSync() {
     if (!hasSeenWelcome && window.GA4 && window.GA4.sendEvent) {
       window.GA4.sendEvent('welcome_viewed', {
         has_components: metadata.length > 0
-      });
+      }, getEngagementTime());
       await chrome.storage.local.set({ hasSeenWelcome: true });
     }
   
@@ -166,7 +218,7 @@ function loadComponentsFromSync() {
         active_cards: stats.active,
         paused_card_rate_pct: stats.pausedRate,
         board_opens_7days: boardOpens7d
-      });
+      }, getEngagementTime());
     } 
     // Manual reload (F5/Ctrl+R) - track separately
     else if (navigationType === 'reload') {
@@ -174,7 +226,7 @@ function loadComponentsFromSync() {
         total_cards: stats.total,
         active_cards: stats.active,
         refresh_method: 'manual_reload'
-      });
+      }, getEngagementTime());
     }
     
     // Mark session as active (cleared on tab close)
@@ -323,7 +375,7 @@ function loadComponentsFromSync() {
             sendEvent('component_clicked', {
               url_domain: new URL(component.url).hostname,
               card_age_days: cardAgeDays
-            });
+            }, getEngagementTime());
           }
         });
       }
@@ -375,7 +427,7 @@ function loadComponentsFromSync() {
           sendEvent('component_deleted', {
             url_domain: new URL(component.url).hostname,
             card_age_days: cardAgeDays
-          });
+          }, getEngagementTime());
           
           // Remove from in-memory array FIRST so subsequent deletes work correctly
           const componentId = component.id;
@@ -618,7 +670,30 @@ function loadComponentsFromSync() {
 
 // 📊 GA4: Clear session flag on tab close (for board_opened tracking)
 window.addEventListener('beforeunload', () => {
+  pauseEngagementTimer(); // Capture final engagement time before unload
   sessionStorage.removeItem('dashboard_session_active');
+  sessionStorage.removeItem('reloadFromRefresh');
+  sessionStorage.removeItem('cumulative_engagement_ms');
+});
+
+// ⏱️ ENGAGEMENT TIME TRACKING: Page Visibility API listener
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    pauseEngagementTimer();
+  } else {
+    startEngagementTimer();
+  }
+});
+
+// ⏱️ ENGAGEMENT TIME TRACKING: Window focus/blur listeners
+window.addEventListener('blur', () => {
+  pauseEngagementTimer();
+});
+
+window.addEventListener('focus', () => {
+  if (!document.hidden) {
+    startEngagementTimer();
+  }
 });
 
 // 🎯 BATCH 1.5: Auto-refresh dashboard when new components captured
@@ -825,7 +900,7 @@ async function trackRefreshClick() {
         total_cards: stats.total,
         active_cards: stats.active,
         refresh_clicks_7days: refreshClicks7d
-      });
+      }, getEngagementTime());
     }
   } catch (e) {
     console.warn('GA4 refresh_clicked failed:', e);
@@ -844,7 +919,7 @@ async function trackRefreshClick() {
         if (window.GA4 && window.GA4.sendEvent) {
           window.GA4.sendEvent('first_refresh_24h', {
             time_since_install_hours: Math.round(hoursSinceInstall)
-          });
+          }, getEngagementTime());
         }
         await chrome.storage.local.set({ firstRefreshCompleted: true });
       }

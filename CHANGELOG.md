@@ -1,5 +1,27 @@
 # SpotBoard Changelog
 
+## [1.3.0] - 2026-02-03
+
+### Added
+- **Dashboard Engagement Time Tracking**: Accurate measurement of user engagement for retention analysis
+  - Page Visibility API integration (pauses when tab hidden)
+  - Window focus/blur tracking (pauses when browser loses focus)
+  - sessionStorage persistence across page refreshes within same session
+  - 30-minute cap per session to prevent inflated metrics
+  - All 7 GA4 events now send dynamic engagement_time_msec instead of hardcoded 100ms
+  - Optional DEBUG logging for testing (gated by constants.js flag)
+
+### Changed
+- Enhanced GA4 analytics with accurate engagement duration metrics
+- Improved refresh_failed event tracking (includes selector_type, has_exclusions params)
+
+### Technical
+- 2 files modified: public/dashboard.js (+50 lines), public/ga4.js (signature update)
+- Zero new dependencies - uses native browser APIs only
+- Backward compatible - non-dashboard callers continue using default 100ms
+
+---
+
 ## [1.2.1] - 2026-01-29
 
 ### Added

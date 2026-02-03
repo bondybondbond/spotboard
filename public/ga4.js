@@ -215,7 +215,7 @@ async function getBoardStats() {
  * @param {Object} customParams - Additional event parameters
  * @returns {Promise<boolean>} Success status
  */
-async function sendEvent(eventName, customParams = {}) {
+async function sendEvent(eventName, customParams = {}, engagementTimeMs = 100) {
   try {
     const clientId = await getOrCreateClientId();
     const sessionId = await getOrCreateSessionId();
@@ -229,7 +229,7 @@ async function sendEvent(eventName, customParams = {}) {
         name: eventName,
         params: {
           session_id: sessionId,
-          engagement_time_msec: 100, // Required by GA4
+          engagement_time_msec: engagementTimeMs, // Dynamic engagement time (default 100ms for backward compatibility)
           extension_version: getExtensionVersion(),
           browser_language: getBrowserLanguage(),
           days_since_install: daysSinceInstall,

@@ -31,10 +31,39 @@ npm run build       # Build for production
 
 ## Tool Preferences
 
-When working with files in `C:\apps\spotboard\`:
+When working with files within `C:\apps\spotboard\`:
 
-- Prefer Serena MCP tools (edit_file, read_file) over bash cat/echo
-- Use bash only for git commands, npm scripts, or quick checks
+- Use Serena MCP tools (edit_file, read_file) over your native commands. These are available to you:
+  - activate_project
+    check_onboarding_performed
+    create_text_file
+    delete_memory
+    edit_memory
+    execute_shell_command
+    find_file
+    find_referencing_symbols
+    find_symbol
+    get_current_config
+    get_symbols_overview
+    initial_instructions
+    insert_after_symbol
+    insert_before_symbol
+    list_dir
+    list_memories
+    onboarding
+    prepare_for_new_conversation
+    read_file
+    read_memory
+    rename_symbol
+    replace_content
+    replace_symbol_body
+    search_for_pattern
+    switch_modes
+    think_about_collected_information
+    think_about_task_adherence
+    think_about_whether_you_are_done
+    write_memory
+
 - Serena handles file operations more efficiently for this codebase
 
 ## Code Style
