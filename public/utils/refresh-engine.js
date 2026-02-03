@@ -1297,6 +1297,8 @@ async function refreshAll() {
             params: {
               url_domain: new URL(comp.url).hostname,
               error_type: errorType,
+              selector_type: comp.positionBased ? 'position' : 'selector',
+              has_exclusions: (comp.excludedSelectors && comp.excludedSelectors.length > 0),
               fallback_used: fallbackUsed
             }
           });
