@@ -232,14 +232,33 @@ function cleanupDuplicates(html) {
     });
   });
   
-  // 🎯 STRIP DANGEROUS POSITIONING: Remove position:fixed/sticky that escape card containers
+  // 🎯 STRIP DANGEROUS POSITIONING & BACKGROUNDS: Remove styles that escape card containers or break readability
   temp.querySelectorAll('*').forEach(el => {
     const styleAttr = el.getAttribute('style');
-    if (styleAttr && (styleAttr.includes('position:fixed') || styleAttr.includes('position: fixed') ||
-                      styleAttr.includes('position:sticky') || styleAttr.includes('position: sticky'))) {
-      // Remove the position property instead of removing the whole element
-      const newStyle = styleAttr.replace(/position\s*:\s*(fixed|sticky)\s*;?/gi, '');
-      el.setAttribute('style', newStyle);
+    if (styleAttr) {
+      let newStyle = styleAttr;
+      
+      // Remove positioning that escapes cards
+      newStyle = newStyle.replace(/position\s*:\s*(fixed|sticky)\s*;?/gi, '');
+      
+      // Remove ALL background properties (background, background-color, background-image, background-blend-mode, etc.)
+      newStyle = newStyle.replace(/background[^:]*:\s*[^;]*;?/gi, '');
+      
+      // Remove box-shadows that create dark overlays
+      newStyle = newStyle.replace(/box-shadow\s*:\s*[^;]*;?/gi, '');
+      
+      // CRITICAL: Reset text color to prevent white-on-white (Reddit/Facebook use white text on dark backgrounds)
+      newStyle = newStyle.replace(/color\s*:\s*[^;]*;?/gi, '');
+      
+      // Clean trailing semicolons and whitespace
+      newStyle = newStyle.trim().replace(/;+$/, '');
+      
+      // Set cleaned style or remove attribute if empty
+      if (newStyle) {
+        el.setAttribute('style', newStyle);
+      } else {
+        el.removeAttribute('style');
+      }
     }
   });
   
