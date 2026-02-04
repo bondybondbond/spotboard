@@ -96,7 +96,19 @@ function cleanupDuplicates(html) {
     '[class*="team-name--abbr"]', // Generic abbreviated team names (backup pattern)
     '[class*="-abbr"]',           // Generic abbreviation classes (e.g., "name-abbr", "title-abbr")
     '[class*="abbreviated"]',     // Explicit abbreviated content
-    
+
+    // 🎯 MATERIAL ICONS - Ligature-based fonts (text becomes icon when font loads)
+    // Google Finance uses these extensively, causing "check_circle_filled" text artifacts
+    // Only targets Material-specific classes to avoid false positives on other icon systems
+    '.material-icons',                    // Material Icons (standard)
+    '.material-symbols-outlined',         // Material Symbols (outlined variant)
+    '.material-symbols-rounded',          // Material Symbols (rounded variant)
+    '.google-material-icons',             // Google-specific Material Icons (Google Finance)
+    'span[class^="material-icons-"]',     // Material Icons with prefixes
+    'i[class^="material-icons"]',         // Material Icons in <i> tags
+    'i[class^="google-material-icons"]',  // Google Material Icons in <i> tags
+    'i.icon[aria-hidden="true"]',         // Generic decorative icons (explicitly marked)
+
     // 🎯 CAROUSEL/GALLERY UI CONTROLS (always remove - not content)
     // These are navigation elements that clutter the dashboard
     '[class*="navigateButton"]',  // Rightmove: ImagesControls_navigateButtons__ (narrowed from "navigate")
