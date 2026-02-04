@@ -1,6 +1,6 @@
 # SpotBoard Changelog
 
-## [1.3.0] - 2026-02-03
+## [1.3.0] - 2026-02-04
 
 ### Added
 - **Dashboard Engagement Time Tracking**: Accurate measurement of user engagement for retention analysis
@@ -10,6 +10,9 @@
   - 30-minute cap per session to prevent inflated metrics
   - All 7 GA4 events now send dynamic engagement_time_msec instead of hardcoded 100ms
   - Optional DEBUG logging for testing (gated by constants.js flag)
+
+### Fixed
+- **Material Icons text artifacts**: Remove "check_circle_filled", "more_vert" text when icon fonts don't load (affects Google Finance, Material Design sites)
 
 ### Changed
 - Enhanced GA4 analytics with accurate engagement duration metrics

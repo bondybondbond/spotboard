@@ -349,18 +349,19 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
     text-align: center !important;
     position: relative !important;
     z-index: 2147483647 !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
   `;
-  
+
   // 🎯 BATCH 1.5: Enhanced notification with "View on SpotBoard" button
   modalContent.innerHTML = `
-    <div style="font-size: 16px; margin-bottom: 20px; line-height: 1.5;">
+    <div style="font-size: 16px; margin-bottom: 20px; line-height: 1.5; font-family: inherit;">
       ${message}
     </div>
-    <div style="display: flex; gap: 12px; flex-direction: column;">
-      <button id="viewBoardBtn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600;">
+    <div style="display: flex; gap: 12px; flex-direction: column; font-family: inherit;">
+      <button id="viewBoardBtn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit;">
         View on SpotBoard
       </button>
-      <button id="closeNotification" style="width: 100%; padding: 12px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600;">
+      <button id="closeNotification" style="width: 100%; padding: 12px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit;">
         Close
       </button>
     </div>
@@ -1058,36 +1059,36 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   `;
   
   modal.innerHTML = `
-    <div style="margin-bottom: 16px;">
-      <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${name.replace(/"/g, '&quot;')}">
+    <div style="margin-bottom: 16px; font-family: inherit;">
+      <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit;" title="${name.replace(/"/g, '&quot;')}">
         ✅ Captured: ${name}
       </div>
-      <div style="font-size: 14px; opacity: 0.9;">
+      <div style="font-size: 14px; opacity: 0.9; font-family: inherit;">
         Click elements inside the green box to exclude them.<br>
         They'll turn red. Click again to undo.
       </div>
     </div>
-    <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 12px;">
-      <div id="advancedToggle" style="cursor: pointer; font-size: 13px; opacity: 0.8; user-select: none;">
+    <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 12px; font-family: inherit;">
+      <div id="advancedToggle" style="cursor: pointer; font-size: 13px; opacity: 0.8; user-select: none; font-family: inherit;">
         ⚙️ Advanced
       </div>
-      <div id="advancedPanel" style="display: none; margin-top: 8px; font-size: 13px;">
-        <div style="margin-bottom: 6px; opacity: 0.9;">Capture mode:</div>
-        <label style="display: block !important; margin: 6px 0 !important; cursor: pointer !important; opacity: 0.95 !important;">
+      <div id="advancedPanel" style="display: none; margin-top: 8px; font-size: 13px; font-family: inherit;">
+        <div style="margin-bottom: 6px; opacity: 0.9; font-family: inherit;">Capture mode:</div>
+        <label style="display: block !important; margin: 6px 0 !important; cursor: pointer !important; opacity: 0.95 !important; font-family: inherit !important;">
           <input type="radio" name="captureMode" value="header" ${!positionBased ? 'checked' : ''} style="display: inline-block !important; margin-right: 6px !important; width: auto !important; height: auto !important; opacity: 1 !important; position: static !important;">
-          <span style="display: inline !important; vertical-align: middle !important;">Header-based (uses section title)</span>
+          <span style="display: inline !important; vertical-align: middle !important; font-family: inherit !important;">Header-based (uses section title)</span>
         </label>
-        <label style="display: block !important; margin: 6px 0 !important; cursor: pointer !important; opacity: 0.95 !important;">
+        <label style="display: block !important; margin: 6px 0 !important; cursor: pointer !important; opacity: 0.95 !important; font-family: inherit !important;">
           <input type="radio" name="captureMode" value="position" ${positionBased ? 'checked' : ''} style="display: inline-block !important; margin-right: 6px !important; width: auto !important; height: auto !important; opacity: 1 !important; position: static !important;">
-          <span style="display: inline !important; vertical-align: middle !important;">Position-based (uses spot position on page)</span>
+          <span style="display: inline !important; vertical-align: middle !important; font-family: inherit !important;">Position-based (uses spot position on page)</span>
         </label>
       </div>
     </div>
-    <div style="display: flex; gap: 8px; margin-top: 16px;">
-      <button id="confirmSpot" style="flex: 1; padding: 12px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
+    <div style="display: flex; gap: 8px; margin-top: 16px; font-family: inherit;">
+      <button id="confirmSpot" style="flex: 1; padding: 12px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit;">
         Confirm Spot
       </button>
-      <button id="cancelSpot" style="flex: 1; padding: 12px; background: #f56565; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
+      <button id="cancelSpot" style="flex: 1; padding: 12px; background: #f56565; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit;">
         Cancel
       </button>
     </div>
@@ -1404,7 +1405,7 @@ function showCaptureBanner() {
   
   banner.innerHTML = `
     <img src="${chrome.runtime.getURL('icon-16.png')}" style="width: 20px; height: 20px; pointer-events: none;">
-    <span style="pointer-events: none;"><strong>Capture Mode Active</strong> - Click on any content you want to add to your board</span>
+    <span style="pointer-events: none;"><strong style="font-weight: 700 !important;">Capture Mode Active</strong> - Click on any content you want to add to your board</span>
     <span style="margin-left: auto; pointer-events: none;">Press <span style="padding: 2px 6px; background: rgba(0, 0, 0, 0.15); border-radius: 3px; font-family: monospace; font-size: 12px;">[Esc]</span> to cancel capture</span>
   `;
   
