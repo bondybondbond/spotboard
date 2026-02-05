@@ -23,7 +23,8 @@
     }
     .components-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      grid-template-columns: repeat(auto-fill, 355px); /* Fixed 355px columns */
+      grid-auto-rows: 370px; /* Fixed row height */
       gap: 20px;
       align-content: start;
     }
@@ -34,10 +35,14 @@
       border: 1px solid #000;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
       
-      /* Safety valve: scroll instead of overflow */
-      max-height: 500px;
-      overflow-y: auto;
-      overflow-x: hidden;
+      /* Grid sizing */
+      max-height: 100%; /* Fill grid cell */
+      overflow: hidden; /* Card clips at boundary - content div handles scrolling */
+      position: relative; /* For floating resize button */
+
+      /* Default: 1x1 */
+      grid-column: span 1;
+      grid-row: span 1;
     }
     
     /* Styled scrollbar for cards */
@@ -73,6 +78,133 @@
     .pause-btn:active {
       transform: scale(0.95);
     }
+    
+    /* ===== GRID SIZE PRESETS ===== */
+    .component-card.size-1x1 {
+      grid-column: span 1;
+      grid-row: span 1;
+    }
+
+    .component-card.size-2x1 {
+      grid-column: span 2;
+      grid-row: span 1;
+    }
+
+    .component-card.size-1x2 {
+      grid-column: span 1;
+      grid-row: span 2;
+    }
+
+    .component-card.size-2x2 {
+      grid-column: span 2;
+      grid-row: span 2;
+    }
+
+    /* ===== RESIZE BUTTON (Bottom-Right Corner) ===== */
+    .card-resize-btn {
+      position: absolute;
+      bottom: 8px; /* Tight to card edge */
+      right: 8px; /* Tight to card edge */
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #667eea;
+      cursor: pointer;
+      z-index: 10;
+      opacity: 1.0; /* Fully solid - maximum visibility */
+      transition: all 0.2s ease;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .card-resize-btn:hover {
+      opacity: 1;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      transform: scale(1.05);
+    }
+
+    /* Resize menu flyout */
+    .resize-menu {
+      position: absolute;
+      bottom: 32px; /* Above button */
+      right: 8px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 100;
+      min-width: 100px;
+      display: none;
+    }
+
+    .resize-menu.active {
+      display: block;
+    }
+
+    .resize-menu-option {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #333;
+      border-bottom: 1px solid #f0f0f0;
+      transition: background 0.15s;
+    }
+
+    .resize-menu-option:last-child {
+      border-bottom: none;
+    }
+
+    .resize-menu-option:hover {
+      background: #f8f9fa;
+    }
+
+    .resize-menu-option.active {
+      background: #D1FFD1; /* Light green fill */
+      color: #2d7a2d; /* Darker green text for contrast */
+      font-weight: 600;
+    }
+
+    .resize-menu-option.active::after {
+      content: ' ✓';
+      float: right;
+    }
+    
+    /* ===== GRID SIZE ICONS - Linear Gradient Approach ===== */
+    .size-icon {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border-radius: 2px;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
+    /* Menu option layout */
+    .resize-menu-option {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Hover & active states for icons */
+    .resize-menu-option:hover .size-icon {
+      filter: brightness(0.95);
+    }
+    .resize-menu-option.active .size-icon {
+      filter: brightness(1.05);
+      box-shadow: 0 0 0 2px #667eea;
+    }
+    .card-resize-btn:hover .size-icon {
+      transform: scale(1.1);
+      transition: transform 0.15s ease;
+    }
+    
     /* Force default cursor on captured content (but not links) */
     .component-content {
       cursor: default;
@@ -368,10 +500,7 @@
         max-width: none;
       }
       
-      /* Shorter cards on mobile */
-      .component-card {
-        max-height: 400px;
-      }
+      /* Grid wraps naturally on mobile - no override needed */
     }
 
     /* Info Button Hover State */

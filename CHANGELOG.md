@@ -1,6 +1,30 @@
 # SpotBoard Changelog
 
-## [1.3.0] - 2026-02-04
+## [1.3.0] - 2026-02-05
+
+### Added
+- **Per-Card Grid Sizing**: Resize individual cards to 1×1, 2×1, 1×2, or 2×2 grid units
+  - Resize button in bottom-right corner of each card shows current size
+  - Flyout menu with visual 2×2 grid preview icons for each size option
+  - Inline SVG icons for pixel-perfect rendering (brand purple #667eea for filled cells)
+  - Size persists across browser refresh, reopen, and Refresh All
+
+### Fixed
+- **Card size persistence on Refresh All**: Sizes no longer reset when clicking Refresh All button
+  - Root cause: syncUpdates objects missing cardSize field during refresh cycle
+  - Added cardSize preservation to both paused and refreshed component save paths
+
+### Changed
+- Dashboard grid: 300×250px → 355×370px cards
+- Card overflow: Hidden to prevent double scrollbars
+
+### Technical
+- 3 files modified: public/dashboard.html (CSS), public/dashboard.js (getSizeIconSVG helper), public/utils/refresh-engine.js (cardSize persistence)
+- New learning documented: Schema evolution field persistence pattern
+
+---
+
+## [1.2.1] - 2026-02-04
 
 ### Added
 - **Dashboard Engagement Time Tracking**: Accurate measurement of user engagement for retention analysis

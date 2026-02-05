@@ -1342,7 +1342,8 @@ async function refreshAll() {
           excludedSelectors: comp.excludedSelectors || [],
           positionBased: comp.positionBased || false, // 🎯 BATCH 5 FIX: Preserve capture method
           refreshPaused: comp.refreshPaused, // Preserve paused state!
-          last_refresh: comp.last_refresh
+          last_refresh: comp.last_refresh,
+          cardSize: comp.cardSize || '1x1' // 🔧 FIX: Preserve card size on refresh
         };
         
         updatedLocalData[comp.id] = {
@@ -1364,7 +1365,8 @@ async function refreshAll() {
           excludedSelectors: comp.excludedSelectors || [],
           positionBased: comp.positionBased || false, // 🎯 BATCH 5 FIX: Preserve capture method
           refreshPaused: comp.refreshPaused, // Preserve state
-          last_refresh: result.success ? result.last_refresh : comp.last_refresh
+          last_refresh: result.success ? result.last_refresh : comp.last_refresh,
+          cardSize: comp.cardSize || '1x1' // 🔧 FIX: Preserve card size on refresh
         };
         
         // Save full data to local (including HTML)

@@ -249,7 +249,10 @@ startEngagementTimer();
   
     components.forEach((component, index) => {
       const card = document.createElement('div');
-      card.className = `component-card${component.refreshPaused ? ' paused' : ''}`;
+      
+      // Add size class to card
+      const cardSize = component.cardSize || '1x1';
+      card.className = `component-card size-${cardSize}${component.refreshPaused ? ' paused' : ''}`;
       
       // Format timestamp with both absolute and relative time
       let timestampText = 'Never refreshed';
@@ -355,7 +358,7 @@ startEngagementTimer();
           </button>
           <button class="delete-btn" style="padding: 4px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; margin-left: 8px; flex-shrink: 0;">Delete</button>
         </div>
-        <div class="component-content" style="margin-top: 0; padding: 12px; background: #ffffff; border-radius: 0 0 6px 6px; max-height: 300px; overflow: auto;">
+        <div class="component-content" style="margin-top: 0; padding: 12px; background: #ffffff; border-radius: 0 0 6px 6px; max-height: 100%; overflow: auto;">
           ${cleanupDuplicates(component.html_cache) || '<div style="color: #6c757d; text-align: center; padding: 20px;"><div style="font-size: 18px; margin-bottom: 8px;">📭</div><div style="font-weight: 600; margin-bottom: 4px;">No content yet</div><div style="font-size: 13px;">Click "Refresh All" to fetch latest content</div></div>'}
         </div>
       `;
@@ -655,6 +658,104 @@ startEngagementTimer();
         });
       }
       
+      // ===== CARD RESIZE LOGIC =====
+      
+      // SVG icon helper for 2×2 grid preview
+      function getSizeIconSVG(size) {
+        const fills = {
+          '1x1': ['#667eea', '#e0e0e0', '#e0e0e0', '#e0e0e0'],
+          '2x1': ['#667eea', '#667eea', '#e0e0e0', '#e0e0e0'],
+          '1x2': ['#667eea', '#e0e0e0', '#667eea', '#e0e0e0'],
+          '2x2': ['#667eea', '#667eea', '#667eea', '#667eea']
+        };
+        const c = fills[size] || fills['1x1'];
+        const stroke = (f) => f === '#667eea' ? '#5a6fd8' : '#b0b0b0';
+        return `<svg class="size-icon" width="20" height="20" viewBox="0 0 20 20">
+          <rect x="1" y="1" width="8" height="8" rx="1" fill="${c[0]}" stroke="${stroke(c[0])}" stroke-width="0.5"/>
+          <rect x="11" y="1" width="8" height="8" rx="1" fill="${c[1]}" stroke="${stroke(c[1])}" stroke-width="0.5"/>
+          <rect x="1" y="11" width="8" height="8" rx="1" fill="${c[2]}" stroke="${stroke(c[2])}" stroke-width="0.5"/>
+          <rect x="11" y="11" width="8" height="8" rx="1" fill="${c[3]}" stroke="${stroke(c[3])}" stroke-width="0.5"/>
+        </svg>`;
+      }
+
+      // Add resize button and menu
+      const resizeButton = document.createElement('button');
+      resizeButton.className = 'card-resize-btn';
+      resizeButton.innerHTML = `${getSizeIconSVG(cardSize)}<span>${cardSize}</span>`;
+      resizeButton.title = 'Change card size';
+
+      const resizeMenu = document.createElement('div');
+      resizeMenu.className = 'resize-menu';
+      resizeMenu.innerHTML = `
+        <div class="resize-menu-option ${cardSize === '1x1' ? 'active' : ''}" data-size="1x1">
+          ${getSizeIconSVG('1x1')}<span>1×1</span>
+        </div>
+        <div class="resize-menu-option ${cardSize === '2x1' ? 'active' : ''}" data-size="2x1">
+          ${getSizeIconSVG('2x1')}<span>2×1</span>
+        </div>
+        <div class="resize-menu-option ${cardSize === '1x2' ? 'active' : ''}" data-size="1x2">
+          ${getSizeIconSVG('1x2')}<span>1×2</span>
+        </div>
+        <div class="resize-menu-option ${cardSize === '2x2' ? 'active' : ''}" data-size="2x2">
+          ${getSizeIconSVG('2x2')}<span>2×2</span>
+        </div>
+      `;
+
+      card.appendChild(resizeButton);
+      card.appendChild(resizeMenu);
+
+      // Toggle menu on button click
+      resizeButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        resizeMenu.classList.toggle('active');
+      });
+
+      // Close menu when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!resizeButton.contains(e.target) && !resizeMenu.contains(e.target)) {
+          resizeMenu.classList.remove('active');
+        }
+      });
+
+      // Handle size option clicks
+      resizeMenu.querySelectorAll('.resize-menu-option').forEach(option => {
+        option.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const newSize = option.dataset.size;
+
+          // Update card visual
+          card.className = `component-card size-${newSize}${component.refreshPaused ? ' paused' : ''}`;
+
+          // Update button label
+          resizeButton.innerHTML = `${getSizeIconSVG(newSize)}<span>${newSize}</span>`;
+
+          // Update menu active state
+          resizeMenu.querySelectorAll('.resize-menu-option').forEach(opt => {
+            opt.classList.remove('active');
+          });
+          option.classList.add('active');
+
+          // Close menu
+          resizeMenu.classList.remove('active');
+
+          // Save to storage
+          await updateCardSize(component.id, newSize);
+
+          // GA4: Track size changes
+          if (window.GA4 && window.GA4.sendEvent) {
+            window.GA4.sendEvent('card_size_changed', {
+              card_id: component.id,
+              old_size: component.cardSize || '1x1',
+              new_size: newSize,
+              extension_version: chrome.runtime.getManifest().version
+            }, getEngagementTime());
+          }
+
+          // Update component object
+          component.cardSize = newSize;
+        });
+      });
+      
       grid.appendChild(card);
     });
   } catch (error) {
@@ -667,6 +768,35 @@ startEngagementTimer();
     `;
   }
 })(); // Close async IIFE
+
+/**
+ * Update card size in storage (preserves all fields)
+ * @param {string} componentId - Component UUID
+ * @param {string} newSize - One of: 1x1, 2x1, 1x2, 2x2
+ */
+async function updateCardSize(componentId, newSize) {
+  return new Promise((resolve) => {
+    // Read current component data
+    chrome.storage.sync.get([`comp-${componentId}`], (result) => {
+      const component = result[`comp-${componentId}`];
+      if (!component) {
+        console.error('Component not found:', componentId);
+        resolve();
+        return;
+      }
+
+      // Update with ALL fields preserved (CRITICAL per LEARNINGS.md §1.3)
+      chrome.storage.sync.set({
+        [`comp-${componentId}`]: {
+          ...component, // Preserve ALL existing fields
+          cardSize: newSize // Update only cardSize
+        }
+      }, () => {
+        resolve();
+      });
+    });
+  });
+}
 
 // 📊 GA4: Clear session flag on tab close (for board_opened tracking)
 window.addEventListener('beforeunload', () => {
