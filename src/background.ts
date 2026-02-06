@@ -129,7 +129,83 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       url: chrome.runtime.getURL('dashboard.html')
     });
   }
+  
+  // Set uninstall survey URL (runs on both install and update)
+  await setUninstallSurveyURL();
 });
+
+// ================================
+// UNINSTALL SURVEY
+// ================================
+// Set uninstall survey URL with pre-populated analytics (same pattern as feedback forms)
+async function setUninstallSurveyURL() {
+  try {
+    // Read analytics data from chrome.storage.local
+    const storageData = await chrome.storage.local.get(['user_id', 'install_date']) as { user_id?: string; install_date?: string };
+    const user_id = storageData.user_id;
+    const install_date = storageData.install_date;
+    
+    // Calculate days since install
+    const installTimestamp = parseInt(install_date || Date.now().toString());
+    const daysSinceInstall = Math.floor((Date.now() - installTimestamp) / (1000 * 60 * 60 * 24));
+    
+    // Get board statistics from chrome.storage.sync
+    const syncData = await chrome.storage.sync.get(null) as Record<string, any>;
+    const components = Object.values(syncData).filter((item: any) => 
+      item && typeof item === 'object' && item.url && item.selector
+    ) as any[];
+    
+    const totalCards = components.length;
+    const activeCards = components.filter((c: any) => !c.isPaused).length;
+    const pausedCardRate = totalCards > 0 ? Math.round((1 - activeCards / totalCards) * 100) : 0;
+    
+    // Calculate average card age
+    const cardAges = components
+      .filter((c: any) => c.createdAt)
+      .map((c: any) => Math.floor((Date.now() - c.createdAt) / (1000 * 60 * 60 * 24)));
+    const avgCardAge = cardAges.length > 0 
+      ? Math.round(cardAges.reduce((sum, age) => sum + age, 0) / cardAges.length)
+      : 0;
+    
+    // Get all tracked sites
+    const allSites = [...new Set(components.map((c: any) => {
+      try {
+        return new URL(c.url).hostname;
+      } catch {
+        return 'unknown';
+      }
+    }))].join(', ');
+    
+    // Build Tally URL with all hidden fields (matches feedback-data.js pattern)
+    const baseURL = 'https://tally.so/r/A7vEPN';
+    const params = new URLSearchParams();
+    
+    params.append('user_id', user_id || 'unknown');
+    params.append('days_since_install', daysSinceInstall.toString());
+    params.append('browser_language', chrome.i18n.getUILanguage());
+    params.append('extension_version', chrome.runtime.getManifest().version);
+    params.append('total_cards', totalCards.toString());
+    params.append('active_cards', activeCards.toString());
+    params.append('paused_card_rate_%', pausedCardRate.toString());
+    params.append('all_tracked_sites', allSites || 'none');
+    params.append('avg_card_age_days', avgCardAge.toString());
+    params.append('board_opens_7days', '0'); // Fallback - tracking not yet migrated to service worker
+    params.append('refresh_clicks_7days', '0'); // Fallback - tracking not yet migrated to service worker
+    
+    const uninstallURL = `${baseURL}?${params.toString()}`;
+    
+    // Set the uninstall URL
+    chrome.runtime.setUninstallURL(uninstallURL);
+    if (DEBUG) console.log('🔗 Uninstall survey URL set with analytics params');
+  } catch (error) {
+    console.error('Failed to set uninstall survey URL:', error);
+    // Fallback to basic URL without params
+    chrome.runtime.setUninstallURL('https://tally.so/r/A7vEPN');
+  }
+}
+
+// Also set on service worker startup (in case of browser restart)
+setUninstallSurveyURL();
 
 // ================================
 // MESSAGE HANDLERS

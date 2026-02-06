@@ -1,5 +1,22 @@
 # SpotBoard Changelog
 
+## [Unreleased]
+
+### Added
+- **Uninstall Survey**: Tally.so form triggers when users uninstall to collect diagnostic feedback
+  - Pre-populated with 11 anonymous analytics fields (user_id, days_since_install, total_cards, etc.)
+  - Conditional logic: "Which websites failed?" shown only if reliability issue selected
+  - Decision thresholds: ≥30% reliability → sprint, ≥20% onboarding → iteration
+  - Enables cohort analysis (early churners vs late churners, heavy users vs light users)
+  - Privacy-compliant: Matches existing Tally feedback form data collection (disclosed in PRIVACY.md)
+
+### Technical
+- 1 file modified: src/background.ts (+70 lines)
+- New function: setUninstallSurveyURL() - called on install, update, and service worker startup
+- Survey copy designed per Mom Test principles (no hypotheticals, purely diagnostic)
+
+---
+
 ## [1.3.0] - 2026-02-05
 
 ### Added
