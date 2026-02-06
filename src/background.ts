@@ -130,6 +130,24 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     });
   }
   
+  // Backfill install_date and user_id for users who upgraded from pre-v1.2.1
+  // (These were only set on fresh install, not on update)
+  if (details.reason === 'update') {
+    const existing = await chrome.storage.local.get(['install_date', 'user_id']) as { install_date?: string; user_id?: string };
+    const backfill: Record<string, string> = {};
+    if (!existing.install_date) {
+      backfill.install_date = Date.now().toString();
+      if (DEBUG) console.log('Backfilled install_date for existing user');
+    }
+    if (!existing.user_id) {
+      backfill.user_id = crypto.randomUUID();
+      if (DEBUG) console.log('Backfilled user_id for existing user');
+    }
+    if (Object.keys(backfill).length > 0) {
+      await chrome.storage.local.set(backfill);
+    }
+  }
+
   // Set uninstall survey URL (runs on both install and update)
   await setUninstallSurveyURL();
 });

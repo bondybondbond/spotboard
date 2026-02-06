@@ -39,3 +39,6 @@ _do not upload/
 
 # Project documentation (private)
 /docs/
+
+# Windows reserved filename artifact
+nul

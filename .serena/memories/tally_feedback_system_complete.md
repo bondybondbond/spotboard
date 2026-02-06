@@ -63,6 +63,12 @@ await getAllHiddenFields() // Returns all 10 fields
 await buildTallyURL('positive') // Returns pre-filled URL
 ```
 
+## Bug Fix: install_date Backfill (Feb 2026)
+- **Problem**: `install_date` and `user_id` only set on fresh install (`details.reason === 'install'`), not on update
+- **Impact**: All users who upgraded from pre-v1.2.1 had `daysSinceInstall` always returning 0, permanently blocking feedback bubble
+- **Fix**: Added backfill block in `onInstalled` for `details.reason === 'update'` — sets `install_date` and `user_id` if missing
+- **Code**: `src/background.ts` lines 132-148
+
 ## Future Enhancements Needed
 - Add completion_time tracking (seconds from start to submit)
 - Add form field analytics (which questions answered)
