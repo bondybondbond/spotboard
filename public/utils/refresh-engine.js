@@ -799,19 +799,62 @@ async function refreshComponent(component) {
     
     // Fetch fresh HTML from the source URL
     // Include credentials to maintain login sessions (e.g., Yahoo Finance, authenticated sites)
-    const response = await fetch(component.url, {
-      method: 'GET',
-      credentials: 'include', // Send cookies for session-dependent content
-      headers: {
-        'Cache-Control': 'no-cache' // Ensure fresh data
-      }
-    });
+    let fullHtml;
+    let fetchError = null;
     
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    try {
+      const response = await fetch(component.url, {
+        method: 'GET',
+        credentials: 'include', // Send cookies for session-dependent content
+        headers: {
+          'Cache-Control': 'no-cache', // Ensure fresh data
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        }
+      });
+      
+      if (!response.ok) {
+        fetchError = `HTTP ${response.status}: ${response.statusText}`;
+      } else {
+        fullHtml = await response.text();
+      }
+    } catch (networkErr) {
+      fetchError = `Fetch error: ${networkErr.message}`;
     }
     
-    const fullHtml = await response.text();
+    // If fetch failed (HTTP error, network error, CORS, etc.), fall through to tab-based refresh
+    if (fetchError) {
+      console.warn(`⚠️ Direct fetch failed for ${component.name} (${component.url}): ${fetchError} - trying tab fallback`);
+      
+      const originalFingerprint = extractFingerprint(component.html_cache);
+      const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount);
+      
+      if (tabHtml) {
+        // Fingerprint verification (skip for position-based captures)
+        if (!component.positionBased && originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
+          return {
+            success: false,
+            error: 'Fetch failed, tab refresh returned different element',
+            keepOriginal: true
+          };
+        }
+        
+        if (DEBUG) console.log(`🔧 [Fetch Fallback] Tab refresh succeeded for ${component.name}`);
+        const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+        return {
+          success: true,
+          html_cache: sanitizedHtml,
+          last_refresh: new Date().toISOString(),
+          status: 'active'
+        };
+      }
+      
+      // Both fetch and tab failed
+      return {
+        success: false,
+        error: `Fetch failed (${fetchError}), tab fallback also failed`,
+        keepOriginal: true
+      };
+    }
     
         // Try to extract the component using the selector
     const parser = new DOMParser();

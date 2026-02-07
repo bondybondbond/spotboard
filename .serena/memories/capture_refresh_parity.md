@@ -6,6 +6,7 @@
 1. **Direct fetch** (DOMParser in refresh-engine.js) - No CSS, no JavaScript
 2. **Background tab with spoof** (tryBackgroundWithSpoof) - Has CSS/JS but visibility spoofed
 3. **Active visible tab** (tryActiveTab) - Full CSS/JS, real visibility
+4. **Fetch-error fallback** (inner try/catch in refreshComponent) - When direct fetch returns HTTP error or network failure, routes to tabBasedRefresh() with fingerprint verification
 
 ## Why This Matters
 - Capture runs in live page with full CSS → can detect visibility, computed styles, getBoundingClientRect
