@@ -1,24 +1,26 @@
 /**
  * DOM Cleanup Utilities for SpotBoard
  * Handles HTML sanitization, duplicate removal, URL fixing, and CSS injection
+ *
+ * Single source of truth — compiled two ways:
+ * 1. esbuild pre-build → public/utils/dom-cleanup.js (IIFE with window globals for dashboard)
+ * 2. Vite bundles into content.js (ES module import for content script)
  */
-
-// DEBUG flag is loaded from utils/constants.js (must be loaded before this file)
 
 /**
  * Apply user exclusions to HTML content
  * Removes DOM elements that user explicitly excluded during capture or editing
  * 
- * @param {string} html - The HTML content to process
- * @param {string[]} excludedSelectors - Array of CSS selectors for elements to remove
- * @returns {string} - HTML with excluded elements removed
+ * @param html - The HTML content to process
+ * @param excludedSelectors - Array of CSS selectors for elements to remove
+ * @returns HTML with excluded elements removed
  * 
  * Safety: Skips ultra-generic selectors (bare tag names like "div", "span") 
  * to prevent accidentally removing all content
  * 
  * Used in: Direct fetch refresh, tab-based refresh, skeleton fallback
  */
-function applyExclusions(html, excludedSelectors) {
+export function applyExclusions(html: string, excludedSelectors?: string[]): string {
   if (!html || !excludedSelectors || excludedSelectors.length === 0) {
     return html;
   }
@@ -51,8 +53,8 @@ function applyExclusions(html, excludedSelectors) {
  * Remove duplicate and hidden elements from HTML
  * Fixes modern responsive design pattern where sites include both mobile/desktop content
  * 
- * @param {string} html - The HTML content to clean
- * @returns {string} - HTML with duplicates removed
+ * @param html - The HTML content to clean
+ * @returns HTML with duplicates removed
  * 
  * Patterns detected:
  * - Mobile-specific classes (-mobile, MobileValue)
@@ -69,7 +71,7 @@ function applyExclusions(html, excludedSelectors) {
  * 
  * Used in: All refresh paths (direct fetch, tab refresh, skeleton fallback)
  */
-function cleanupDuplicates(html) {
+export function cleanupDuplicates(html: string): string {
   if (!html) return html;
   
   const temp = document.createElement('div');
@@ -147,11 +149,11 @@ function cleanupDuplicates(html) {
   
   // Remove empty wrapper divs/spans that only add spacing
   let emptyWrappersRemoved = 0;
-  const removedElements = []; // Track what we're removing
+  const removedElements: Array<{ tag: string; classes: string; id: string; children: number; innerHTML: string }> = []; // Track what we're removing
   
   temp.querySelectorAll('div, span').forEach(el => {
     // Check if element is effectively empty (no text, only whitespace/images/br)
-    const hasText = el.textContent.trim().length > 0;
+    const hasText = el.textContent!.trim().length > 0;
     const hasImages = el.querySelector('img');
     const hasLinks = el.querySelector('a');
     const hasSvg = el.querySelector('svg');
@@ -165,7 +167,7 @@ function cleanupDuplicates(html) {
       if (removedElements.length < 5) {
         removedElements.push({
           tag: el.tagName,
-          classes: el.className,
+          classes: el.className as string,
           id: el.id,
           children: el.children.length,
           innerHTML: el.innerHTML.substring(0, 100)
@@ -182,14 +184,14 @@ function cleanupDuplicates(html) {
   let svgSpritesRemoved = 0;
   temp.querySelectorAll('svg use[href*=".svg#"]').forEach(use => {
     svgSpritesRemoved++;
-    use.parentElement.remove(); // Remove the entire SVG element
+    use.parentElement!.remove(); // Remove the entire SVG element
   });
   
   // 🎯 SCALABLE SVG VALIDATION: Remove unrenderable SVGs (Guardian numbers, etc.)
   // Tests if SVG can render properly at 25px using heuristics
   let svgsRemoved = 0;
   temp.querySelectorAll('svg').forEach(svg => {
-    if (!isSVGRenderable(svg)) {
+    if (!isSVGRenderable(svg as SVGSVGElement)) {
       svgsRemoved++;
       svg.remove();
     }
@@ -246,7 +248,7 @@ function cleanupDuplicates(html) {
   
   // 🎯 STRIP DANGEROUS POSITIONING & BACKGROUNDS: Remove styles that escape card containers or break readability
   temp.querySelectorAll('*').forEach(el => {
-    const styleAttr = el.getAttribute('style');
+    const styleAttr = (el as HTMLElement).getAttribute('style');
     if (styleAttr) {
       let newStyle = styleAttr;
       
@@ -267,9 +269,9 @@ function cleanupDuplicates(html) {
       
       // Set cleaned style or remove attribute if empty
       if (newStyle) {
-        el.setAttribute('style', newStyle);
+        (el as HTMLElement).setAttribute('style', newStyle);
       } else {
-        el.removeAttribute('style');
+        (el as HTMLElement).removeAttribute('style');
       }
     }
   });
@@ -286,10 +288,10 @@ function cleanupDuplicates(html) {
  * Test if an SVG can render properly at 25px
  * Uses heuristics to detect broken/unscalable SVGs without canvas rendering
  * 
- * @param {SVGElement} svg - The SVG element to test
- * @returns {boolean} - true if renderable, false if broken
+ * @param svg - The SVG element to test
+ * @returns true if renderable, false if broken
  */
-function isSVGRenderable(svg) {
+export function isSVGRenderable(svg: SVGSVGElement): boolean {
   try {
     // CHECK 1: Must have dimensions (viewBox OR width/height)
     const viewBox = svg.getAttribute('viewBox');
@@ -340,8 +342,8 @@ function isSVGRenderable(svg) {
  * Convert relative URLs to absolute URLs based on source page
  * Ensures images, backgrounds, and links work after extraction from original site
  * 
- * @param {HTMLElement} container - DOM element containing the extracted HTML
- * @param {string} sourceUrl - Original URL where content was captured from
+ * @param container - DOM element containing the extracted HTML
+ * @param sourceUrl - Original URL where content was captured from
  * 
  * Handles:
  * - Image src and srcset attributes
@@ -356,7 +358,7 @@ function isSVGRenderable(svg) {
  * 
  * Used in: All refresh paths after HTML is fetched
  */
-function fixRelativeUrls(container, sourceUrl) {
+export function fixRelativeUrls(container: HTMLElement, sourceUrl: string): void {
   try {
     const url = new URL(sourceUrl);
     const origin = url.origin; // e.g., "https://www.bbc.co.uk"
@@ -382,8 +384,8 @@ function fixRelativeUrls(container, sourceUrl) {
     // These are NOT actual pixel dimensions - they're 4:3 aspect ratio markers
     // Without this fix, images render at 4x3 pixels instead of proper sizes
     container.querySelectorAll('img').forEach(img => {
-      const width = parseInt(img.getAttribute('width')) || 0;
-      const height = parseInt(img.getAttribute('height')) || 0;
+      const width = parseInt(img.getAttribute('width')!) || 0;
+      const height = parseInt(img.getAttribute('height')!) || 0;
       
       // Detect placeholder dimensions (< 10px = aspect ratio markers)
       if ((height > 0 && height < 10) || (width > 0 && width < 10)) {
@@ -396,27 +398,27 @@ function fixRelativeUrls(container, sourceUrl) {
     // Also add crossorigin="anonymous" to help SVG images load from cross-origin sources
     container.querySelectorAll('img[src]').forEach(img => {
       // Add crossorigin for SVG compatibility (yr.no weather icons, etc.)
-      img.crossOrigin = 'anonymous';
+      (img as HTMLImageElement).crossOrigin = 'anonymous';
       const src = img.getAttribute('src');
       
       // 🔧 Handle protocol-relative URLs (//upload.wikimedia.org/...)
       if (src && src.startsWith('//')) {
-        img.src = 'https:' + src;
+        (img as HTMLImageElement).src = 'https:' + src;
         return;
       }
       
       if (src && !src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:')) {
         if (src.startsWith('/')) {
           // Absolute path: /img/logo.png → https://site.com/img/logo.png
-          img.src = origin + src;
+          (img as HTMLImageElement).src = origin + src;
         } else if (src.startsWith('./') || src.startsWith('../')) {
           // Relative path
           const basePath = url.pathname.substring(0, url.pathname.lastIndexOf('/'));
-          img.src = origin + basePath + '/' + src.replace(/^\.\//, '');
+          (img as HTMLImageElement).src = origin + basePath + '/' + src.replace(/^\.\//, '');
         } else {
           // Relative path without ./
           const basePath = url.pathname.substring(0, url.pathname.lastIndexOf('/'));
-          img.src = origin + basePath + '/' + src;
+          (img as HTMLImageElement).src = origin + basePath + '/' + src;
         }
       }
     });
@@ -474,17 +476,17 @@ function fixRelativeUrls(container, sourceUrl) {
       if (href && !href.startsWith('#') && !href.startsWith('javascript:') && !href.startsWith('mailto:') && !href.startsWith('tel:') && !href.startsWith('http')) {
         if (href.startsWith('/')) {
           // Absolute path: /deals/123 → https://hotukdeals.com/deals/123
-          link.href = origin + href;
+          (link as HTMLAnchorElement).href = origin + href;
         } else if (href.startsWith('./') || href.startsWith('../')) {
           // Relative path: ./deals/123 → resolve relative to source path
           const basePath = url.pathname.substring(0, url.pathname.lastIndexOf('/'));
-          link.href = origin + basePath + '/' + href.replace(/^\.\//, '');
+          (link as HTMLAnchorElement).href = origin + basePath + '/' + href.replace(/^\.\//, '');
         }
       }
       
       // Ensure links open in new tab
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
+      (link as HTMLAnchorElement).target = '_blank';
+      (link as HTMLAnchorElement).rel = 'noopener noreferrer';
     });
   } catch (err) {
     console.error('Failed to fix URLs for:', sourceUrl, err);
@@ -495,7 +497,7 @@ function fixRelativeUrls(container, sourceUrl) {
  * Reset cursor styles on all elements and mark links for proper styling
  * Ensures consistent cursor behavior in dashboard cards
  * 
- * @param {HTMLElement} container - DOM element to process
+ * @param container - DOM element to process
  * 
  * Process:
  * 1. Removes all inline cursor styles from elements
@@ -505,9 +507,9 @@ function fixRelativeUrls(container, sourceUrl) {
  * 
  * Used in: Dashboard rendering after content is inserted into cards
  */
-function removeCursorStyles(container) {
+export function removeCursorStyles(container: HTMLElement): void {
   // Get all elements including the container itself
-  const allElements = [container, ...container.querySelectorAll('*')];
+  const allElements = [container, ...container.querySelectorAll('*')] as HTMLElement[];
   
   allElements.forEach(el => {
     // Remove any inline cursor style
@@ -541,7 +543,7 @@ function removeCursorStyles(container) {
  * 
  * Reversible: Call removeCleanupCSS() to restore original styling
  */
-function injectCleanupCSS() {
+export function injectCleanupCSS(): HTMLStyleElement | undefined {
   // Check if already injected
   if (document.getElementById('cleanup-injected-css')) {
     return;
@@ -665,12 +667,10 @@ function injectCleanupCSS() {
  * Remove injected cleanup CSS from dashboard
  * Restores original component styling
  * 
- * @returns {void}
- * 
  * Used when: Testing/debugging to see original layout without cleanup
  * Safe to call: Does nothing if cleanup CSS not injected
  */
-function removeCleanupCSS() {
+export function removeCleanupCSS(): void {
   const sheet = document.getElementById('cleanup-injected-css');
   if (sheet) {
     sheet.remove();
@@ -685,11 +685,11 @@ function removeCleanupCSS() {
  * fetches NEW HTML which doesn't have our data-scale-context attributes.
  * This function copies classifications from the old cached HTML to the new HTML.
  * 
- * @param {string} newHtml - Freshly fetched HTML from refresh
- * @param {string} oldHtml - Previously cached HTML with classifications
- * @returns {string} - New HTML with preserved classifications
+ * @param newHtml - Freshly fetched HTML from refresh
+ * @param oldHtml - Previously cached HTML with classifications
+ * @returns New HTML with preserved classifications
  */
-function preserveImageClassifications(newHtml, oldHtml) {
+export function preserveImageClassifications(newHtml: string, oldHtml: string): string {
   if (!newHtml || !oldHtml) return newHtml;
   
   // Parse old HTML to extract classification mapping
@@ -698,7 +698,7 @@ function preserveImageClassifications(newHtml, oldHtml) {
   const oldTemp = document.createElement('div');
   oldTemp.innerHTML = oldHtml;
   
-  const classificationMap = new Map();
+  const classificationMap = new Map<string, string>();
   oldTemp.querySelectorAll('img[data-scale-context]').forEach(img => {
     const classification = img.getAttribute('data-scale-context');
     if (!classification) return;
@@ -712,7 +712,7 @@ function preserveImageClassifications(newHtml, oldHtml) {
     const alt = img.getAttribute('alt');
     
     // For each URL, store both full and partial (last 2 path segments)
-    const storeUrl = (url) => {
+    const storeUrl = (url: string | null) => {
       if (!url || url.startsWith('data:')) return; // Skip data URIs
       classificationMap.set(url, classification);
       // Also store partial for CDN variations
@@ -752,15 +752,15 @@ function preserveImageClassifications(newHtml, oldHtml) {
     const dataOriginal = img.getAttribute('data-original');
     const alt = img.getAttribute('alt');
     
-    let classification = null;
+    let classification: string | null = null;
     
     // Try matching in priority order
-    const tryMatch = (url) => {
+    const tryMatch = (url: string | null) => {
       if (!url || url.startsWith('data:') || classification) return;
-      classification = classificationMap.get(url);
+      classification = classificationMap.get(url) || null;
       if (!classification) {
         const partial = url.split('?')[0].split('/').slice(-2).join('/');
-        if (partial.length > 5) classification = classificationMap.get(partial);
+        if (partial.length > 5) classification = classificationMap.get(partial) || null;
       }
     };
     
@@ -773,7 +773,7 @@ function preserveImageClassifications(newHtml, oldHtml) {
     
     // Try alt text as last resort
     if (!classification && alt && alt.length > 5) {
-      classification = classificationMap.get(`alt:${alt}`);
+      classification = classificationMap.get(`alt:${alt}`) || null;
     }
     
     if (classification) {
@@ -797,12 +797,12 @@ function preserveImageClassifications(newHtml, oldHtml) {
  * - Thumbnail (120px): Medium dimensions, or class contains thumb/card
  * - Preview (280px): Large dimensions (>200px), or class contains hero/preview/featured
  * 
- * @param {string} html - HTML string to process
- * @returns {string} - HTML with data-scale-context attributes added to images
+ * @param html - HTML string to process
+ * @returns HTML with data-scale-context attributes added to images
  * 
  * Used in: Direct fetch refresh path (refresh-engine.js)
  */
-function classifyImagesForRefresh(html) {
+export function classifyImagesForRefresh(html: string): string {
   if (!html) return html;
   
   const temp = document.createElement('div');
@@ -817,8 +817,8 @@ function classifyImagesForRefresh(html) {
     let context = 'thumbnail'; // Safe default (80px)
     
     // HEURISTIC 1: Check width/height attributes (HEIGHT-BASED for card layout)
-    const width = parseInt(img.getAttribute('width')) || 0;
-    const height = parseInt(img.getAttribute('height')) || 0;
+    const width = parseInt(img.getAttribute('width')!) || 0;
+    const height = parseInt(img.getAttribute('height')!) || 0;
     
         // 🔧 FIX: Detect placeholder dimensions (< 10px = aspect ratio markers, not actual sizes)
     // Sites like AS.com use width="4" height="3" as 4:3 aspect ratio, not 4x3 pixels
@@ -903,6 +903,11 @@ function classifyImagesForRefresh(html) {
 }
 
 
+interface SanitizationComponent {
+  excludedSelectors?: string[];
+  html_cache?: string;
+}
+
 /**
  * Apply the full sanitization pipeline to refreshed HTML content.
  * Consolidates the 4-step sequence that was previously duplicated across
@@ -910,13 +915,13 @@ function classifyImagesForRefresh(html) {
  * 
  * Pipeline: applyExclusions → preserveImageClassifications → classifyImagesForRefresh → cleanupDuplicates
  * 
- * @param {string} inputHtml - The raw HTML from a refresh (fetch, background tab, or active tab)
- * @param {Object} component - The component metadata object (needs .excludedSelectors and .html_cache)
- * @returns {string} Sanitized HTML ready for storage and display
+ * @param inputHtml - The raw HTML from a refresh (fetch, background tab, or active tab)
+ * @param component - The component metadata object (needs .excludedSelectors and .html_cache)
+ * @returns Sanitized HTML ready for storage and display
  */
-function applySanitizationPipeline(inputHtml, component) {
+export function applySanitizationPipeline(inputHtml: string, component: SanitizationComponent): string {
   const withExclusions = applyExclusions(inputHtml, component.excludedSelectors);
-  const withPreserved = preserveImageClassifications(withExclusions, component.html_cache);
+  const withPreserved = preserveImageClassifications(withExclusions, component.html_cache || '');
   const withImageClassification = classifyImagesForRefresh(withPreserved);
   return cleanupDuplicates(withImageClassification);
 }

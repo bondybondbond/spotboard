@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Auto-generated from src/utils/dom-cleanup.ts (esbuild pre-build)
+public/utils/dom-cleanup.js
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

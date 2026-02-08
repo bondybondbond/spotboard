@@ -1,4 +1,5 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
+import { cleanupDuplicates } from './utils/dom-cleanup';
 
 // Debug mode - set to true for detailed logging
 const DEBUG = false;
@@ -7,6 +8,7 @@ const log = (...args: any[]) => DEBUG && console.log(...args);
 let isCapturing = false;
 let lockedElement: HTMLElement | null = null; // Track element waiting for confirmation
 let excludedElements: HTMLElement[] = []; // Track child elements marked for exclusion (red)
+let previewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 
 // Check if an ID looks auto-generated and should be avoided
@@ -575,56 +577,6 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     });
   }
   
-  // 🎯 HIT LIST: Remove known duplicate/hidden elements by class name
-  // This fixes mobile/desktop duplicate content patterns across sites
-  // Modern responsive sites include BOTH mobile and desktop content in DOM, hiding one with CSS
-  // Common pattern: Full version (desktop) + Short version (mobile) = duplicates in capture
-  // Note: BBC uses CSS-in-JS class names like "ssrcss-xxx-MobileValue", so we use partial match
-  const duplicateSelectors = [
-    // Screen reader / accessibility (always hidden)
-    '.visually-hidden',           // Screen reader text (exact class)
-    '.sr-only',                   // Bootstrap screen reader
-    '[class*="VisuallyHidden"]',  // BBC visually hidden (partial match)
-    
-    // Mobile-specific content (hidden on desktop)
-    '[class*="MobileValue"]',     // BBC mobile duplicate (partial match for CSS-in-JS)
-    '[class*="-mobile"]',         // Generic mobile classes (e.g., "content-mobile", "title-mobile")
-    '[class*="mobile-"]',         // Generic mobile classes (e.g., "mobile-content", "mobile-title")
-    
-    // Shortened/abbreviated content (mobile versions)
-    '[class*="-short"]',          // Generic short classes (e.g., "team-name--short", "title-short")
-    '[class*="short-"]',          // Generic short classes (e.g., "short-title", "short-name")
-    '[class*="team-name--short"]',// Premier League mobile team names (duplicate)
-    '[class*="team-name--abbr"]', // Generic abbreviated team names (backup pattern)
-    '[class*="-abbr"]',           // Generic abbreviation classes (e.g., "name-abbr", "title-abbr")
-    '[class*="abbreviated"]',     // Explicit abbreviated content
-    
-    // 🎯 CAROUSEL/GALLERY UI CONTROLS (always remove - not content)
-    // These are navigation elements that clutter the dashboard
-    '[class*="navigate"]',        // Rightmove: ImagesControls_navigateButtons__
-    '[class*="NavigateButton"]',  // Generic navigate buttons
-    '[class*="previousButton"]',  // Rightmove: ImagesControls_previousButton__
-    '[class*="nextButton"]',      // Rightmove: ImagesControls_nextButton__
-    '[class*="prevButton"]',      // Generic prev buttons
-    '[class*="Chevron"]',         // Rightmove: ImagesControls_previousChevron__
-    '[class*="chevron"]',         // Generic chevron icons
-    '[class*="carousel-control"]',// Bootstrap carousel controls
-    '[class*="slick-arrow"]',     // Slick slider arrows
-    '[class*="swiper-button"]',   // Swiper slider buttons
-    '[class*="gallery-nav"]',     // Generic gallery navigation
-    '[class*="slider-nav"]',      // Generic slider navigation
-    '[class*="slide-arrow"]',     // Generic slide arrows
-    'button[aria-label*="previous"]', // Accessibility-labeled prev buttons
-    'button[aria-label*="next"]',     // Accessibility-labeled next buttons
-    'button[aria-label*="arrow"]',    // Arrow buttons by aria-label
-    '[class*="ImageControls"]',   // Rightmove variant
-    '[class*="image-controls"]',  // Generic image controls
-    '[class*="Controls_"]'        // CSS module controls pattern
-  ];
-  duplicateSelectors.forEach(selector => {
-    clone.querySelectorAll(selector).forEach(el => el.remove());
-  });
-
   // 🎯 Remove elements with display:none (catches CSS-based hidden duplicates)
   // The Verge and other sites use CSS-in-JS classes where mobile/desktop versions
   // are differentiated by computed display style rather than class keywords
@@ -643,6 +595,11 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       }
     }
   });
+
+  // 🎯 Apply shared duplicate/hidden element cleanup (from dom-cleanup.ts)
+  // Handles: duplicate selectors, empty wrappers, broken SVGs, decorative images,
+  // progressive loading artifacts, and dangerous positioning
+  clone.innerHTML = cleanupDuplicates(clone.innerHTML);
   
   // 🎯 FIX PROGRESSIVE LOADING IMAGES: Remove loading artifacts
   // Sites use progressive loading: blur filters, skeleton loaders, lazy loading
@@ -918,6 +875,9 @@ function toggleExclusion(element: HTMLElement) {
     log('❌ Element excluded:', element.tagName, element.className);
   }
   
+  // Debounced preview refresh on exclusion toggle
+  if (previewDebounceTimer) clearTimeout(previewDebounceTimer);
+  previewDebounceTimer = setTimeout(() => updatePreview(), 300);
   }
 
 function handleClick(event: MouseEvent) {
@@ -1036,6 +996,154 @@ function handleClick(event: MouseEvent) {
   }
 }
 
+
+/**
+ * Returns CSS string that replicates dashboard card rendering.
+ * Combines dashboard.html .component-content rules + injectCleanupCSS() rules.
+ * This is a static string constant — no behavioral logic, just CSS rules.
+ */
+function getPreviewCSS(): string {
+  return `
+    /* === Dashboard .component-content rules === */
+    body {
+      margin: 0;
+      padding: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      line-height: 1.25;
+      overflow-x: hidden;
+      background: #fff;
+    }
+
+    * {
+      cursor: default !important;
+      position: static !important;
+    }
+
+    /* 5-tier image scaling */
+    img[data-scale-context="icon"] {
+      max-width: 25px !important; max-height: 25px !important;
+      object-fit: contain; display: inline-block; vertical-align: middle;
+    }
+    img[data-scale-context="small"] {
+      max-width: 48px !important; max-height: 48px !important;
+      object-fit: contain; display: inline-block; vertical-align: middle;
+    }
+    img[data-scale-context="thumbnail"] {
+      max-width: 80px !important; max-height: 80px !important;
+      object-fit: contain; display: inline-block; vertical-align: middle;
+    }
+    img[data-scale-context="medium"] {
+      max-width: 180px !important; max-height: 100px !important;
+      object-fit: contain; display: inline-block; vertical-align: middle;
+    }
+    img[data-scale-context="preview"] {
+      max-width: 150px !important; max-height: 150px !important;
+      object-fit: contain; display: inline-block; vertical-align: middle;
+    }
+    img:not([data-scale-context]) {
+      max-width: 25px !important; max-height: 25px !important;
+      object-fit: contain; display: inline-block; vertical-align: middle;
+    }
+    video {
+      max-width: 25px !important; max-height: 25px !important;
+      object-fit: contain; display: inline-block; vertical-align: middle;
+    }
+
+    /* Font normalization */
+    body, li, li span, li p, div, p {
+      font-size: 14px !important;
+      font-weight: 400 !important;
+      line-height: 1.25 !important;
+    }
+    strong, b { font-weight: 600 !important; }
+    h1, h2, h3 {
+      font-weight: 600 !important;
+      font-size: 16px !important;
+      line-height: 1.3 !important;
+    }
+    li { margin: 4px 0 !important; padding: 0 !important; }
+    a { cursor: pointer !important; }
+
+    /* === injectCleanupCSS() rules === */
+    [class*="Pbot"], [class*="Ptop"], [class*="Pvertical"],
+    [class*="Mbot"], [class*="Mtop"] {
+      padding: 2px !important; margin: 2px 0 !important;
+    }
+    h6:empty, h5:empty, h4:empty, .sr-only:empty, .visually-hidden:empty {
+      display: none !important; margin: 0 !important; padding: 0 !important;
+    }
+    h6, h5 { margin: 2px 0 !important; padding: 2px 0 !important; }
+    ul {
+      list-style-type: disc !important; margin: 1px 0 !important; padding-left: 20px !important;
+    }
+    ol {
+      list-style-type: decimal !important; margin: 1px 0 !important; padding-left: 20px !important;
+    }
+    ul li, ol li {
+      line-height: 1.2 !important; margin: 0 !important;
+      padding: 1px 0 !important; min-height: 0 !important; height: auto !important;
+    }
+    li > div, li > section, li > article {
+      margin: 0 !important; padding: 2px 0 !important; line-height: 1.2 !important;
+    }
+    p { margin: 4px 0 !important; line-height: 1.4 !important; }
+    div { line-height: 1.4 !important; }
+    [class*="Grid"], [class*="Flex"], [class*="Stack"] { gap: 2px !important; }
+    table tr { height: auto !important; }
+    table td { padding: 4px 6px !important; }
+  `;
+}
+
+/**
+ * Wraps sanitized HTML in a full srcdoc document with dashboard-parity CSS.
+ */
+function generatePreviewSrcdoc(html: string): string {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>${getPreviewCSS()}</style></head>
+<body>${html}</body></html>`;
+}
+
+/**
+ * Renders or re-renders the preview iframe inside the capture confirmation modal.
+ * Uses the locked element + current exclusions to generate a dashboard-parity preview.
+ */
+function updatePreview(): void {
+  const iframe = document.querySelector('#spotboard-preview-iframe') as HTMLIFrameElement | null;
+  if (!iframe || !lockedElement) return;
+
+  // Save scroll position before replacing content (only possible with allow-same-origin)
+  let savedScrollTop = 0;
+  try {
+    if (iframe.contentDocument?.documentElement) {
+      savedScrollTop = iframe.contentDocument.documentElement.scrollTop;
+    }
+  } catch (_e) {
+    // Cross-origin or not yet loaded — ignore
+  }
+
+  // Generate preview HTML: sanitize the locked element with current exclusions
+  const previewHTML = sanitizeHTML(lockedElement, excludedElements);
+  // Apply shared cleanup for exact dashboard parity
+  const cleanedHTML = cleanupDuplicates(previewHTML);
+
+  iframe.srcdoc = generatePreviewSrcdoc(cleanedHTML);
+
+  // Loading state: fade in when loaded, restore scroll position
+  iframe.style.opacity = '0.5';
+  iframe.onload = () => {
+    iframe.style.opacity = '1';
+    // Restore scroll position after content renders
+    try {
+      if (iframe.contentDocument?.documentElement && savedScrollTop > 0) {
+        iframe.contentDocument.documentElement.scrollTop = savedScrollTop;
+      }
+    } catch (_e) {
+      // Cross-origin — ignore
+    }
+  };
+}
+
 function showCaptureConfirmation(target: HTMLElement, name: string, selector: string, positionBased: boolean) {
   log('🚀 showCaptureConfirmation called with:', { name, selector, positionBased });
   
@@ -1048,27 +1156,31 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
     right: 20px !important;
     background: #6b46c1 !important;
     color: white !important;
-    padding: 20px !important;
+    padding: 0 !important;
     border-radius: 12px !important;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
     z-index: 2147483647 !important;
     width: 340px !important;
     max-width: 90vw !important;
+    max-height: calc(100vh - 40px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
     isolation: isolate !important;
   `;
   
   modal.innerHTML = `
-    <div style="margin-bottom: 16px; font-family: inherit;">
+    <div style="padding: 20px; flex-shrink: 0; font-family: inherit;">
       <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit;" title="${name.replace(/"/g, '&quot;')}">
         ✅ Captured: ${name}
       </div>
       <div style="font-size: 14px; opacity: 0.9; font-family: inherit;">
         Click elements inside the green box to exclude them.<br>
-        They'll turn red. Click again to undo.
+        Preview updates as you exclude.
       </div>
     </div>
-    <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 12px; font-family: inherit;">
+    <div style="padding: 0 20px; flex-shrink: 0; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 12px; font-family: inherit;">
       <div id="advancedToggle" style="cursor: pointer; font-size: 13px; opacity: 0.8; user-select: none; font-family: inherit;">
         ⚙️ Advanced
       </div>
@@ -1084,7 +1196,16 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         </label>
       </div>
     </div>
-    <div style="display: flex; gap: 8px; margin-top: 16px; font-family: inherit;">
+    <div style="padding: 12px 20px; flex: 1; min-height: 0; overflow-y: auto;">
+      <div id="spotboard-preview-toggle" style="font-size: 13px; opacity: 0.8; margin-bottom: 6px; cursor: pointer; user-select: none; font-family: inherit;">▾ Preview</div>
+      <div id="spotboard-preview-container">
+        <iframe id="spotboard-preview-iframe"
+          sandbox="allow-same-origin"
+          style="width: 100%; height: 250px; border: none; border-radius: 6px; background: #fff; display: block; opacity: 0.5; transition: opacity 0.3s;"
+        ></iframe>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; padding: 12px 20px; flex-shrink: 0; background: #6b46c1; border-radius: 0 0 12px 12px; position: sticky; bottom: 0; z-index: 1; font-family: inherit;">
       <button id="confirmSpot" style="flex: 1; padding: 12px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit;">
         Confirm Spot
       </button>
@@ -1097,6 +1218,25 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   log('📦 Modal HTML created, appending to body...');
   document.body.appendChild(modal);
   log('✅ Modal appended to DOM successfully');
+  
+  // 🎯 Preview collapse toggle
+  const previewToggle = modal.querySelector('#spotboard-preview-toggle') as HTMLDivElement;
+  const previewContainer = modal.querySelector('#spotboard-preview-container') as HTMLDivElement;
+  if (previewToggle && previewContainer) {
+    previewToggle.addEventListener('click', () => {
+      const isHidden = previewContainer.style.display === 'none';
+      previewContainer.style.display = isHidden ? '' : 'none';
+      previewToggle.textContent = isHidden ? '▾ Preview' : '▸ Preview';
+    });
+    // Auto-collapse on small viewports (<600px height)
+    if (window.innerHeight < 600) {
+      previewContainer.style.display = 'none';
+      previewToggle.textContent = '▸ Preview';
+    }
+  }
+
+  // Trigger initial preview render
+  updatePreview();
   
   // 🎯 Remove yellow banner when entering exclusion mode (purple modal)
   const banner = document.getElementById('spotboard-capture-banner');
@@ -1347,6 +1487,16 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       target.style.cursor = '';
       lockedElement = null;
       resetExclusions();
+      // 📊 GA4: Track cancellation
+      chrome.runtime.sendMessage({
+        type: 'GA4_EVENT',
+        eventName: 'capture_cancelled',
+        params: {
+          url_domain: new URL(window.location.href).hostname,
+          had_preview: true,
+          had_exclusions: excludedElements.length > 0
+        }
+      });
             toggleCapture(false);
     }, true); // Use capture phase
   }
@@ -1359,6 +1509,16 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       target.style.cursor = '';
       lockedElement = null;
       resetExclusions();
+      // 📊 GA4: Track cancellation via Escape
+      chrome.runtime.sendMessage({
+        type: 'GA4_EVENT',
+        eventName: 'capture_cancelled',
+        params: {
+          url_domain: new URL(window.location.href).hostname,
+          had_preview: true,
+          had_exclusions: excludedElements.length > 0
+        }
+      });
             document.removeEventListener('keydown', escapeHandler);
     }
   };

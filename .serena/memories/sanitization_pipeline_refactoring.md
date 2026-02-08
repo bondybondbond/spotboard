@@ -1,5 +1,8 @@
 # Sanitization Pipeline Refactoring (31 Jan 2026)
 
+## Note (Feb 2026)
+As of v1.3.4, `dom-cleanup.js` is now auto-generated from `src/utils/dom-cleanup.ts` via esbuild. Edit the TypeScript source, not the JS file.
+
 ## What Changed
 - Extracted `applySanitizationPipeline(inputHtml, component)` wrapper in `public/utils/dom-cleanup.js`
 - Consolidates 4-step sequence: applyExclusions → preserveImageClassifications → classifyImagesForRefresh → cleanupDuplicates
