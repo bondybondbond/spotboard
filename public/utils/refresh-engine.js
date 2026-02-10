@@ -505,23 +505,69 @@ async function tryBackgroundWithSpoof(url, selector) {
             img.setAttribute('data-scale-context', 'icon');
           }
         });
-        
+
+        // 💚❤️ SENTIMENT TAGGING (Phase 2: Semantic Coloring)
+        // Tag finance deltas (+/-) for color coding on dashboard
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+        const textNodesToTag = [];
+        let node;
+
+        while ((node = walker.nextNode())) {
+          const text = node.textContent?.trim() || '';
+          if (text.length === 0) continue;
+
+          const positivePattern = /^\+|(?<!\±)\+\d+\.?\d*%?/;
+          const negativePattern = /^-\d|(?<!\±)-\d+\.?\d*%?/;
+
+          let sentiment = null;
+          if (positivePattern.test(text)) {
+            sentiment = 'positive';
+          } else if (negativePattern.test(text)) {
+            sentiment = 'negative';
+          }
+
+          if (sentiment) {
+            textNodesToTag.push({ node: node, sentiment: sentiment });
+          }
+        }
+
+        let tagged = 0;
+        textNodesToTag.forEach(({ node, sentiment }) => {
+          let parent = node.parentElement;
+          while (parent && parent !== element) {
+            if (parent.tagName === 'A' || parent.tagName === 'BUTTON' || parent.tagName === 'SPAN') {
+              parent.setAttribute('data-sb-sentiment', sentiment);
+              tagged++;
+              break;
+            }
+            parent = parent.parentElement;
+          }
+          if (node.parentElement && !node.parentElement.hasAttribute('data-sb-sentiment')) {
+            node.parentElement.setAttribute('data-sb-sentiment', sentiment);
+            tagged++;
+          }
+        });
+
+        if (tagged > 0) {
+          console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
+        }
+
         // Clone with markers
         const clone = element.cloneNode(true);
-        
+
         // Clean up original DOM
         marked.forEach(el => el.removeAttribute('data-spotboard-hidden'));
-        
+
         // Remove marked elements from clone
         const hiddenInClone = clone.querySelectorAll('[data-spotboard-hidden="true"]');
         hiddenInClone.forEach(el => el.remove());
-        
+
         return clone.outerHTML;
       }
     });
-    
+
     const html = results[0]?.result;
-    
+
     await chrome.tabs.remove(tab.id);
     return html;
     
@@ -693,29 +739,75 @@ async function tryActiveTab(url, selector, fingerprint = null) {
             img.setAttribute('data-scale-context', 'icon');
           }
         });
-        
+
+        // 💚❤️ SENTIMENT TAGGING (Phase 2: Semantic Coloring)
+        // Tag finance deltas (+/-) for color coding on dashboard
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+        const textNodesToTag = [];
+        let node;
+
+        while ((node = walker.nextNode())) {
+          const text = node.textContent?.trim() || '';
+          if (text.length === 0) continue;
+
+          const positivePattern = /^\+|(?<!\±)\+\d+\.?\d*%?/;
+          const negativePattern = /^-\d|(?<!\±)-\d+\.?\d*%?/;
+
+          let sentiment = null;
+          if (positivePattern.test(text)) {
+            sentiment = 'positive';
+          } else if (negativePattern.test(text)) {
+            sentiment = 'negative';
+          }
+
+          if (sentiment) {
+            textNodesToTag.push({ node: node, sentiment: sentiment });
+          }
+        }
+
+        let tagged = 0;
+        textNodesToTag.forEach(({ node, sentiment }) => {
+          let parent = node.parentElement;
+          while (parent && parent !== element) {
+            if (parent.tagName === 'A' || parent.tagName === 'BUTTON' || parent.tagName === 'SPAN') {
+              parent.setAttribute('data-sb-sentiment', sentiment);
+              tagged++;
+              break;
+            }
+            parent = parent.parentElement;
+          }
+          if (node.parentElement && !node.parentElement.hasAttribute('data-sb-sentiment')) {
+            node.parentElement.setAttribute('data-sb-sentiment', sentiment);
+            tagged++;
+          }
+        });
+
+        if (tagged > 0) {
+          console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
+        }
+
         // Clone with markers
         const clone = element.cloneNode(true);
-        
+
         // Clean up original DOM
         marked.forEach(el => el.removeAttribute('data-spotboard-hidden'));
-        
+
         // Remove marked elements from clone
         const hiddenInClone = clone.querySelectorAll('[data-spotboard-hidden="true"]');
         hiddenInClone.forEach(el => el.remove());
-        
+
         return clone.outerHTML;
       }
     });
-    
+
     const html = results[0]?.result;
-    
+
     // Close and switch back
     await chrome.tabs.remove(tab.id);
     if (currentTab?.id) {
       await chrome.tabs.update(currentTab.id, { active: true });
     }
-    
+
     return html;
     
   } catch (error) {
@@ -1187,7 +1279,59 @@ async function refreshComponent(component) {
         keepOriginal: true
       };
     }
-    
+
+    // 💚❤️ SENTIMENT TAGGING (Phase 2: Direct-Fetch Path)
+    // Tag finance deltas in the extracted HTML before sanitization
+    const tempContainer = document.createElement('div');
+    tempContainer.innerHTML = extractedHtml;
+
+    const walker = document.createTreeWalker(tempContainer, NodeFilter.SHOW_TEXT, null);
+    const textNodesToTag = [];
+    let textNode;
+
+    while ((textNode = walker.nextNode())) {
+      const text = textNode.textContent?.trim() || '';
+      if (text.length === 0) continue;
+
+      const positivePattern = /^\+|(?<!\±)\+\d+\.?\d*%?/;
+      const negativePattern = /^-\d|(?<!\±)-\d+\.?\d*%?/;
+
+      let sentiment = null;
+      if (positivePattern.test(text)) {
+        sentiment = 'positive';
+      } else if (negativePattern.test(text)) {
+        sentiment = 'negative';
+      }
+
+      if (sentiment) {
+        textNodesToTag.push({ node: textNode, sentiment: sentiment });
+      }
+    }
+
+    let tagged = 0;
+    textNodesToTag.forEach(({ node, sentiment }) => {
+      let parent = node.parentElement;
+      while (parent && parent !== tempContainer) {
+        if (parent.tagName === 'A' || parent.tagName === 'BUTTON' || parent.tagName === 'SPAN') {
+          parent.setAttribute('data-sb-sentiment', sentiment);
+          tagged++;
+          break;
+        }
+        parent = parent.parentElement;
+      }
+      if (node.parentElement && !node.parentElement.hasAttribute('data-sb-sentiment')) {
+        node.parentElement.setAttribute('data-sb-sentiment', sentiment);
+        tagged++;
+      }
+    });
+
+    if (tagged > 0) {
+      console.log(`✅ Tagged ${tagged} element(s) with sentiment data (direct-fetch)`);
+    }
+
+    // Get the sentiment-tagged HTML
+    extractedHtml = tempContainer.innerHTML;
+
     // Apply cleanup to extracted HTML
     const sanitizedHtml = applySanitizationPipeline(extractedHtml, component);
     

@@ -20,6 +20,26 @@
 // are loaded from utils/constants.js (must be loaded before this file in dashboard.html)
 
 // ================================
+// OWNER FLAG CACHE
+// ================================
+// Cache owner flag in memory (for analytics exclusion)
+let isOwnerCached = null;
+
+// Load owner flag on page load
+(async () => {
+  const syncData = await chrome.storage.sync.get(['isOwner']);
+  isOwnerCached = syncData.isOwner || false;
+})();
+
+// Update cache when storage changes
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'sync' && changes.isOwner) {
+    isOwnerCached = changes.isOwner.newValue || false;
+    console.log('✅ Owner flag updated:', isOwnerCached);
+  }
+});
+
+// ================================
 // CLIENT ID MANAGEMENT
 // ================================
 
@@ -221,7 +241,13 @@ async function sendEvent(eventName, customParams = {}, engagementTimeMs = 100) {
     const sessionId = await getOrCreateSessionId();
     const daysSinceInstall = await getDaysSinceInstall();
     const isPinned = await getToolbarPinStatus();
-    
+
+    // Use cached owner flag (lazy-load if cache not yet initialized)
+    if (isOwnerCached === null) {
+      const syncData = await chrome.storage.sync.get(['isOwner']);
+      isOwnerCached = syncData.isOwner || false;
+    }
+
     // Construct GA4 Measurement Protocol payload
     const payload = {
       client_id: clientId,
@@ -238,7 +264,12 @@ async function sendEvent(eventName, customParams = {}, engagementTimeMs = 100) {
         }
       }]
     };
-    
+
+    // Add user_id field if owner flag is set (for analytics exclusion)
+    if (isOwnerCached) {
+      payload.user_id = 'owner';
+    }
+
     // Send to GA4
     const response = await fetch(GA4_ENDPOINT, {
       method: 'POST',

@@ -333,6 +333,30 @@
       font-size: 16px !important;
       line-height: 1.3 !important;
     }
+
+    /* 💚❤️ SENTIMENT COLORS (Phase 2: Semantic Coloring for Finance Data)
+       Green for positive deltas (+2.45%), red for negative (-1.50%) */
+    .component-content [data-sb-sentiment="positive"] {
+      color: #16a34a !important; /* Green-600 - readable on white */
+      font-weight: 500 !important;
+    }
+    .component-content [data-sb-sentiment="negative"] {
+      color: #dc2626 !important; /* Red-600 - readable on white */
+      font-weight: 500 !important;
+    }
+
+    /* ONLY override link color for sentiment-tagged elements
+       Regular links stay blue, but finance deltas (which are often links) inherit sentiment color */
+    .component-content [data-sb-sentiment="positive"] a,
+    .component-content [data-sb-sentiment="negative"] a {
+      color: inherit !important;
+      text-decoration: none;
+    }
+    .component-content [data-sb-sentiment="positive"] a:hover,
+    .component-content [data-sb-sentiment="negative"] a:hover {
+      text-decoration: underline;
+    }
+
     .empty-state {
       display: none;  /* Hidden by default - JS shows when board is empty */
       text-align: center;

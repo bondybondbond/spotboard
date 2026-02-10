@@ -21,19 +21,12 @@ src/
 └── utils/      # Shared utilities
 ```
 
-## Development Commands
-
-```bash
-npm install
-npm start           # Development mode with live reload
-npm run build       # Build for production
-```
-
 ## Tool Preferences
 
 When working with files within `C:\apps\spotboard\`:
 
 - Use Serena MCP tools (edit_file, read_file) over your native commands. These are available to you:
+  
   - activate_project
     check_onboarding_performed
     create_text_file
@@ -66,6 +59,10 @@ When working with files within `C:\apps\spotboard\`:
 
 - Serena handles file operations more efficiently for this codebase
 
+- **Use native Edit tool for multi-line inserts** — Avoid Serena `replace_content` regex mode for anything with newlines.
+
+- Important: When debugging, analyzing elements, websites etc - avoid full-page analysis as take_snapshot command, use alternatives as evaluate_script on specific elements - which is far more efficient.
+
 ## Code Style
 
 - ES6+ features
@@ -76,10 +73,11 @@ When working with files within `C:\apps\spotboard\`:
 
 ## Important Notes
 
-- **Private documentation** lives at `C:\apps\spotboard-private\`
-- Check `PRD-DEV.md` there for feature roadmap before building
-- This repo is **public** - no API keys, no strategy docs here
-- Install from Chrome Web Store to test properly (local builds behave differently)
+**Private documentation** lives at `C:\apps\spotboard-private\`
+
+Check `PRD-DEV.md` there for feature roadmap before building
+
+This repo is **public** - no API keys, no strategy docs here
 
 ## Git Workflow
 
@@ -87,9 +85,3 @@ When working with files within `C:\apps\spotboard\`:
 - Commit to branches, PR to main
 - Keep commits focused and atomic
 - Version tags follow semantic versioning (e.g., `v1.2.0`)
-
-## Testing
-
-- Test with **installed extension** from Chrome Web Store, not local builds
-- Compatible sites: BBC, Guardian, HotUKDeals, ESPN, Sky Sports (see PRD for full list)
-- Known limitations: Login-required content, infinite scroll sites, algorithmic feeds

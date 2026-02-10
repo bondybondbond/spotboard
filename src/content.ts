@@ -401,6 +401,70 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
   });
 }
 
+// Sentiment Detection for Finance Data (Phase 2: Semantic Coloring)
+// Detects positive/negative deltas (e.g., "+2.45%", "-1.50%") and tags elements
+// for color coding on the dashboard
+function tagSentimentData(element: HTMLElement): void {
+  // Find all text nodes and their parent elements
+  const walker = document.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+
+  const textNodesToTag: Array<{ node: Text; sentiment: 'positive' | 'negative' | 'neutral' }> = [];
+
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const text = node.textContent?.trim() || '';
+    if (text.length === 0) continue;
+
+    // Regex patterns for sentiment detection
+    // Positive: starts with + or contains +X.XX% (but not ±)
+    // Negative: starts with - or contains -X.XX% (but not just a dash in text)
+    const positivePattern = /^\+|(?<!\±)\+\d+\.?\d*%?/;
+    const negativePattern = /^-\d|(?<!\±)-\d+\.?\d*%?/;
+
+    let sentiment: 'positive' | 'negative' | 'neutral' | null = null;
+
+    if (positivePattern.test(text)) {
+      sentiment = 'positive';
+    } else if (negativePattern.test(text)) {
+      sentiment = 'negative';
+    }
+
+    if (sentiment) {
+      textNodesToTag.push({ node: node as Text, sentiment });
+    }
+  }
+
+  // Tag the parent elements (usually the clickable element)
+  let tagged = 0;
+  textNodesToTag.forEach(({ node, sentiment }) => {
+    let parent = node.parentElement;
+
+    // Find the clickable ancestor (a, button) or closest block element
+    while (parent && parent !== element) {
+      if (parent.tagName === 'A' || parent.tagName === 'BUTTON' || parent.tagName === 'SPAN') {
+        parent.setAttribute('data-sb-sentiment', sentiment);
+        tagged++;
+        break;
+      }
+      parent = parent.parentElement;
+    }
+
+    // Fallback: tag immediate parent if no clickable ancestor found
+    if (node.parentElement && !node.parentElement.hasAttribute('data-sb-sentiment')) {
+      node.parentElement.setAttribute('data-sb-sentiment', sentiment);
+      tagged++;
+    }
+  });
+
+  if (tagged > 0) {
+    console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
+  }
+}
+
 function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []): string {
   console.log('🧹 sanitizeHTML called with', excludedElements.length, 'excluded elements');
   
@@ -543,8 +607,11 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       img.setAttribute('data-scale-context', 'icon');
     }
   });
-  
 
+
+  // 💚❤️ SENTIMENT TAGGING (Phase 2: Semantic Coloring)
+  // Tag finance deltas (+/-) for color coding on dashboard
+  tagSentimentData(element);
 
   // Clone (classification attributes will be copied)
   const clone = element.cloneNode(true) as HTMLElement;
@@ -1064,6 +1131,25 @@ function getPreviewCSS(): string {
     }
     li { margin: 4px 0 !important; padding: 0 !important; }
     a { cursor: pointer !important; }
+
+    /* 💚❤️ Sentiment colors for finance data */
+    [data-sb-sentiment="positive"] {
+      color: #16a34a !important;
+      font-weight: 500 !important;
+    }
+    [data-sb-sentiment="negative"] {
+      color: #dc2626 !important;
+      font-weight: 500 !important;
+    }
+    [data-sb-sentiment="positive"] a,
+    [data-sb-sentiment="negative"] a {
+      color: inherit !important;
+      text-decoration: none;
+    }
+    [data-sb-sentiment="positive"] a:hover,
+    [data-sb-sentiment="negative"] a:hover {
+      text-decoration: underline;
+    }
 
     /* === injectCleanupCSS() rules === */
     [class*="Pbot"], [class*="Ptop"], [class*="Pvertical"],

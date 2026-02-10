@@ -13,6 +13,9 @@ const GA4_ENDPOINT = `https://www.google-analytics.com/mp/collect?measurement_id
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 const DEBUG = false;
 
+// Cache owner flag in memory (loaded once on startup, MV3 service worker compatible)
+let isOwnerCached: boolean | null = null;
+
 async function getOrCreateClientId(): Promise<string> {
   const result = await chrome.storage.local.get('clientId') as { clientId?: string };
   if (result.clientId) return result.clientId;
@@ -49,8 +52,14 @@ async function sendGA4Event(eventName: string, customParams: Record<string, unkn
     const clientId = await getOrCreateClientId();
     const sessionId = await getOrCreateSessionId();
     const daysSinceInstall = await getDaysSinceInstall();
-    
-    const payload = {
+
+    // Use cached owner flag (lazy-load if cache not yet initialized)
+    if (isOwnerCached === null) {
+      const syncData = await chrome.storage.sync.get(['isOwner']) as { isOwner?: boolean };
+      isOwnerCached = syncData.isOwner || false;
+    }
+
+    const payload: Record<string, unknown> = {
       client_id: clientId,
       events: [{
         name: eventName,
@@ -64,7 +73,12 @@ async function sendGA4Event(eventName: string, customParams: Record<string, unkn
         }
       }]
     };
-    
+
+    // Add user_id field if owner flag is set (for analytics exclusion)
+    if (isOwnerCached) {
+      payload.user_id = 'owner';
+    }
+
     const response = await fetch(GA4_ENDPOINT, {
       method: 'POST',
       body: JSON.stringify(payload)
@@ -95,10 +109,24 @@ async function cacheToolbarPinStatus(): Promise<void> {
   }
 }
 
-// Cache pin status on browser startup
+// Cache pin status and owner flag on browser startup
 chrome.runtime.onStartup.addListener(async () => {
   if (DEBUG) console.log('🚀 Browser started, checking toolbar pin status');
   await cacheToolbarPinStatus();
+
+  // Load owner flag into memory cache (for GA4 event filtering)
+  const syncData = await chrome.storage.sync.get(['isOwner']) as { isOwner?: boolean };
+  isOwnerCached = syncData.isOwner || false;
+  if (DEBUG) console.log('Owner flag loaded:', isOwnerCached);
+});
+
+// Update owner flag cache when storage changes
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'sync' && changes.isOwner) {
+    const nv = changes.isOwner.newValue;
+    isOwnerCached = (typeof nv === 'boolean') ? nv : false;
+    console.log('✅ Owner flag updated:', isOwnerCached);
+  }
 });
 
 chrome.runtime.onInstalled.addListener(async (details) => {
