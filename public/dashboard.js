@@ -341,7 +341,7 @@ startEngagementTimer();
               ${component.customLabel || component.name || 'Unnamed'}
             </span>
             <span style="color: #6c757d; font-size: 12px; white-space: nowrap;">•</span>
-            <span style="color: #6c757d; font-size: 12px; white-space: nowrap;">⏰ ${relativeTime}</span>
+            <span class="card-timestamp" style="color: #6c757d; font-size: 12px; white-space: nowrap;">⏰ ${relativeTime}</span>
             <span class="info-icon" style="cursor: pointer; margin-left: 4px; display: inline-flex; align-items: center;" title="Click for details">
               <svg width="16" height="16" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
                 <circle fill="#2196F3" cx="24" cy="24" r="21"/>
@@ -355,6 +355,9 @@ startEngagementTimer();
               ? '<svg width="18" height="18" viewBox="0 0 330 330" xmlns="http://www.w3.org/2000/svg"><path d="M315,0H15C6.716,0,0,6.716,0,15v300c0,8.284,6.716,15,15,15h300c8.284,0,15-6.716,15-15V15C330,6.716,323.284,0,315,0z M300,300H30V30h270V300z"/><path d="M194.25,247.5c8.284,0,15-6.716,15-15v-135c0-8.284-6.716-15-15-15c-8.284,0-15,6.716-15,15v135C179.25,240.784,185.966,247.5,194.25,247.5z"/><path d="M135.75,247.5c8.284,0,15-6.716,15-15v-135c0-8.284-6.716-15-15-15s-15,6.716-15,15v135C120.75,240.784,127.466,247.5,135.75,247.5z"/></svg>'
               : '<svg width="18" height="18" viewBox="0 0 330 330" xmlns="http://www.w3.org/2000/svg"><path d="M315,0H15C6.716,0,0,6.716,0,15v300c0,8.284,6.716,15,15,15h300c8.284,0,15-6.716,15-15V15C330,6.716,323.284,0,315,0z M300,300H30V30h270V300z"/><path d="M113.729,245.62c2.266,1.256,4.77,1.88,7.271,1.88c2.763,0,5.523-0.763,7.95-2.28l108-67.499c4.386-2.741,7.05-7.548,7.05-12.72c0-5.172-2.664-9.979-7.05-12.72l-108-67.501c-4.623-2.891-10.453-3.043-15.222-0.4C108.959,87.024,106,92.047,106,97.5v135C106,237.953,108.959,242.976,113.729,245.62z"/></svg>'
             }
+          </button>
+          <button class="refresh-single-btn" style="padding: 2px; background: transparent; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-left: 8px; flex-shrink: 0; transition: all 0.2s;" type="button" title="Refresh this card" aria-label="Refresh this card">
+            <svg width="18" height="18" viewBox="0 0 1920 1920" fill="#000000" xmlns="http://www.w3.org/2000/svg"><path d="M960 0v213.333c411.627 0 746.667 334.934 746.667 746.667S1371.627 1706.667 960 1706.667 213.333 1371.733 213.333 960c0-197.013 78.4-382.507 213.334-520.747v254.08H640V106.667H53.333V320h191.04C88.64 494.08 0 720.96 0 960c0 529.28 430.613 960 960 960s960-430.72 960-960S1489.387 0 960 0" fill-rule="evenodd"/></svg>
           </button>
           <button class="delete-btn" style="padding: 4px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; margin-left: 8px; flex-shrink: 0;">Delete</button>
         </div>
@@ -420,7 +423,88 @@ startEngagementTimer();
           component.refreshPaused ? 'info' : 'success'
         );
       });
-      
+
+      // Refresh single card functionality
+      const refreshSingleBtn = card.querySelector('.refresh-single-btn');
+      if (refreshSingleBtn) {
+        refreshSingleBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const displayName = component.customLabel || component.name;
+
+          // Disable button + show spinning animation
+          refreshSingleBtn.disabled = true;
+          refreshSingleBtn.classList.add('spinning');
+
+          try {
+            const result = await refreshComponent(component);
+
+            if (result.success && result.html_cache && result.html_cache.length >= 50) {
+              // Update in-memory component
+              component.html_cache = result.html_cache;
+              component.last_refresh = result.last_refresh;
+
+              // Update card content in DOM (no full page reload)
+              const contentDiv = card.querySelector('.component-content');
+              contentDiv.innerHTML = cleanupDuplicates(result.html_cache);
+              fixRelativeUrls(contentDiv, component.url);
+              removeCursorStyles(contentDiv);
+
+              // Update timestamp in header (uses dedicated class)
+              const tsSpan = card.querySelector('.card-timestamp');
+              if (tsSpan) {
+                tsSpan.textContent = `⏰ just now`;
+              }
+
+              // Persist to storage — direct write, no read-then-write race
+              chrome.storage.sync.set({
+                [`comp-${component.id}`]: {
+                  id: component.id,
+                  name: component.name,
+                  url: component.url,
+                  favicon: component.favicon,
+                  customLabel: component.customLabel,
+                  headingFingerprint: component.headingFingerprint,
+                  selector: component.selector,
+                  excludedSelectors: component.excludedSelectors || [],
+                  positionBased: component.positionBased || false,
+                  refreshPaused: component.refreshPaused || false,
+                  last_refresh: result.last_refresh,
+                  cardSize: component.cardSize || '1x1'
+                }
+              }, () => {
+                if (chrome.runtime.lastError) console.warn('Sync write error:', chrome.runtime.lastError);
+              });
+
+              // Local storage — html_cache stays local (not sync)
+              chrome.storage.local.get(['componentsData'], (res) => {
+                const localData = res.componentsData || {};
+                localData[component.id] = {
+                  selector: component.selector,
+                  html_cache: result.html_cache,
+                  last_refresh: result.last_refresh,
+                  excludedSelectors: component.excludedSelectors || []
+                };
+                chrome.storage.local.set({ componentsData: localData }, () => {
+                  if (chrome.runtime.lastError) console.warn('Local write error:', chrome.runtime.lastError);
+                });
+              });
+
+              showToast(`"${displayName}" refreshed`);
+            } else if (result.success) {
+              showToast(`"${displayName}" returned empty content`);
+            } else {
+              showToast(`"${displayName}" refresh failed`);
+            }
+          } catch (err) {
+            console.error('Single card refresh error:', err);
+            showToast(`"${displayName}" refresh error`);
+          } finally {
+            refreshSingleBtn.disabled = false;
+            refreshSingleBtn.classList.remove('spinning');
+          }
+        });
+      }
+
       // Delete functionality
       const deleteBtn = card.querySelector('.delete-btn');
       deleteBtn.addEventListener('click', () => {
