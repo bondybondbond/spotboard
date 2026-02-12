@@ -62,35 +62,108 @@
     .component-card:hover {
       box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     }
-    /* Paused card styling - dimmed to 85% opacity */
+    /* Paused card styling */
     .component-card.paused {
       opacity: 0.85;
     }
     .component-card.paused .card-header {
-      background: #e9ecef !important;
+      background: #FCD1DE !important;
     }
-    /* Pause button hover states - borderless design */
-    .pause-btn:hover {
-      background: rgba(0, 0, 0, 0.05) !important;
-      transform: scale(1.1);
-      border-radius: 4px;
+
+    /* ===== SHARED ICON BUTTON BASE ===== */
+    .iconBtn {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 1px solid rgba(15,23,42,0.14);
+      background: rgba(255,255,255,0.76);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      padding: 0;
+      margin-left: 6px;
+      transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.08s;
     }
-    .pause-btn:active {
+    .iconBtn:hover {
+      background: rgba(0,0,0,0.06);
+      border-color: rgba(15,23,42,0.25);
+    }
+    .iconBtn:active {
       transform: scale(0.95);
     }
-    /* Refresh single card button - same hover pattern as pause */
-    .refresh-single-btn:hover {
-      background: rgba(0, 0, 0, 0.05) !important;
-      transform: scale(1.1);
-      border-radius: 4px;
-    }
-    .refresh-single-btn:active {
-      transform: scale(0.95);
-    }
-    .refresh-single-btn:focus-visible {
-      outline: 2px solid #667eea;
+    .iconBtn:focus-visible {
+      outline: 2px solid #4F46E5;
       outline-offset: 2px;
+    }
+    .iconBtn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* ===== PAUSE BUTTON ===== */
+    .pause-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+    .pause-btn.active-state {
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+      background: rgba(0,0,0,0.08);
+      border-color: rgba(15,23,42,0.3);
+    }
+    .pause-btn.active-state:hover {
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.25);
+      background: rgba(0,0,0,0.12);
+    }
+
+    /* ===== CLOCK BUTTON + TOOLTIP ===== */
+    .clock-wrap {
+      position: relative;
+      display: inline-flex;
+      margin-left: 6px;
+    }
+    .clock-wrap .clock-btn {
+      margin-left: 0;
+    }
+    .clock-wrap .custom-tooltip {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #333;
+      color: white;
+      padding: 4px 8px;
       border-radius: 4px;
+      font-size: 11px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s ease-in;
+      transition-delay: 1s;
+      z-index: 100;
+    }
+    .clock-wrap .custom-tooltip::after {
+      content: '';
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 4px solid transparent;
+      border-bottom-color: #333;
+    }
+    .clock-wrap:not(.dismissed):hover .custom-tooltip,
+    .clock-wrap:not(.dismissed) .clock-btn:focus-visible ~ .custom-tooltip,
+    .clock-wrap:not(.dismissed) .custom-tooltip:hover {
+      opacity: 1;
+      transition-delay: 0s;
+      pointer-events: auto;
+    }
+
+    /* ===== REFRESH BUTTON ===== */
+    .refresh-single-btn svg {
+      width: 18px;
+      height: 18px;
     }
     .refresh-single-btn:disabled {
       opacity: 0.4;
@@ -103,6 +176,16 @@
     @keyframes spinRefresh {
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
+    }
+
+    /* ===== DELETE BUTTON ===== */
+    .delete-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+    .delete-btn:hover {
+      background: rgba(220,53,69,0.08);
+      border-color: rgba(220,53,69,0.3);
     }
 
     /* ===== GRID SIZE PRESETS ===== */
@@ -553,14 +636,17 @@
       /* Grid wraps naturally on mobile - no override needed */
     }
 
-    /* Info Button Hover State */
-    #info-btn:hover {
-      transform: scale(1.1);
-      opacity: 0.8;
+    /* Refresh All button hover/active states */
+    #refresh-all-btn:hover {
+      box-shadow: 0 4px 14px rgba(0,0,0,0.22) !important;
+      background: #f8f9fa !important;
+      border-color: rgba(27,35,68,0.3) !important;
+      transform: translateY(-1px);
     }
-
-    #info-btn:active {
-      transform: scale(0.95);
+    #refresh-all-btn:active {
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15) !important;
+      transform: translateY(0);
+      background: #f0f1f3 !important;
     }
 
     /* Welcome Modal Styles */
@@ -894,8 +980,9 @@
         <button id="info-btn" style="padding: 0; background: none; border: none; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center;" title="Show tutorial">
           <img src="info-icon.svg" alt="Info" style="width: 28px; height: 28px; display: block;" />
         </button>
-        <button id="refresh-all-btn" style="padding: 8px 16px; background: white; color: #667eea; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-          🔄 Refresh All
+        <button id="refresh-all-btn" style="padding: 8px 16px; background: white; color: #1B2344; border: 1px solid rgba(27,35,68,0.15); border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 6px; transition: all 0.2s ease;">
+          <svg width="18" height="18" viewBox="0 0 1200 1200" fill="#2BB5AD" xmlns="http://www.w3.org/2000/svg"><path d="M600,0C308.74,0,66.009,207.555,11.499,482.812h166.553 C229.37,297.756,398.603,161.719,600,161.719c121.069,0,230.474,49.195,309.668,128.613l-192.48,192.48h304.762H1200V0 l-175.781,175.781C915.653,67.181,765.698,0,600,0z M0,717.188V1200l175.781-175.781C284.346,1132.819,434.302,1200,600,1200 c291.26,0,533.991-207.555,588.501-482.812h-166.553C970.631,902.243,801.396,1038.281,600,1038.281 c-121.069,0-230.474-49.195-309.668-128.613l192.48-192.48H0z"/></svg>
+          Refresh All
         </button>
       </div>
     </div>

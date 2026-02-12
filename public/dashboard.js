@@ -247,6 +247,17 @@ startEngagementTimer();
     container.innerHTML = '<div class="components-grid"></div>';
     const grid = container.querySelector('.components-grid');
   
+    // Global Escape handler for clock tooltips (registered once)
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const active = document.querySelector('.clock-wrap:not(.dismissed):hover, .clock-wrap:not(.dismissed) .clock-btn:focus-visible');
+        if (active) {
+          document.querySelectorAll('.clock-wrap:not(.dismissed)').forEach(w => w.classList.add('dismissed'));
+          e.stopPropagation();
+        }
+      }
+    });
+
     components.forEach((component, index) => {
       const card = document.createElement('div');
       
@@ -334,32 +345,30 @@ startEngagementTimer();
       }
       
       card.innerHTML = `
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #f8f9fa; border-radius: 6px 6px 0 0; border-bottom: 1px solid #e9ecef;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 5px 12px; background: #EEEEEE; border-radius: 6px 6px 0 0; border-bottom: 1px solid #000;">
           <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #495057; min-width: 0; flex: 1;">
-            ${component.favicon ? `<img src="${component.favicon}" alt="" style="width: 16px; height: 16px; flex-shrink: 0;" />` : ''}
-            <span class="editable-title" style="font-weight: 600; cursor: pointer; padding: 2px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="Click to edit label">
+            ${component.favicon ? `<img src="${component.favicon}" alt="" style="width: 24px; height: 24px; flex-shrink: 0;" />` : ''}
+            <span class="editable-title" style="font-weight: 600; font-size: 15px; color: #000; cursor: pointer; padding: 2px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="Click to edit label">
               ${component.customLabel || component.name || 'Unnamed'}
             </span>
-            <span style="color: #6c757d; font-size: 12px; white-space: nowrap;">•</span>
-            <span class="card-timestamp" style="color: #6c757d; font-size: 12px; white-space: nowrap;">⏰ ${relativeTime}</span>
-            <span class="info-icon" style="cursor: pointer; margin-left: 4px; display: inline-flex; align-items: center;" title="Click for details">
-              <svg width="16" height="16" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                <circle fill="#2196F3" cx="24" cy="24" r="21"/>
-                <rect x="22" y="22" fill="#ffffff" width="4" height="11"/>
-                <circle fill="#ffffff" cx="24" cy="16.5" r="2.5"/>
-              </svg>
-            </span>
           </div>
-          <button class="pause-btn" style="padding: 2px; background: transparent; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-left: 8px; flex-shrink: 0; transition: all 0.2s;" title="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}">
-            ${component.refreshPaused 
-              ? '<svg width="18" height="18" viewBox="0 0 330 330" xmlns="http://www.w3.org/2000/svg"><path d="M315,0H15C6.716,0,0,6.716,0,15v300c0,8.284,6.716,15,15,15h300c8.284,0,15-6.716,15-15V15C330,6.716,323.284,0,315,0z M300,300H30V30h270V300z"/><path d="M194.25,247.5c8.284,0,15-6.716,15-15v-135c0-8.284-6.716-15-15-15c-8.284,0-15,6.716-15,15v135C179.25,240.784,185.966,247.5,194.25,247.5z"/><path d="M135.75,247.5c8.284,0,15-6.716,15-15v-135c0-8.284-6.716-15-15-15s-15,6.716-15,15v135C120.75,240.784,127.466,247.5,135.75,247.5z"/></svg>'
-              : '<svg width="18" height="18" viewBox="0 0 330 330" xmlns="http://www.w3.org/2000/svg"><path d="M315,0H15C6.716,0,0,6.716,0,15v300c0,8.284,6.716,15,15,15h300c8.284,0,15-6.716,15-15V15C330,6.716,323.284,0,315,0z M300,300H30V30h270V300z"/><path d="M113.729,245.62c2.266,1.256,4.77,1.88,7.271,1.88c2.763,0,5.523-0.763,7.95-2.28l108-67.499c4.386-2.741,7.05-7.548,7.05-12.72c0-5.172-2.664-9.979-7.05-12.72l-108-67.501c-4.623-2.891-10.453-3.043-15.222-0.4C108.959,87.024,106,92.047,106,97.5v135C106,237.953,108.959,242.976,113.729,245.62z"/></svg>'
-            }
-          </button>
-          <button class="refresh-single-btn" style="padding: 2px; background: transparent; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-left: 8px; flex-shrink: 0; transition: all 0.2s;" type="button" title="Refresh this card" aria-label="Refresh this card">
-            <svg width="18" height="18" viewBox="0 0 1920 1920" fill="#000000" xmlns="http://www.w3.org/2000/svg"><path d="M960 0v213.333c411.627 0 746.667 334.934 746.667 746.667S1371.627 1706.667 960 1706.667 213.333 1371.733 213.333 960c0-197.013 78.4-382.507 213.334-520.747v254.08H640V106.667H53.333V320h191.04C88.64 494.08 0 720.96 0 960c0 529.28 430.613 960 960 960s960-430.72 960-960S1489.387 0 960 0" fill-rule="evenodd"/></svg>
-          </button>
-          <button class="delete-btn" style="padding: 4px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; margin-left: 8px; flex-shrink: 0;">Delete</button>
+          <div style="display: flex; align-items: center;">
+            <div class="clock-wrap">
+              <button class="clock-btn iconBtn" aria-label="Last refresh details" aria-describedby="clock-tip-${component.id}">
+                <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 7.5H7C7 7.63261 7.05268 7.75979 7.14645 7.85355L7.5 7.5ZM7.5 14C3.91015 14 1 11.0899 1 7.5H0C0 11.6421 3.35786 15 7.5 15V14ZM14 7.5C14 11.0899 11.0899 14 7.5 14V15C11.6421 15 15 11.6421 15 7.5H14ZM7.5 1C11.0899 1 14 3.91015 14 7.5H15C15 3.35786 11.6421 0 7.5 0V1ZM7.5 0C3.35786 0 0 3.35786 0 7.5H1C1 3.91015 3.91015 1 7.5 1V0ZM7 3V7.5H8V3H7ZM7.14645 7.85355L10.1464 10.8536L10.8536 10.1464L7.85355 7.14645L7.14645 7.85355Z" fill="#000000"/></svg>
+              </button>
+              <span class="custom-tooltip" role="tooltip" id="clock-tip-${component.id}">Last refresh: ${relativeTime}</span>
+            </div>
+            <button class="pause-btn iconBtn${component.refreshPaused ? ' active-state' : ''}" title="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}" aria-label="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}">
+              <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M6.04995 2.74998C6.04995 2.44623 5.80371 2.19998 5.49995 2.19998C5.19619 2.19998 4.94995 2.44623 4.94995 2.74998V12.25C4.94995 12.5537 5.19619 12.8 5.49995 12.8C5.80371 12.8 6.04995 12.5537 6.04995 12.25V2.74998ZM10.05 2.74998C10.05 2.44623 9.80371 2.19998 9.49995 2.19998C9.19619 2.19998 8.94995 2.44623 8.94995 2.74998V12.25C8.94995 12.5537 9.19619 12.8 9.49995 12.8C9.80371 12.8 10.05 12.5537 10.05 12.25V2.74998Z" fill="#000000"/></svg>
+            </button>
+            <button class="refresh-single-btn iconBtn" type="button" title="Refresh this card" aria-label="Refresh this card">
+              <svg width="18" height="18" viewBox="0 0 1920 1920" fill="#000000" xmlns="http://www.w3.org/2000/svg"><path d="M960 0v213.333c411.627 0 746.667 334.934 746.667 746.667S1371.627 1706.667 960 1706.667 213.333 1371.733 213.333 960c0-197.013 78.4-382.507 213.334-520.747v254.08H640V106.667H53.333V320h191.04C88.64 494.08 0 720.96 0 960c0 529.28 430.613 960 960 960s960-430.72 960-960S1489.387 0 960 0" fill-rule="evenodd"/></svg>
+            </button>
+            <button class="delete-btn iconBtn" title="Delete card" aria-label="Delete card">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2h4a1 1 0 1 1 0 2h-1.069l-.867 12.142A2 2 0 0 1 17.069 22H6.93a2 2 0 0 1-1.995-1.858L4.07 8H3a1 1 0 0 1 0-2h4V4zm2 2h6V4H9v2zM6.074 8l.857 12H17.07l.857-12H6.074zM10 10a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1z" fill="#0D0D0D"/></svg>
+            </button>
+          </div>
         </div>
         <div class="component-content" style="margin-top: 0; padding: 12px; background: #ffffff; border-radius: 0 0 6px 6px; max-height: 100%; overflow: auto;">
           ${cleanupDuplicates(component.html_cache) || '<div style="color: #6c757d; text-align: center; padding: 20px;"><div style="font-size: 18px; margin-bottom: 8px;">📭</div><div style="font-weight: 600; margin-bottom: 4px;">No content yet</div><div style="font-size: 13px;">Click "Refresh All" to fetch latest content</div></div>'}
@@ -392,10 +401,13 @@ startEngagementTimer();
         // Toggle pause state
         component.refreshPaused = !component.refreshPaused;
         
-        // Update button UI with SVG swap (rounded square versions)
-        pauseBtn.innerHTML = component.refreshPaused 
-          ? '<svg width="18" height="18" viewBox="0 0 330 330" xmlns="http://www.w3.org/2000/svg"><path d="M315,0H15C6.716,0,0,6.716,0,15v300c0,8.284,6.716,15,15,15h300c8.284,0,15-6.716,15-15V15C330,6.716,323.284,0,315,0z M300,300H30V30h270V300z"/><path d="M194.25,247.5c8.284,0,15-6.716,15-15v-135c0-8.284-6.716-15-15-15c-8.284,0-15,6.716-15,15v135C179.25,240.784,185.966,247.5,194.25,247.5z"/><path d="M135.75,247.5c8.284,0,15-6.716,15-15v-135c0-8.284-6.716-15-15-15s-15,6.716-15,15v135C120.75,240.784,127.466,247.5,135.75,247.5z"/></svg>'
-          : '<svg width="18" height="18" viewBox="0 0 330 330" xmlns="http://www.w3.org/2000/svg"><path d="M315,0H15C6.716,0,0,6.716,0,15v300c0,8.284,6.716,15,15,15h300c8.284,0,15-6.716,15-15V15C330,6.716,323.284,0,315,0z M300,300H30V30h270V300z"/><path d="M113.729,245.62c2.266,1.256,4.77,1.88,7.271,1.88c2.763,0,5.523-0.763,7.95-2.28l108-67.499c4.386-2.741,7.05-7.548,7.05-12.72c0-5.172-2.664-9.979-7.05-12.72l-108-67.501c-4.623-2.891-10.453-3.043-15.222-0.4C108.959,87.024,106,92.047,106,97.5v135C106,237.953,108.959,242.976,113.729,245.62z"/></svg>';
+        // Update button UI: toggle pressed-down visual state (no icon swap)
+        if (component.refreshPaused) {
+          pauseBtn.classList.add('active-state');
+        } else {
+          pauseBtn.classList.remove('active-state');
+        }
+        pauseBtn.setAttribute('aria-label', component.refreshPaused ? 'Resume refresh' : 'Pause refresh');
         pauseBtn.title = component.refreshPaused ? 'Resume refresh' : 'Pause refresh';
         
         // Update card opacity
@@ -415,7 +427,7 @@ startEngagementTimer();
         });
         
         // Show toast notification
-        showToast(
+        showStyledToast(
           component.refreshPaused ? 'Paused' : 'Resumed',
           component.refreshPaused 
             ? `"${component.customLabel || component.name}" won't refresh` 
@@ -449,10 +461,10 @@ startEngagementTimer();
               fixRelativeUrls(contentDiv, component.url);
               removeCursorStyles(contentDiv);
 
-              // Update timestamp in header (uses dedicated class)
-              const tsSpan = card.querySelector('.card-timestamp');
-              if (tsSpan) {
-                tsSpan.textContent = `⏰ just now`;
+              // Update clock tooltip with new timestamp
+              const clockTooltip = card.querySelector('.custom-tooltip');
+              if (clockTooltip) {
+                clockTooltip.textContent = 'Last refresh: just now';
               }
 
               // Persist to storage — direct write, no read-then-write race
@@ -675,10 +687,10 @@ startEngagementTimer();
         titleElement.style.background = '';
       });
       
-      // Info icon click handler
-      const infoIcon = card.querySelector('.info-icon');
-      if (infoIcon) {
-        infoIcon.addEventListener('click', (e) => {
+      // Clock button click handler (opens info modal)
+      const clockBtn = card.querySelector('.clock-btn');
+      if (clockBtn) {
+        clockBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           
           // Create custom modal with clickable URL
@@ -741,7 +753,14 @@ startEngagementTimer();
           });
         });
       }
-      
+
+      // Clock tooltip: remove .dismissed on re-interaction
+      const clockWrap = card.querySelector('.clock-wrap');
+      if (clockWrap && clockBtn) {
+        clockWrap.addEventListener('mouseenter', () => clockWrap.classList.remove('dismissed'));
+        clockBtn.addEventListener('focus', () => clockWrap.classList.remove('dismissed'));
+      }
+
       // ===== CARD RESIZE LOGIC =====
       
       // SVG icon helper for 2×2 grid preview
@@ -932,7 +951,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Simple toast notification for pause/resume
-function showToast(title, message, type = 'info') {
+function showStyledToast(title, message, type = 'info') {
   // Remove any existing toast
   const existingToast = document.querySelector('.simple-toast');
   if (existingToast) {
@@ -965,7 +984,7 @@ function showToast(title, message, type = 'info') {
     bottom: 24px;
     right: 24px;
     background: ${type === 'success' ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.95) 0%, rgba(22, 163, 74, 0.95) 100%)' : 
-                 type === 'info' ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.95) 0%, rgba(37, 99, 235, 0.95) 100%)' :
+                 type === 'info' ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.90) 0%, rgba(220, 38, 38, 0.90) 100%)' :
                  'linear-gradient(135deg, rgba(25, 35, 55, 0.95) 0%, rgba(35, 45, 65, 0.95) 100%)'};
     color: white;
     padding: 16px 20px;
@@ -978,11 +997,11 @@ function showToast(title, message, type = 'info') {
   
   document.body.appendChild(toast);
   
-  // Auto-hide after 3 seconds
+  // Auto-hide after 2 seconds
   setTimeout(() => {
     toast.style.animation = 'slideOutCool 0.3s ease-in';
     setTimeout(() => toast.remove(), 300);
-  }, 3000);
+  }, 2000);
 }
 
 // Board name editing functionality

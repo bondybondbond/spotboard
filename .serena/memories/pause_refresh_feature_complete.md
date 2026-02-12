@@ -10,18 +10,21 @@ Added pause/resume toggle to card headers enabling users to exclude slow-loading
 - Persists across devices via per-component key model (`comp-{uuid}`)
 - No migration needed - new captures default to `refreshPaused: false`
 
-**UI Components:**
+**UI Components (UPDATED Feb 12, 2026 — Title Bar Redesign):**
 1. **Pause/Resume Button** (card header)
-   - SVG rounded square play/pause icons (18px)
-   - Borderless design with hover effects (10% scale-up + gray background)
-   - Click toggles state + saves to sync storage + shows toast
+   - Single pause SVG icon (Radix UI, MIT) — no play/pause toggle
+   - Circular `.iconBtn` base class (26px), pressed-down `.active-state` with inset shadow
+   - Native `title` attribute tooltip ("Pause refresh" / "Resume refresh")
+   - Click toggles `active-state` class + saves to sync storage + shows styled toast
    
 2. **Visual Feedback**
-   - Paused cards: 85% opacity + lighter header background (#e9ecef)
-   - Active cards: Full opacity + normal header
+   - Paused cards: Pink header background (#FCD1DE !important)
+   - Active cards: #EEEEEE header background
    
 3. **Toast Notifications**
-   - Simple toast: "Paused" / "Resumed" with component name (3s duration)
+   - Styled toast via `showStyledToast(title, message, type)` (renamed from `showToast` to fix shadowing)
+   - Pause: red gradient, 2s duration
+   - Resume: green gradient, 2s duration
    - Refresh toast: Shows "(X paused)" count in both initial and final messages
 
 **Refresh Logic:**
@@ -48,19 +51,17 @@ Added pause/resume toggle to card headers enabling users to exclude slow-loading
   - Lines ~60-67: `.paused` class styling (opacity + header background)
   - Lines ~68-75: Pause button hover states
 
-## Icon System Established
+## Icon System (UPDATED Feb 12, 2026)
 
-**Circular = Informational:**
-- Info button: Blue circle (#2196F3) with white "i" (16px)
+**All buttons now circular `.iconBtn` (26px diameter):**
+- Clock button: Teeny Icons clock SVG (MIT) — CSS tooltip with last refresh time
+- Pause button: Radix UI pause SVG (MIT) — single icon, `.active-state` for pressed look
+- Refresh button: instructure-ui reload SVG (MIT) — spinning animation during refresh
+- Delete button: Mono Icons bin SVG (PD) — card deletion
 
-**Squared = Actionable:**
-- Play: Black rounded square frame with play triangle (18px)
-- Pause: Black rounded square frame with pause bars (18px)
+**Refresh All button** (top bar): Elusive Icons refresh SVG (MIT), #2BB5AD fill, button-feel hover/active
 
-**Success Toast:**
-- Play triangle (20px white on green background)
-
-**Rationale:** Shape distinction creates instant cognitive mapping - circles for passive info, squares for user actions.
+**All SVG attributions**: `THIRD_PARTY_NOTICES.md` (5 entries)
 
 ## Design Patterns Validated
 
