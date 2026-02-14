@@ -1,0 +1,33 @@
+# SpotBoard
+
+> Chrome extension for monitoring website sections. Capture live widgets (trending deals, most read, scores, finance movers) into a personal dashboard with manual refresh.
+
+## What it's NOT
+- NOT a startpage (no bookmarks grid)
+- NOT RSS (captures visual layout, not feeds)
+- NOT change detection alerts (manual refresh only)
+- NOT for real-time trading
+
+## Use Cases
+- Finance trackers: Yahoo Finance movers, MarketWatch trends (sentiment coloring)
+- Deal hunters: HotUKDeals popular, Groupon deals (position-based tracking)
+- News readers: BBC Most Read, Guardian top stories, NPR headlines
+- Sports fans: ESPN scores, Premier League tables, Sky Sports fixtures
+
+## Key Features
+- Unlimited captures (max 10/board)
+- Manual refresh only (healthy tool relationship)
+- Cross-device metadata sync (local-first, no backend)
+- Smart exclusion mode (remove ads/timestamps)
+- Works best on list/table-style pages
+
+## Limitations
+- No login-required content
+- Infinite scroll sites (initial load only)
+- Some carousels may break
+
+## Links
+- Homepage: https://bondybondbond.github.io/spotboard/
+- Privacy: https://bondybondbond.github.io/spotboard/privacy
+- GitHub: https://github.com/bondybondbond/spotboard
+- Chrome Web Store: (coming soon)

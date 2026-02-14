@@ -40,8 +40,5 @@ test-*.js
 _do not upload/
 .do_not_upload/
 
-# Project documentation (private)
-/docs/
-
 # Windows reserved filename artifact
 nul
