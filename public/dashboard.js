@@ -53,6 +53,30 @@ async function migrateStorageIfNeeded() {
   });
 }
 
+// Helper: Format ISO timestamp to relative time string (e.g., "2m ago", "3h ago")
+function formatRelativeTime(isoTimestamp) {
+  if (!isoTimestamp) return 'unknown';
+
+  const now = Date.now();
+  const then = new Date(isoTimestamp).getTime();
+  const diffMs = now - then;
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffMins < 1) {
+    return 'just now';
+  } else if (diffMins < 60) {
+    return `${diffMins}m ago`;
+  } else if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  } else if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  } else {
+    return '1w+ ago';
+  }
+}
+
 // NEW: Data integrity validation - checks for issues in stored components
 async function validateStorageFormat() {
   return new Promise((resolve) => {
@@ -354,10 +378,20 @@ startEngagementTimer();
           </div>
           <div style="display: flex; align-items: center;">
             <div class="clock-wrap">
-              <button class="clock-btn iconBtn" aria-label="Last refresh details" aria-describedby="clock-tip-${component.id}">
-                <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 7.5H7C7 7.63261 7.05268 7.75979 7.14645 7.85355L7.5 7.5ZM7.5 14C3.91015 14 1 11.0899 1 7.5H0C0 11.6421 3.35786 15 7.5 15V14ZM14 7.5C14 11.0899 11.0899 14 7.5 14V15C11.6421 15 15 11.6421 15 7.5H14ZM7.5 1C11.0899 1 14 3.91015 14 7.5H15C15 3.35786 11.6421 0 7.5 0V1ZM7.5 0C3.35786 0 0 3.35786 0 7.5H1C1 3.91015 3.91015 1 7.5 1V0ZM7 3V7.5H8V3H7ZM7.14645 7.85355L10.1464 10.8536L10.8536 10.1464L7.85355 7.14645L7.14645 7.85355Z" fill="#000000"/></svg>
-              </button>
-              <span class="custom-tooltip" role="tooltip" id="clock-tip-${component.id}">Last refresh: ${relativeTime}</span>
+              ${component.lastOutcome === 'failed' ? `
+                <button class="clock-btn iconBtn failed-state" aria-label="Refresh failed" aria-describedby="clock-tip-${component.id}">
+                  <svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M13 17.5a1 1 0 11-2 0 1 1 0 012 0zm-.25-8.25a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5z"/>
+                    <path fill-rule="evenodd" d="M9.836 3.244c.963-1.665 3.365-1.665 4.328 0l8.967 15.504c.963 1.667-.24 3.752-2.165 3.752H3.034c-1.926 0-3.128-2.085-2.165-3.752L9.836 3.244zm3.03.751a1 1 0 00-1.732 0L2.168 19.499A1 1 0 003.034 21h17.932a1 1 0 00.866-1.5L12.866 3.994z"/>
+                  </svg>
+                </button>
+                <span class="custom-tooltip" role="tooltip" id="clock-tip-${component.id}">Last attempt failed ${component.lastErrorAt ? formatRelativeTime(component.lastErrorAt) : relativeTime}</span>
+              ` : `
+                <button class="clock-btn iconBtn" aria-label="Last refresh details" aria-describedby="clock-tip-${component.id}">
+                  <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 7.5H7C7 7.63261 7.05268 7.75979 7.14645 7.85355L7.5 7.5ZM7.5 14C3.91015 14 1 11.0899 1 7.5H0C0 11.6421 3.35786 15 7.5 15V14ZM14 7.5C14 11.0899 11.0899 14 7.5 14V15C11.6421 15 15 11.6421 15 7.5H14ZM7.5 1C11.0899 1 14 3.91015 14 7.5H15C15 3.35786 11.6421 0 7.5 0V1ZM7.5 0C3.35786 0 0 3.35786 0 7.5H1C1 3.91015 3.91015 1 7.5 1V0ZM7 3V7.5H8V3H7ZM7.14645 7.85355L10.1464 10.8536L10.8536 10.1464L7.85355 7.14645L7.14645 7.85355Z" fill="#000000"/></svg>
+                </button>
+                <span class="custom-tooltip" role="tooltip" id="clock-tip-${component.id}">Last refresh: ${relativeTime}</span>
+              `}
             </div>
             <button class="pause-btn iconBtn${component.refreshPaused ? ' active-state' : ''}" title="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}" aria-label="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}">
               <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M6.04995 2.74998C6.04995 2.44623 5.80371 2.19998 5.49995 2.19998C5.19619 2.19998 4.94995 2.44623 4.94995 2.74998V12.25C4.94995 12.5537 5.19619 12.8 5.49995 12.8C5.80371 12.8 6.04995 12.5537 6.04995 12.25V2.74998ZM10.05 2.74998C10.05 2.44623 9.80371 2.19998 9.49995 2.19998C9.19619 2.19998 8.94995 2.44623 8.94995 2.74998V12.25C8.94995 12.5537 9.19619 12.8 9.49995 12.8C9.80371 12.8 10.05 12.5537 10.05 12.25V2.74998Z" fill="#000000"/></svg>
@@ -370,6 +404,20 @@ startEngagementTimer();
             </button>
           </div>
         </div>
+        ${component.lastOutcome === 'failed' ? `
+          <div class="card-error-banner">
+            <span class="error-icon">⚠️</span>
+            <span class="error-message">
+              Refresh failed: <strong>${getErrorLabel(component.lastErrorCode)}</strong>
+            </span>
+            <button class="error-retry-btn" data-component-id="${component.id}">
+              Retry
+            </button>
+            <a href="${component.url}" target="_blank" class="error-open-btn">
+              Open site
+            </a>
+          </div>
+        ` : ''}
         <div class="component-content" style="margin-top: 0; padding: 12px; background: #ffffff; border-radius: 0 0 6px 6px; max-height: 100%; overflow: auto;">
           ${cleanupDuplicates(component.html_cache) || '<div style="color: #6c757d; text-align: center; padding: 20px;"><div style="font-size: 18px; margin-bottom: 8px;">📭</div><div style="font-weight: 600; margin-bottom: 4px;">No content yet</div><div style="font-size: 13px;">Click "Refresh All" to fetch latest content</div></div>'}
         </div>
@@ -449,17 +497,37 @@ startEngagementTimer();
 
           try {
             const result = await refreshComponent(component);
+            const attemptTimestamp = new Date().toISOString();
 
             if (result.success && result.html_cache && result.html_cache.length >= 50) {
               // Update in-memory component
               component.html_cache = result.html_cache;
               component.last_refresh = result.last_refresh;
+              component.lastAttemptAt = attemptTimestamp;
+              component.lastSuccessAt = attemptTimestamp;
+              component.lastOutcome = 'success';
+              component.lastErrorCode = null;
+              component.lastErrorAt = null;
 
               // Update card content in DOM (no full page reload)
               const contentDiv = card.querySelector('.component-content');
               contentDiv.innerHTML = cleanupDuplicates(result.html_cache);
               fixRelativeUrls(contentDiv, component.url);
               removeCursorStyles(contentDiv);
+
+              // Clear error state if present
+              const errorBanner = card.querySelector('.card-error-banner');
+              if (errorBanner) errorBanner.remove();
+
+              // Reset clock icon to normal state (remove warning triangle if present)
+              const clockBtn = card.querySelector('.clock-btn');
+              if (clockBtn) {
+                clockBtn.classList.remove('failed-state');
+                clockBtn.setAttribute('aria-label', 'Last refresh details');
+                clockBtn.innerHTML = `
+                  <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 7.5H7C7 7.63261 7.05268 7.75979 7.14645 7.85355L7.5 7.5ZM7.5 14C3.91015 14 1 11.0899 1 7.5H0C0 11.6421 3.35786 15 7.5 15V14ZM14 7.5C14 11.0899 11.0899 14 7.5 14V15C11.6421 15 15 11.6421 15 7.5H14ZM7.5 1C11.0899 1 14 3.91015 14 7.5H15C15 3.35786 11.6421 0 7.5 0V1ZM7.5 0C3.35786 0 0 3.35786 0 7.5H1C1 3.91015 3.91015 1 7.5 1V0ZM7 3V7.5H8V3H7ZM7.14645 7.85355L10.1464 10.8536L10.8536 10.1464L7.85355 7.14645L7.14645 7.85355Z" fill="#000000"/></svg>
+                `;
+              }
 
               // Update clock tooltip with new timestamp
               const clockTooltip = card.querySelector('.custom-tooltip');
@@ -481,7 +549,12 @@ startEngagementTimer();
                   positionBased: component.positionBased || false,
                   refreshPaused: component.refreshPaused || false,
                   last_refresh: result.last_refresh,
-                  cardSize: component.cardSize || '1x1'
+                  cardSize: component.cardSize || '1x1',
+                  lastAttemptAt: attemptTimestamp,
+                  lastSuccessAt: attemptTimestamp,
+                  lastOutcome: 'success',
+                  lastErrorCode: null,
+                  lastErrorAt: null
                 }
               }, () => {
                 if (chrome.runtime.lastError) console.warn('Sync write error:', chrome.runtime.lastError);
@@ -503,9 +576,125 @@ startEngagementTimer();
 
               showToast(`"${displayName}" refreshed`);
             } else if (result.success) {
+              // Empty content case - treat as failure
+              const errorCode = classifyError('empty content');
+              component.lastAttemptAt = attemptTimestamp;
+              component.lastOutcome = 'failed';
+              component.lastErrorCode = errorCode;
+              component.lastErrorAt = attemptTimestamp;
+
+              // Update storage with failure state
+              chrome.storage.sync.set({
+                [`comp-${component.id}`]: {
+                  id: component.id,
+                  name: component.name,
+                  url: component.url,
+                  favicon: component.favicon,
+                  customLabel: component.customLabel,
+                  headingFingerprint: component.headingFingerprint,
+                  selector: component.selector,
+                  excludedSelectors: component.excludedSelectors || [],
+                  positionBased: component.positionBased || false,
+                  refreshPaused: component.refreshPaused || false,
+                  last_refresh: component.last_refresh,
+                  cardSize: component.cardSize || '1x1',
+                  lastAttemptAt: attemptTimestamp,
+                  lastSuccessAt: component.lastSuccessAt,
+                  lastOutcome: 'failed',
+                  lastErrorCode: errorCode,
+                  lastErrorAt: attemptTimestamp
+                }
+              });
+
               showToast(`"${displayName}" returned empty content`);
             } else {
-              showToast(`"${displayName}" refresh failed`);
+              // Failure case
+              const errorCode = classifyError(result.error);
+              component.lastAttemptAt = attemptTimestamp;
+              component.lastOutcome = 'failed';
+              component.lastErrorCode = errorCode;
+              component.lastErrorAt = attemptTimestamp;
+
+              // Update storage with failure state
+              chrome.storage.sync.set({
+                [`comp-${component.id}`]: {
+                  id: component.id,
+                  name: component.name,
+                  url: component.url,
+                  favicon: component.favicon,
+                  customLabel: component.customLabel,
+                  headingFingerprint: component.headingFingerprint,
+                  selector: component.selector,
+                  excludedSelectors: component.excludedSelectors || [],
+                  positionBased: component.positionBased || false,
+                  refreshPaused: component.refreshPaused || false,
+                  last_refresh: component.last_refresh,
+                  cardSize: component.cardSize || '1x1',
+                  lastAttemptAt: attemptTimestamp,
+                  lastSuccessAt: component.lastSuccessAt,
+                  lastOutcome: 'failed',
+                  lastErrorCode: errorCode,
+                  lastErrorAt: attemptTimestamp
+                }
+              });
+
+              // Update UI to show error state
+              // 1. Replace clock icon with warning triangle
+              const clockBtn = card.querySelector('.clock-btn');
+              if (clockBtn) {
+                clockBtn.classList.add('failed-state');
+                clockBtn.setAttribute('aria-label', 'Refresh failed');
+                clockBtn.innerHTML = `
+                  <svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M13 17.5a1 1 0 11-2 0 1 1 0 012 0zm-.25-8.25a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5z"/>
+                    <path fill-rule="evenodd" d="M9.836 3.244c.963-1.665 3.365-1.665 4.328 0l8.967 15.504c.963 1.667-.24 3.752-2.165 3.752H3.034c-1.926 0-3.128-2.085-2.165-3.752L9.836 3.244zm3.03.751a1 1 0 00-1.732 0L2.168 19.499A1 1 0 003.034 21h17.932a1 1 0 00.866-1.5L12.866 3.994z"/>
+                  </svg>
+                `;
+              }
+
+              // 2. Update tooltip text
+              const clockTooltip = card.querySelector('.custom-tooltip');
+              if (clockTooltip) {
+                clockTooltip.textContent = `Last attempt failed ${formatRelativeTime(attemptTimestamp)}`;
+              }
+
+              // 3. Add error banner if not already present
+              const cardHeader = card.querySelector('.card-header');
+              const existingBanner = card.querySelector('.card-error-banner');
+              if (!existingBanner && cardHeader) {
+                const errorBanner = document.createElement('div');
+                errorBanner.className = 'card-error-banner';
+                errorBanner.innerHTML = `
+                  <span class="error-icon">⚠️</span>
+                  <span class="error-message">
+                    Refresh failed: <strong>${getErrorLabel(errorCode)}</strong>
+                  </span>
+                  <button class="error-retry-btn" data-component-id="${component.id}">
+                    Retry
+                  </button>
+                  <a href="${component.url}" target="_blank" class="error-open-btn">
+                    Open site
+                  </a>
+                `;
+
+                // Insert after card header
+                cardHeader.insertAdjacentElement('afterend', errorBanner);
+
+                // Wire up retry button
+                const retryBtn = errorBanner.querySelector('.error-retry-btn');
+                retryBtn.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  refreshSingleBtn.click();
+                });
+              }
+
+              // Improved toast with error details (4-second auto-dismiss, non-actionable)
+              const toastId = `refresh-fail-${component.id}`;
+              // Remove existing toast for this card to prevent stacking
+              const existingToast = document.querySelector(`[data-toast-id="${toastId}"]`);
+              if (existingToast) existingToast.remove();
+
+              showToast(`"${displayName}" didn't refresh`, `${getErrorLabel(errorCode)}. See the card to retry.`, 'warning', 4000, toastId);
             }
           } catch (err) {
             console.error('Single card refresh error:', err);
@@ -514,6 +703,17 @@ startEngagementTimer();
             refreshSingleBtn.disabled = false;
             refreshSingleBtn.classList.remove('spinning');
           }
+        });
+      }
+
+      // Error banner retry button
+      const errorRetryBtn = card.querySelector('.error-retry-btn');
+      if (errorRetryBtn) {
+        errorRetryBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          // Trigger single card refresh by simulating click on refresh button
+          const refreshBtn = card.querySelector('.refresh-single-btn');
+          if (refreshBtn) refreshBtn.click();
         });
       }
 
@@ -1208,34 +1408,57 @@ function checkDifferentDays(storageKey, minDays, windowDays) {
 }
 
 // Show temporary toast notification (bottom-right corner)
-function showToast(message, duration = 3000) {
+function showToast(message, subtitle = null, type = 'info', duration = 3000, toastId = null) {
+  // Remove existing toast with same ID (deduplication)
+  if (toastId) {
+    const existing = document.querySelector(`[data-toast-id="${toastId}"]`);
+    if (existing) existing.remove();
+  }
+
   const toast = document.createElement('div');
-  toast.textContent = message;
+  if (toastId) toast.setAttribute('data-toast-id', toastId);
+
+  // Build toast content
+  let content = `<div style="font-weight: 500;">${message}</div>`;
+  if (subtitle) {
+    content += `<div style="font-size: 12px; margin-top: 4px; opacity: 0.9;">${subtitle}</div>`;
+  }
+  toast.innerHTML = content;
+
+  // Style based on type
+  let backgroundColor = '#333';
+  let textColor = 'white';
+  if (type === 'warning') {
+    backgroundColor = '#FF9800';
+    textColor = '#1a1a1a'; // Black text for warning (better contrast)
+  }
+  if (type === 'error') backgroundColor = '#dc2626';
+  if (type === 'success') backgroundColor = '#16a34a';
+
   toast.style.cssText = `
     position: fixed;
     bottom: 20px;
     right: 20px;
-    background: #333;
-    color: white;
+    background: ${backgroundColor};
+    color: ${textColor};
     padding: 12px 20px;
     border-radius: 8px;
     font-size: 14px;
-    font-weight: 500;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 10002;
     opacity: 0;
     transform: translateY(20px);
     transition: opacity 0.3s ease-out, transform 0.3s ease-out;
   `;
-  
+
   document.body.appendChild(toast);
-  
+
   // Trigger slide-in animation
   setTimeout(() => {
     toast.style.opacity = '1';
     toast.style.transform = 'translateY(0)';
   }, 10);
-  
+
   // Auto-dismiss after duration
   setTimeout(() => {
     toast.style.opacity = '0';

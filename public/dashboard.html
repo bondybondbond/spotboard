@@ -188,6 +188,96 @@
       border-color: rgba(220,53,69,0.3);
     }
 
+    /* ===== ERROR STATE STYLES ===== */
+    /* Failed state clock button (warning triangle) */
+    .clock-btn.failed-state:hover {
+      background: rgba(220, 38, 38, 0.08);
+      border-color: rgba(220, 38, 38, 0.3);
+    }
+
+    /* Error banner on failed cards */
+    .card-error-banner {
+      background: #FFEECC;
+      border-left: 3px solid #FF9800;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #5D4037;
+    }
+
+    .card-error-banner .error-icon {
+      flex-shrink: 0;
+      font-size: 16px;
+    }
+
+    .card-error-banner .error-message {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .card-error-banner .error-retry-btn,
+    .card-error-banner .error-open-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 4px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .card-error-banner .error-retry-btn {
+      background: #FF9800;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    .card-error-banner .error-retry-btn:hover {
+      background: #F57C00;
+    }
+
+    .card-error-banner .error-open-btn {
+      background: white;
+      color: #FF9800;
+      border: 1px solid #FF9800;
+    }
+
+    .card-error-banner .error-open-btn:hover {
+      background: #FFF3E0;
+    }
+
+    /* Failure toast styles */
+    .toast-failure-list {
+      margin-top: 8px;
+    }
+
+    .toast-failure-list ul {
+      margin: 4px 0 8px 0;
+      padding-left: 20px;
+      list-style: disc;
+    }
+
+    .toast-failure-list li {
+      margin-bottom: 2px;
+    }
+
+    .toast-retry-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    .toast-retry-btn:hover {
+      background: #5568d3;
+    }
+
     /* ===== GRID SIZE PRESETS ===== */
     .component-card.size-1x1 {
       grid-column: span 1;
@@ -518,11 +608,11 @@
     
     /* Success Toast - Warm green */
     .refresh-toast--success {
-      background: linear-gradient(135deg, 
-        rgba(34, 197, 94, 0.95) 0%, 
+      background: linear-gradient(135deg,
+        rgba(34, 197, 94, 0.95) 0%,
         rgba(22, 163, 74, 0.95) 100%);
       border: 1px solid rgba(34, 197, 94, 0.4);
-      box-shadow: 
+      box-shadow:
         0 8px 32px rgba(34, 197, 94, 0.3),
         0 0 0 1px rgba(34, 197, 94, 0.2);
       color: white;
@@ -534,6 +624,37 @@
     .refresh-toast--success .refresh-toast__title {
       color: white;
       font-weight: 600;
+    }
+
+    /* Warning Toast - Full orange for failures (matches single-card toast style) */
+    .refresh-toast--warning {
+      background: #FF9800;
+      border: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      color: #1a1a1a;
+    }
+    .refresh-toast--warning .refresh-toast__icon {
+      animation: none;
+      font-size: 20px;
+    }
+    .refresh-toast--warning .refresh-toast__title {
+      color: #1a1a1a;
+      font-weight: 600;
+      font-size: 15px;
+    }
+    .refresh-toast--warning .refresh-toast__close {
+      color: #1a1a1a;
+      opacity: 0.7;
+      font-size: 20px;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 4px 8px;
+    }
+    .refresh-toast--warning .refresh-toast__close:hover {
+      opacity: 1;
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 4px;
     }
     
     /* Animations */

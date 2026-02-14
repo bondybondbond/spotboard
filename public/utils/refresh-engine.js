@@ -1,11 +1,45 @@
 /**
  * Refresh Engine for SpotBoard
  * Handles component refresh logic, tab management, and toast notifications
- * 
+ *
  * Dependencies:
  * - dom-cleanup.js (applySanitizationPipeline, cleanupDuplicates)
  * - fingerprint.js (extractFingerprint)
  */
+
+/**
+ * Error classification helper - converts raw error strings into friendly user-facing labels
+ * Returns enum error code ('skeleton', 'network', 'layout_changed', 'unknown')
+ */
+function classifyError(errorString) {
+  if (!errorString) return 'unknown';
+
+  const errorLower = errorString.toLowerCase();
+
+  if (errorLower.includes('skeleton') || errorLower.includes('empty container')) {
+    return 'skeleton';  // Site didn't load completely
+  }
+  if (errorLower.includes('fetch') || errorLower.includes('timeout') || errorLower.includes('network') || errorLower.includes('http')) {
+    return 'network';   // Network error
+  }
+  if (errorLower.includes('fingerprint') || errorLower.includes('selector') || errorLower.includes('different element') || errorLower.includes('not found')) {
+    return 'layout_changed';  // Site layout changed
+  }
+  return 'unknown';     // Fallback
+}
+
+/**
+ * Get user-friendly error label from error code enum
+ */
+function getErrorLabel(errorCode) {
+  const labels = {
+    'skeleton': "Site didn't load completely",
+    'network': "Network error",
+    'layout_changed': "Site layout changed",
+    'unknown': "Refresh failed"
+  };
+  return labels[errorCode] || "Refresh failed";
+}
 
 /**
  * Toast notification manager for refresh feedback
@@ -18,12 +52,14 @@ class RefreshToastManager {
     this.completedCount = 0;
     this.successCount = 0;
     this.currentComponent = '';
+    this.failedComponents = []; // Track failed components for batch toast
   }
-  
+
   startRefresh(total, customMessage = null) {
     this.totalComponents = total;
     this.completedCount = 0;
     this.successCount = 0;
+    this.failedComponents = []; // Reset failures for new refresh
     this.customMessage = customMessage; // Store custom message for progress display
     this.createToast();
   }
@@ -60,19 +96,37 @@ class RefreshToastManager {
   completeComponent(success = true) {
     this.completedCount++;
     if (success) this.successCount++;
-    
+
     // Update progress bar
     if (this.toast) {
       const progressPercent = (this.completedCount / this.totalComponents) * 100;
       this.toast.querySelector('.toast-progress-bar').style.width = `${progressPercent}%`;
-      this.toast.querySelector('.toast-progress').textContent = 
+      this.toast.querySelector('.toast-progress').textContent =
         `✓ ${this.successCount}/${this.totalComponents} refreshed`;
     }
   }
-  
+
+  /**
+   * Record a failed component for the final failure toast
+   */
+  recordFailure(componentName, errorCode) {
+    this.failedComponents.push({
+      name: componentName,
+      errorCode: errorCode || 'unknown'
+    });
+  }
+
   finishAll(pausedCount = 0) {
     this.hideToast();
-    this.showSuccessToast(pausedCount);
+    // Show failure toast if there are failures, otherwise success toast
+    // Add small delay to ensure progress toast is hidden first
+    setTimeout(() => {
+      if (this.failedComponents.length > 0) {
+        this.showFailureToast(pausedCount);
+      } else {
+        this.showSuccessToast(pausedCount);
+      }
+    }, 100);
   }
   
   createToast() {
@@ -121,13 +175,13 @@ class RefreshToastManager {
   
   showSuccessToast(pausedCount = 0) {
     const allSuccess = this.successCount === this.totalComponents;
-    const message = allSuccess 
+    const message = allSuccess
       ? `All ${this.totalComponents} components refreshed! 👍🏼`
       : `${this.successCount}/${this.totalComponents} refreshed successfully`;
-    
+
     const successToast = document.createElement('div');
     successToast.className = 'refresh-toast refresh-toast--success';
-    
+
     successToast.innerHTML = `
       <div class="refresh-toast__content">
         <svg class="refresh-toast__icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
@@ -139,18 +193,87 @@ class RefreshToastManager {
         </div>
       </div>
     `;
-    
+
     document.body.appendChild(successToast);
-    
+
     setTimeout(() => {
       successToast.classList.add('refresh-toast--hiding');
       setTimeout(() => successToast.remove(), 400);
     }, 3000);
   }
+
+  /**
+   * Show persistent failure toast with list of failed components and retry action
+   */
+  showFailureToast(pausedCount = 0) {
+    const failureToast = document.createElement('div');
+    failureToast.className = 'refresh-toast refresh-toast--warning';
+    failureToast.setAttribute('data-persistent', 'true');
+
+    const failureList = this.failedComponents.map(f =>
+      `<li><strong>${f.name}</strong> — ${getErrorLabel(f.errorCode)}</li>`
+    ).join('');
+
+    failureToast.innerHTML = `
+      <div class="refresh-toast__content">
+        <div class="refresh-toast__text">
+          <div class="refresh-toast__title">Some cards failed to refresh</div>
+          <div class="toast-failure-list">
+            <strong>Failed (${this.failedComponents.length}):</strong>
+            <ul style="margin: 4px 0 8px 0; padding-left: 20px; list-style: disc;">
+              ${failureList}
+            </ul>
+          </div>
+          <button class="toast-retry-btn" data-action="retry-failed">
+            Retry failed cards
+          </button>
+        </div>
+        <button class="refresh-toast__close" aria-label="Close">✕</button>
+      </div>
+    `;
+
+    document.body.appendChild(failureToast);
+
+    // Close button handler
+    failureToast.querySelector('.refresh-toast__close').addEventListener('click', () => {
+      failureToast.classList.add('refresh-toast--hiding');
+      setTimeout(() => failureToast.remove(), 400);
+    });
+
+    // Retry button handler
+    failureToast.querySelector('.toast-retry-btn').addEventListener('click', async () => {
+      // Hide the failure toast
+      failureToast.classList.add('refresh-toast--hiding');
+      setTimeout(() => failureToast.remove(), 400);
+
+      // Trigger retry of failed components
+      // This calls the global retryFailedComponents function defined below
+      if (typeof retryFailedComponents === 'function') {
+        retryFailedComponents(this.failedComponents);
+      }
+    });
+  }
 }
 
 // Global toast manager instance
 const toastManager = new RefreshToastManager();
+
+/**
+ * Retry failed components from the batch failure toast
+ * This is called by the retry button in the failure toast
+ * Simply triggers the main Refresh All button which will retry all components
+ */
+async function retryFailedComponents(failedComponentsList) {
+  console.log('Retrying failed components:', failedComponentsList.map(f => f.name));
+
+  // Trigger the main refresh all button
+  const refreshAllBtn = document.getElementById('refresh-all-btn');
+  if (refreshAllBtn && !refreshAllBtn.disabled) {
+    refreshAllBtn.click();
+  } else {
+    console.warn('Refresh All button not available or disabled');
+  }
+}
 
 /**
  * GA4 Tracking: First refresh within 24h (one-time activation event)
@@ -1455,10 +1578,16 @@ async function refreshAll() {
       
       // 🎯 BATCH 5: Track individual refresh failures
       if (!refreshResult.success) {
+        // Classify error using new helper function
+        const errorCode = classifyError(refreshResult.error);
+
+        // Record failure for toast display
+        toastManager.recordFailure(displayName, errorCode);
+
         try {
           const errorMsg = refreshResult.error?.toLowerCase() || '';
           let errorType = 'unknown';
-          
+
           // Classify error from result
           if (errorMsg.includes('skeleton') || errorMsg.includes('empty container')) {
             errorType = 'skeleton_content';
@@ -1471,13 +1600,13 @@ async function refreshAll() {
           } else if (errorMsg.includes('different element') || errorMsg.includes('fingerprint')) {
             errorType = 'fingerprint_mismatch';
           }
-          
+
           // Determine which fallback was attempted
           let fallbackUsed = 'direct'; // Default assumption
           if (errorMsg.includes('tab') || errorMsg.includes('background') || errorMsg.includes('active')) {
             fallbackUsed = 'all_exhausted';
           }
-          
+
           chrome.runtime.sendMessage({
             type: 'GA4_EVENT',
             eventName: 'refresh_failed',
@@ -1493,7 +1622,7 @@ async function refreshAll() {
           console.warn('GA4 tracking error:', ga4Error);
         }
       }
-      
+
       // Mark this component as complete
       toastManager.completeComponent(refreshResult.success);
     }
@@ -1530,7 +1659,13 @@ async function refreshAll() {
           positionBased: comp.positionBased || false, // 🎯 BATCH 5 FIX: Preserve capture method
           refreshPaused: comp.refreshPaused, // Preserve paused state!
           last_refresh: comp.last_refresh,
-          cardSize: comp.cardSize || '1x1' // 🔧 FIX: Preserve card size on refresh
+          cardSize: comp.cardSize || '1x1', // 🔧 FIX: Preserve card size on refresh
+          // Preserve existing error state fields
+          lastAttemptAt: comp.lastAttemptAt,
+          lastSuccessAt: comp.lastSuccessAt,
+          lastOutcome: comp.lastOutcome || 'paused',
+          lastErrorCode: comp.lastErrorCode,
+          lastErrorAt: comp.lastErrorAt
         };
         
         updatedLocalData[comp.id] = {
@@ -1541,6 +1676,9 @@ async function refreshAll() {
         };
       } else {
         // Component was refreshed - update with new data
+        const attemptTimestamp = new Date().toISOString();
+        const errorCode = result.success ? null : classifyError(result.error);
+
         syncUpdates[`comp-${comp.id}`] = {
           id: comp.id,
           name: comp.name,
@@ -1553,7 +1691,13 @@ async function refreshAll() {
           positionBased: comp.positionBased || false, // 🎯 BATCH 5 FIX: Preserve capture method
           refreshPaused: comp.refreshPaused, // Preserve state
           last_refresh: result.success ? result.last_refresh : comp.last_refresh,
-          cardSize: comp.cardSize || '1x1' // 🔧 FIX: Preserve card size on refresh
+          cardSize: comp.cardSize || '1x1', // 🔧 FIX: Preserve card size on refresh
+          // New error tracking fields
+          lastAttemptAt: attemptTimestamp,
+          lastSuccessAt: result.success ? attemptTimestamp : comp.lastSuccessAt,
+          lastOutcome: result.success ? 'success' : 'failed',
+          lastErrorCode: errorCode,
+          lastErrorAt: result.success ? null : attemptTimestamp
         };
         
         // Save full data to local (including HTML)
@@ -1623,23 +1767,34 @@ async function refreshAll() {
     // Update button
     btn.textContent = `✅ Done`;
     btn.style.background = '#28a745';
-    
-    // Auto-reload after success toast displays
-    setTimeout(() => {
-      sessionStorage.setItem('reloadFromRefresh', 'true'); // Flag to skip board_opened tracking
-      location.reload();
-    }, 3500);
+
+    // Only auto-reload if there are NO failures
+    // If there are failures, let the persistent toast stay visible with retry button
+    const failCount = results.filter(r => !r.success).length;
+    if (failCount === 0) {
+      // Auto-reload after success toast displays
+      setTimeout(() => {
+        sessionStorage.setItem('reloadFromRefresh', 'true'); // Flag to skip board_opened tracking
+        location.reload();
+      }, 3500);
+    } else {
+      // Failures present - reload page to show error states properly
+      // Longer delay (10s) to give user time to see the failure toast and click retry if desired
+      setTimeout(() => {
+        sessionStorage.setItem('reloadFromRefresh', 'true');
+        location.reload();
+      }, 10000); // 10 seconds - enough time to read failures and click retry
+    }
     
   } catch (error) {
     console.error('❌ Refresh failed:', error);
     toastManager.hideToast();
     btn.textContent = '❌ Refresh failed';
     btn.style.background = '#dc3545';
-    
+
     setTimeout(() => {
-      btn.textContent = '🔄 Refresh All';
-      btn.style.background = '#007bff';
-      btn.disabled = false;
-    }, 2000);
+      sessionStorage.setItem('reloadFromRefresh', 'true');
+      location.reload();
+    }, 3000);
   }
 }

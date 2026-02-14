@@ -34,6 +34,14 @@
 - **Used in**: Card top bar "Clock" button (last refresh tooltip)
 - **Location in repo**: Inline SVG in `public/dashboard.js`
 
+### Warning Triangle Icon
+
+- **Source**: Octicons by GitHub Primer (https://github.com/primer/octicons)
+- **License**: MIT
+- **MIT License Text**: https://opensource.org/licenses/MIT
+- **Used in**: Card top bar "Warning triangle" icon (failed refresh state)
+- **Location in repo**: Inline SVG in `public/dashboard.js`
+
 ### Bin / Delete Icon
 
 - **Source**: Mono Icons by mono-company (https://github.com/mono-company/mono-icons)
