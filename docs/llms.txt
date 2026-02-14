@@ -1,6 +1,6 @@
 # SpotBoard
 
-> Chrome extension for monitoring website sections. Capture live widgets (trending deals, most read, scores, finance movers) into a personal dashboard with manual refresh.
+> Chrome extension for monitoring website sections. Capture live widgets (trending deals, most read, scores, finance movers) into a personal dashboard with manual refresh. 118+ active users, 5.0 rating on Chrome Web Store.
 
 ## What it's NOT
 - NOT a startpage (no bookmarks grid)
@@ -30,4 +30,4 @@
 - Homepage: https://bondybondbond.github.io/spotboard/
 - Privacy: https://bondybondbond.github.io/spotboard/privacy
 - GitHub: https://github.com/bondybondbond/spotboard
-- Chrome Web Store: (coming soon)
+- Chrome Web Store: https://chromewebstore.google.com/detail/spotboard/dnjleheimdlmdfajlciheclfbhmafiai

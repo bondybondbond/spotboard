@@ -1,0 +1,924 @@
+---
+title: SpotBoard - Website Section Monitoring
+description: Stop clicking through pages daily. Capture website sections, refresh when YOU want. Privacy-first, local storage only.
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpotBoard - Website Section Monitoring</title>
+    <meta name="description" content="Stop clicking through pages daily. Capture website sections, refresh when YOU want. Privacy-first, local storage only.">
+
+    <!-- Fonts: Sporting Grotesque (display) + IBM Plex Mono (accents) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            /* Editorial color system */
+            --color-ink: #0A0A0A;
+            --color-paper: #FAFAF9;
+            --color-slate: #64748B;
+            --color-accent: #2563EB;
+            --color-accent-dark: #1E40AF;
+            --color-highlight: #FBBF24;
+            --color-success: #10B981;
+            --color-border: #E2E8F0;
+            --color-card: #FFFFFF;
+
+            /* Typography scale */
+            --font-display: 'DM Sans', -apple-system, sans-serif;
+            --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+
+            /* Spacing system (8px base) */
+            --space-xs: 0.5rem;
+            --space-sm: 1rem;
+            --space-md: 1.5rem;
+            --space-lg: 2.5rem;
+            --space-xl: 4rem;
+            --space-2xl: 6rem;
+
+            /* Layout */
+            --content-width: 1200px;
+            --radius: 12px;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-display);
+            background: var(--color-paper);
+            color: var(--color-ink);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Typography */
+        h1, h2, h3, h4 {
+            font-weight: 700;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+        }
+
+        h1 {
+            font-size: clamp(2.5rem, 5vw, 4rem);
+            margin-bottom: var(--space-md);
+        }
+
+        h2 {
+            font-size: clamp(2rem, 4vw, 3rem);
+            margin-bottom: var(--space-lg);
+        }
+
+        h3 {
+            font-size: 1.5rem;
+            margin-bottom: var(--space-sm);
+        }
+
+        .mono {
+            font-family: var(--font-mono);
+            font-size: 0.875rem;
+            letter-spacing: -0.01em;
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 90vh;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-xl);
+            align-items: center;
+            padding: var(--space-2xl) var(--space-lg);
+            max-width: var(--content-width);
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .hero-content {
+            animation: fadeInUp 0.8s ease-out;
+        }
+
+        .hero-badge {
+            display: inline-block;
+            background: var(--color-accent);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 100px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: var(--space-md);
+            animation: slideDown 0.6s ease-out;
+        }
+
+        .hero h1 {
+            background: linear-gradient(135deg, var(--color-ink) 0%, var(--color-slate) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-subtitle {
+            font-size: 1.25rem;
+            color: var(--color-slate);
+            margin-bottom: var(--space-lg);
+            max-width: 540px;
+        }
+
+        .cta-group {
+            display: flex;
+            gap: var(--space-sm);
+            flex-wrap: wrap;
+            margin-bottom: var(--space-lg);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem 2rem;
+            border-radius: var(--radius);
+            font-weight: 600;
+            font-size: 1rem;
+            text-decoration: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+
+        .btn-primary {
+            background: var(--color-accent);
+            color: white;
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn-primary:hover {
+            background: var(--color-accent-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--color-ink);
+            border-color: var(--color-border);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--color-ink);
+            background: var(--color-card);
+        }
+
+        .hero-stats {
+            display: flex;
+            gap: var(--space-lg);
+            font-family: var(--font-mono);
+            margin-top: var(--space-xl);
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--color-accent);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--color-slate);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .hero-visual {
+            position: relative;
+            animation: fadeIn 1s ease-out 0.3s both;
+        }
+
+        .dashboard-preview {
+            width: 100%;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--color-border);
+            position: relative;
+            z-index: 2;
+        }
+
+        .dashboard-preview img {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: var(--radius);
+        }
+
+        /* Floating decoration */
+        .hero-visual::before {
+            content: '';
+            position: absolute;
+            top: -20px;
+            left: -20px;
+            right: 40px;
+            bottom: 40px;
+            background: linear-gradient(135deg, var(--color-accent), var(--color-highlight));
+            opacity: 0.1;
+            border-radius: var(--radius);
+            z-index: 1;
+            animation: float 6s ease-in-out infinite;
+        }
+
+        /* Section Divider */
+        .section-divider {
+            max-width: var(--content-width);
+            margin: var(--space-2xl) auto;
+            padding: 0 var(--space-lg);
+            position: relative;
+        }
+
+        .section-divider::before {
+            content: '';
+            display: block;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--color-border), transparent);
+        }
+
+        /* Use Cases Section */
+        .use-cases {
+            max-width: var(--content-width);
+            margin: 0 auto;
+            padding: var(--space-2xl) var(--space-lg);
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: var(--space-xl);
+        }
+
+        .section-tag {
+            font-family: var(--font-mono);
+            font-size: 0.875rem;
+            color: var(--color-accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: var(--space-sm);
+        }
+
+        .cases-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: var(--space-md);
+        }
+
+        .case-card {
+            background: var(--color-card);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius);
+            padding: var(--space-lg);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .case-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--color-accent), var(--color-highlight));
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform 0.3s ease;
+        }
+
+        .case-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .case-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--color-accent);
+        }
+
+        .case-icon {
+            font-size: 2.5rem;
+            margin-bottom: var(--space-sm);
+            display: block;
+        }
+
+        .case-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: var(--space-xs);
+        }
+
+        .case-description {
+            color: var(--color-slate);
+            font-size: 0.95rem;
+        }
+
+        /* Video Section */
+        .video-section {
+            background: var(--color-ink);
+            color: white;
+            padding: var(--space-2xl) var(--space-lg);
+            margin: var(--space-2xl) 0;
+        }
+
+        .video-container {
+            max-width: 900px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        .video-container h2 {
+            color: white;
+            margin-bottom: var(--space-lg);
+        }
+
+        .video-wrapper {
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 */
+            height: 0;
+            overflow: hidden;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .video-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+        }
+
+        /* Features Section */
+        .features {
+            max-width: var(--content-width);
+            margin: 0 auto;
+            padding: var(--space-2xl) var(--space-lg);
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: var(--space-lg);
+        }
+
+        .feature {
+            display: flex;
+            gap: var(--space-sm);
+            align-items: flex-start;
+        }
+
+        .feature-icon {
+            flex-shrink: 0;
+            width: 24px;
+            height: 24px;
+            background: var(--color-success);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 700;
+            margin-top: 4px;
+        }
+
+        .feature-content h4 {
+            font-size: 1.1rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .feature-content p {
+            color: var(--color-slate);
+            font-size: 0.95rem;
+        }
+
+        /* Not Section */
+        .not-section {
+            background: var(--color-card);
+            border: 2px solid var(--color-border);
+            border-radius: var(--radius);
+            max-width: 800px;
+            margin: var(--space-2xl) auto;
+            padding: var(--space-lg);
+        }
+
+        .not-section h3 {
+            font-family: var(--font-mono);
+            color: var(--color-accent);
+            margin-bottom: var(--space-md);
+        }
+
+        .not-list {
+            display: grid;
+            gap: var(--space-sm);
+        }
+
+        .not-item {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            padding: var(--space-sm);
+            background: var(--color-paper);
+            border-radius: 8px;
+            font-size: 0.95rem;
+        }
+
+        .not-item::before {
+            content: '✕';
+            color: var(--color-slate);
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+
+        /* Privacy Section */
+        .privacy-section {
+            background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
+            color: white;
+            padding: var(--space-2xl) var(--space-lg);
+        }
+
+        .privacy-container {
+            max-width: var(--content-width);
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-xl);
+            align-items: center;
+        }
+
+        .privacy-content h2 {
+            color: white;
+        }
+
+        .privacy-features {
+            display: grid;
+            gap: var(--space-md);
+            margin-top: var(--space-lg);
+        }
+
+        .privacy-feature {
+            display: flex;
+            gap: var(--space-sm);
+            align-items: flex-start;
+        }
+
+        .privacy-icon {
+            flex-shrink: 0;
+            font-size: 1.5rem;
+        }
+
+        .privacy-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: var(--space-md);
+            background: rgba(255, 255, 255, 0.05);
+            padding: var(--space-lg);
+            border-radius: var(--radius);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .privacy-stat {
+            text-align: center;
+        }
+
+        .privacy-stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            font-family: var(--font-mono);
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        .privacy-stat-label {
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        /* Footer */
+        footer {
+            background: var(--color-ink);
+            color: white;
+            padding: var(--space-xl) var(--space-lg);
+        }
+
+        .footer-container {
+            max-width: var(--content-width);
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: var(--space-xl);
+        }
+
+        .footer-brand {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: var(--space-sm);
+        }
+
+        .footer-description {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.95rem;
+            max-width: 400px;
+        }
+
+        .footer-links {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-xs);
+        }
+
+        .footer-links h4 {
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: var(--space-sm);
+        }
+
+        .footer-links a {
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            font-size: 0.95rem;
+            transition: color 0.2s ease;
+        }
+
+        .footer-links a:hover {
+            color: white;
+        }
+
+        .footer-bottom {
+            max-width: var(--content-width);
+            margin: var(--space-lg) auto 0;
+            padding-top: var(--space-lg);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.875rem;
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0) rotate(0deg);
+            }
+            50% {
+                transform: translateY(-20px) rotate(2deg);
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 968px) {
+            .hero {
+                grid-template-columns: 1fr;
+                gap: var(--space-lg);
+                min-height: auto;
+                padding: var(--space-xl) var(--space-lg);
+            }
+
+            .hero-visual {
+                order: -1;
+            }
+
+            .privacy-container,
+            .footer-container {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-stats {
+                flex-direction: column;
+                gap: var(--space-md);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .cta-group {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <span class="hero-badge">⚡ Live on Chrome Web Store</span>
+            <h1>Stop clicking through pages daily</h1>
+            <p class="hero-subtitle">
+                Capture website sections, refresh when YOU want. Privacy-first, local storage only.
+            </p>
+
+            <div class="cta-group">
+                <a href="https://chromewebstore.google.com/detail/spotboard/dnjleheimdlmdfajlciheclfbhmafiai?utm_source=github&utm_medium=pages&utm_campaign=homepage" class="btn btn-primary">
+                    <span>Add to Chrome</span>
+                    <span>→</span>
+                </a>
+                <a href="https://youtu.be/M6wkcgjFp88" class="btn btn-secondary" target="_blank">
+                    <span>Watch Demo</span>
+                    <span>▶</span>
+                </a>
+            </div>
+
+            <div class="hero-stats">
+                <div class="stat">
+                    <span class="stat-value">118+</span>
+                    <span class="stat-label">Active Users</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">5.0</span>
+                    <span class="stat-label">Chrome Rating</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">100%</span>
+                    <span class="stat-label">Open Source</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="hero-visual">
+            <div class="dashboard-preview">
+                <img src="assets/hero.png" alt="SpotBoard Dashboard showing captured website sections" loading="eager">
+            </div>
+        </div>
+    </section>
+
+    <div class="section-divider"></div>
+
+    <!-- Use Cases Section -->
+    <section class="use-cases">
+        <div class="section-header">
+            <div class="section-tag">Perfect For</div>
+            <h2>Who It's For</h2>
+        </div>
+
+        <div class="cases-grid">
+            <div class="case-card">
+                <span class="case-icon">📈</span>
+                <h3 class="case-title">Finance Trackers</h3>
+                <p class="case-description">
+                    Monitor Yahoo Finance movers, MarketWatch trends, Investing.com crypto. Green/red sentiment coloring for instant scanability.
+                </p>
+            </div>
+
+            <div class="case-card">
+                <span class="case-icon">💰</span>
+                <h3 class="case-title">Deal Hunters</h3>
+                <p class="case-description">
+                    Track HotUKDeals trending, Groupon daily deals, free game giveaways, property listings. Never miss a good offer.
+                </p>
+            </div>
+
+            <div class="case-card">
+                <span class="case-icon">📰</span>
+                <h3 class="case-title">News Readers</h3>
+                <p class="case-description">
+                    Follow BBC Most Read, Guardian top stories, NPR headlines, CNN breaking news. One dashboard replaces your mental checklist.
+                </p>
+            </div>
+
+            <div class="case-card">
+                <span class="case-icon">⚽</span>
+                <h3 class="case-title">Sports Fans</h3>
+                <p class="class-description">
+                    Check ESPN scores, Premier League tables, Sky Sports fixtures, fantasy updates. All your scores in one place.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Video Section -->
+    <section class="video-section">
+        <div class="video-container">
+            <h2>See SpotBoard in Action</h2>
+            <div class="video-wrapper">
+                <iframe
+                    src="https://www.youtube.com/embed/M6wkcgjFp88"
+                    title="SpotBoard Demo Video"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen
+                    loading="lazy">
+                </iframe>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features">
+        <div class="section-header">
+            <div class="section-tag">Features</div>
+            <h2>What Makes SpotBoard Different</h2>
+        </div>
+
+        <div class="features-grid">
+            <div class="feature">
+                <div class="feature-icon">✓</div>
+                <div class="feature-content">
+                    <h4>Unlimited Captures</h4>
+                    <p>Save up to 10 components per board. No limits, no paywalls, completely free.</p>
+                </div>
+            </div>
+
+            <div class="feature">
+                <div class="feature-icon">✓</div>
+                <div class="feature-content">
+                    <h4>Manual Refresh Only</h4>
+                    <p>No background updates, no doomscrolling. You decide when to check for new content.</p>
+                </div>
+            </div>
+
+            <div class="feature">
+                <div class="feature-icon">✓</div>
+                <div class="feature-content">
+                    <h4>Cross-Device Sync</h4>
+                    <p>Component lists sync via Chrome. Access your board wherever you log in.</p>
+                </div>
+            </div>
+
+            <div class="feature">
+                <div class="feature-icon">✓</div>
+                <div class="feature-content">
+                    <h4>Smart Exclusion Mode</h4>
+                    <p>Remove ads, timestamps, and noise from captured sections with one click.</p>
+                </div>
+            </div>
+
+            <div class="feature">
+                <div class="feature-icon">✓</div>
+                <div class="feature-content">
+                    <h4>Position-Based Capture</h4>
+                    <p>Track rotating content like "trending deals" that change position on the page.</p>
+                </div>
+            </div>
+
+            <div class="feature">
+                <div class="feature-icon">✓</div>
+                <div class="feature-content">
+                    <h4>Sentiment Coloring</h4>
+                    <p>Automatic green/red highlighting for financial data and stock movements.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Not Section -->
+    <section class="use-cases">
+        <div class="not-section">
+            <h3>What SpotBoard is NOT</h3>
+            <div class="not-list">
+                <div class="not-item">Not a startpage (no bookmarks grid)</div>
+                <div class="not-item">Not RSS (captures visual layout, not feeds)</div>
+                <div class="not-item">Not auto-refresh alerts (manual only)</div>
+                <div class="not-item">Not for real-time trading (use broker apps)</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Privacy Section -->
+    <section class="privacy-section">
+        <div class="privacy-container">
+            <div class="privacy-content">
+                <h2>🔒 Built for Privacy</h2>
+                <div class="privacy-features">
+                    <div class="privacy-feature">
+                        <span class="privacy-icon">✓</span>
+                        <div>
+                            <strong>Your data never leaves your browser</strong><br>
+                            <span style="color: rgba(255, 255, 255, 0.7);">HTML content stored locally only. Zero servers, zero tracking.</span>
+                        </div>
+                    </div>
+                    <div class="privacy-feature">
+                        <span class="privacy-icon">✓</span>
+                        <div>
+                            <strong>100% open source</strong><br>
+                            <span style="color: rgba(255, 255, 255, 0.7);">Audit the code yourself on GitHub. Complete transparency.</span>
+                        </div>
+                    </div>
+                    <div class="privacy-feature">
+                        <span class="privacy-icon">✓</span>
+                        <div>
+                            <strong>Works completely offline</strong><br>
+                            <span style="color: rgba(255, 255, 255, 0.7);">No internet? No problem. View saved captures anytime.</span>
+                        </div>
+                    </div>
+                    <div class="privacy-feature">
+                        <span class="privacy-icon">✓</span>
+                        <div>
+                            <strong>No account needed</strong><br>
+                            <span style="color: rgba(255, 255, 255, 0.7);">Install and start using immediately. Zero friction.</span>
+                        </div>
+                    </div>
+                </div>
+                <p style="margin-top: var(--space-lg); color: rgba(255, 255, 255, 0.8);">
+                    <a href="privacy" style="color: white; text-decoration: underline;">Read our full privacy policy →</a>
+                </p>
+            </div>
+
+            <div class="privacy-stats">
+                <div class="privacy-stat">
+                    <span class="privacy-stat-value">0</span>
+                    <span class="privacy-stat-label">Servers</span>
+                </div>
+                <div class="privacy-stat">
+                    <span class="privacy-stat-value">0</span>
+                    <span class="privacy-stat-label">Tracking</span>
+                </div>
+                <div class="privacy-stat">
+                    <span class="privacy-stat-value">0</span>
+                    <span class="privacy-stat-label">Accounts</span>
+                </div>
+                <div class="privacy-stat">
+                    <span class="privacy-stat-value">100%</span>
+                    <span class="privacy-stat-label">Local</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-container">
+            <div>
+                <div class="footer-brand">SpotBoard</div>
+                <p class="footer-description">
+                    Stop clicking through pages daily. Capture website sections, refresh when YOU want. Privacy-first, local storage only.
+                </p>
+            </div>
+
+            <div class="footer-links">
+                <h4>Product</h4>
+                <a href="https://chromewebstore.google.com/detail/spotboard/dnjleheimdlmdfajlciheclfbhmafiai?utm_source=github&utm_medium=pages&utm_campaign=footer">Chrome Web Store</a>
+                <a href="https://youtu.be/M6wkcgjFp88" target="_blank">Demo Video</a>
+                <a href="privacy">Privacy Policy</a>
+            </div>
+
+            <div class="footer-links">
+                <h4>Resources</h4>
+                <a href="https://github.com/bondybondbond/spotboard" target="_blank">GitHub</a>
+                <a href="https://github.com/bondybondbond/spotboard/releases" target="_blank">Changelog</a>
+                <a href="mailto:spotboard@outlook.com">Contact</a>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <p>&copy; 2025 SpotBoard. Open source under MIT License.</p>
+        </div>
+    </footer>
+
+</body>
+</html>

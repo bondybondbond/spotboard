@@ -1,7 +1,7 @@
 # SpotBoard - Website Section Monitoring
 
 [![Website](https://img.shields.io/badge/Website-Visit-blue)](https://bondybondbond.github.io/spotboard/)
-[![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Coming_Soon-green)]()
+[![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Live-green)](https://chromewebstore.google.com/detail/spotboard/dnjleheimdlmdfajlciheclfbhmafiai?utm_source=github&utm_medium=readme&utm_campaign=badge)
 
 Stop clicking through 4 sites daily. Track them all in one dashboard.
 
@@ -33,7 +33,7 @@ Visit [bondybondbond.github.io/spotboard](https://bondybondbond.github.io/spotbo
 [Read full privacy policy](https://bondybondbond.github.io/spotboard/privacy)
 
 ## 📦 Installation
-Chrome Web Store submission in progress. Follow this repo for release updates.
+[Install from Chrome Web Store](https://chromewebstore.google.com/detail/spotboard/dnjleheimdlmdfajlciheclfbhmafiai?utm_source=github&utm_medium=readme&utm_campaign=install_button)
 
 ## 📝 License
 MIT
