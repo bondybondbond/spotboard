@@ -562,7 +562,96 @@
       padding: 60px 20px;
       color: #666;
     }
-    
+
+    /* Empty state two-column layout */
+    .empty-state-columns {
+      display: flex;
+      gap: 40px;
+      max-width: 1000px;
+      margin: 0 auto 24px auto;
+      align-items: flex-start;
+    }
+
+    .empty-state-column {
+      flex: 1;
+      min-width: 0; /* Fix flexbox text overflow */
+    }
+
+    .empty-state-heading {
+      font-size: 19px;
+      color: #1a1a1a;
+      font-weight: 600;
+      margin-bottom: 16px;
+      text-align: left;
+    }
+
+    /* Demo placeholder (click-to-load) */
+    .demo-placeholder {
+      position: relative;
+      padding-bottom: 56.25%; /* 16:9 aspect ratio */
+      height: 0;
+      overflow: hidden;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      cursor: pointer;
+      transition: transform 0.2s ease;
+      border: none;
+      width: 100%;
+    }
+
+    .demo-placeholder:hover {
+      transform: scale(1.02);
+    }
+
+    .demo-placeholder-content {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: white;
+    }
+
+    .demo-play-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    .demo-button-text {
+      background: rgba(255, 255, 255, 0.9);
+      color: #667eea;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 16px;
+      display: inline-block;
+      transition: background 0.2s ease;
+    }
+
+    .demo-placeholder:hover .demo-button-text {
+      background: white;
+    }
+
+    .demo-fallback-link {
+      display: block;
+      margin-top: 8px;
+      font-size: 14px;
+      color: #5f6368;
+      text-decoration: none;
+    }
+
+    .demo-fallback-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Responsive: stack columns on mobile */
+    @media (max-width: 900px) {
+      .empty-state-columns {
+        flex-direction: column;
+      }
+    }
+
     /* Refresh Toast Notification */
     .refresh-toast {
       position: fixed;
@@ -1110,67 +1199,13 @@
   </div>
   
   <div id="components-container">
+    <!-- Empty state rendered by dashboard.js on load -->
     <div class="empty-state">
-      <!-- Main headline -->
-      <h2 style="font-size: 26px; font-weight: 600; color: #1a1a1a; margin-bottom: 12px;">Your board is empty</h2>
-      <p style="font-size: 18px; color: #5f6368; margin-bottom: 24px;">Here's what others track:</p>
-      
-      <!-- Categories -->
-      <div style="text-align: left; max-width: 500px; margin: 0 auto;">
-        <!-- News -->
-        <div style="margin-bottom: 16px;">
-          <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">📰 News & Headlines</div>
-          <div style="font-size: 17px; color: #5f6368;">
-            <a href="https://bbc.co.uk/news" target="_blank" style="color: #1a73e8; text-decoration: none;">BBC</a> · 
-            <a href="https://nbcnews.com" target="_blank" style="color: #1a73e8; text-decoration: none;">NBC News</a> · 
-            <a href="https://techcrunch.com" target="_blank" style="color: #1a73e8; text-decoration: none;">TechCrunch</a>
-          </div>
-        </div>
-        
-        <!-- Sports -->
-        <div style="margin-bottom: 16px;">
-          <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🏆 Sports Scores</div>
-          <div style="font-size: 17px; color: #5f6368;">
-            <a href="https://espn.com" target="_blank" style="color: #1a73e8; text-decoration: none;">ESPN</a> · 
-            <a href="https://skysports.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Sky Sports</a> · 
-            <a href="https://as.com" target="_blank" style="color: #1a73e8; text-decoration: none;">AS</a>
-          </div>
-        </div>
-        
-        <!-- Tech -->
-        <div style="margin-bottom: 16px;">
-          <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🚀 Tech News & Launches</div>
-          <div style="font-size: 17px; color: #5f6368;">
-            <a href="https://producthunt.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Product Hunt</a> · 
-            <a href="https://github.com" target="_blank" style="color: #1a73e8; text-decoration: none;">GitHub</a> · 
-            <a href="https://wired.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Wired</a>
-          </div>
-        </div>
-        
-        <!-- Deals -->
-        <div style="margin-bottom: 16px;">
-          <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🛍️ Daily Deals</div>
-          <div style="font-size: 17px; color: #5f6368;">
-            <a href="https://amazon.co.uk" target="_blank" style="color: #1a73e8; text-decoration: none;">Amazon</a> · 
-            <a href="https://gumtree.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Gumtree</a> · 
-            <a href="https://hotukdeals.com" target="_blank" style="color: #1a73e8; text-decoration: none;">HotUKDeals</a>
-          </div>
-        </div>
-        
-        <!-- Weather -->
-        <div style="margin-bottom: 24px;">
-          <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🌦️ Weather Forecast</div>
-          <div style="font-size: 17px; color: #5f6368;">
-            <a href="https://accuweather.com" target="_blank" style="color: #1a73e8; text-decoration: none;">AccuWeather</a> · 
-            <a href="https://yr.no" target="_blank" style="color: #1a73e8; text-decoration: none;">YR.no</a> · 
-            <a href="https://theweathernetwork.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Weather Network</a>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Help tip -->
-      <p style="font-size: 18px; color: #5f6368; margin-top: 16px;">
-        💡 <strong>Need help?</strong> Click the ℹ️ button in the top bar anytime to see how to capture.
+      <h2 style="font-size: 26px; font-weight: 600; color: #1a1a1a; margin-bottom: 12px;">
+        Your board is empty
+      </h2>
+      <p style="font-size: 18px; color: #5f6368;">
+        Loading...
       </p>
     </div>
   </div>

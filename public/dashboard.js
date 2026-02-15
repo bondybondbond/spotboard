@@ -184,6 +184,152 @@ function getEngagementTime() {
 // Start engagement tracking immediately when script loads
 startEngagementTimer();
 
+/**
+ * Renders the empty dashboard state with click-to-load demo.
+ * Used by both initial page load and "last card deleted" scenarios.
+ */
+function renderEmptyState(container) {
+  container.innerHTML = `
+    <div class="empty-state" style="display: block;">
+      <h2 style="font-size: 26px; font-weight: 600; color: #1a1a1a; margin-bottom: 12px;">
+        Your board is empty
+      </h2>
+
+      <!-- Two-column layout: Demo + Suggestions -->
+      <div class="empty-state-columns">
+
+        <!-- Left Column: Click-to-load Demo -->
+        <div class="empty-state-column">
+          <p class="empty-state-heading">See how it works</p>
+
+          <button
+            class="demo-placeholder"
+            id="demo-placeholder"
+            type="button"
+            aria-label="Watch 30s demo">
+            <div class="demo-placeholder-content">
+              <div class="demo-play-icon">▶️</div>
+              <span class="demo-button-text">Watch 30s demo</span>
+            </div>
+          </button>
+
+          <a href="https://www.youtube.com/watch?v=M6wkcgjFp88"
+             target="_blank"
+             rel="noopener noreferrer"
+             class="demo-fallback-link">
+            Open demo in new tab →
+          </a>
+        </div>
+
+        <!-- Right Column: Suggestions -->
+        <div class="empty-state-column">
+          <p class="empty-state-heading">Out of ideas? These websites are popular to track</p>
+
+          <div style="text-align: left;">
+            <!-- News & Headlines -->
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 18px; font-weight: 400; color: #1a1a1a; margin-bottom: 4px;">
+                📰 News & Headlines
+              </div>
+              <div style="font-size: 17px; color: #5f6368;">
+                <a href="https://bbc.co.uk/news" target="_blank" style="color: #1a73e8; text-decoration: none;">BBC</a> ·
+                <a href="https://nbcnews.com" target="_blank" style="color: #1a73e8; text-decoration: none;">NBC News</a> ·
+                <a href="https://techcrunch.com" target="_blank" style="color: #1a73e8; text-decoration: none;">TechCrunch</a>
+              </div>
+            </div>
+
+            <!-- Sports Scores -->
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 18px; font-weight: 400; color: #1a1a1a; margin-bottom: 4px;">
+                ⚽ Sports Scores
+              </div>
+              <div style="font-size: 17px; color: #5f6368;">
+                <a href="https://espn.com" target="_blank" style="color: #1a73e8; text-decoration: none;">ESPN</a> ·
+                <a href="https://skysports.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Sky Sports</a> ·
+                <a href="https://as.com" target="_blank" style="color: #1a73e8; text-decoration: none;">AS</a>
+              </div>
+            </div>
+
+            <!-- Tech News & Launches -->
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 18px; font-weight: 400; color: #1a1a1a; margin-bottom: 4px;">
+                🚀 Tech News & Launches
+              </div>
+              <div style="font-size: 17px; color: #5f6368;">
+                <a href="https://producthunt.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Product Hunt</a> ·
+                <a href="https://github.com" target="_blank" style="color: #1a73e8; text-decoration: none;">GitHub</a> ·
+                <a href="https://wired.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Wired</a>
+              </div>
+            </div>
+
+            <!-- Daily Deals -->
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 18px; font-weight: 400; color: #1a1a1a; margin-bottom: 4px;">
+                💰 Daily Deals
+              </div>
+              <div style="font-size: 17px; color: #5f6368;">
+                <a href="https://amazon.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Amazon</a> ·
+                <a href="https://gumtree.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Gumtree</a> ·
+                <a href="https://hotukdeals.com" target="_blank" style="color: #1a73e8; text-decoration: none;">HotUKDeals</a>
+              </div>
+            </div>
+
+            <!-- Weather Forecast -->
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 18px; font-weight: 400; color: #1a1a1a; margin-bottom: 4px;">
+                🌤️ Weather Forecast
+              </div>
+              <div style="font-size: 17px; color: #5f6368;">
+                <a href="https://accuweather.com" target="_blank" style="color: #1a73e8; text-decoration: none;">AccuWeather</a> ·
+                <a href="https://yr.no" target="_blank" style="color: #1a73e8; text-decoration: none;">YR.no</a> ·
+                <a href="https://theweathernetwork.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Weather Network</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <p style="font-size: 18px; color: #5f6368; margin-top: 16px;">
+        💡 <strong>Need help?</strong> Click the ℹ️ button in the top bar anytime to see how to capture.
+      </p>
+    </div>
+  `;
+
+  // Add click handler for demo placeholder
+  const placeholder = container.querySelector('#demo-placeholder');
+  if (placeholder) {
+    // Preconnect on hover/focus for instant click feel (import-on-interaction pattern)
+    let preconnected = false;
+    const preconnect = () => {
+      if (preconnected) return;
+      preconnected = true;
+
+      const link = document.createElement('link');
+      link.rel = 'preconnect';
+      link.href = 'https://www.youtube-nocookie.com';
+      link.crossOrigin = 'anonymous';
+      document.head.appendChild(link);
+    };
+
+    placeholder.addEventListener('mouseenter', preconnect);
+    placeholder.addEventListener('focus', preconnect);
+
+    placeholder.addEventListener('click', function() {
+      // Track analytics
+      if (typeof gtag !== 'undefined') {
+        gtag('event', 'empty_state_demo_clicked', {
+          event_category: 'onboarding',
+          event_label: 'empty_dashboard_demo'
+        });
+      }
+
+      // Open hosted demo page (HTTPS environment = no YouTube Error 153)
+      window.open('https://bondybondbond.github.io/spotboard/demo.html', '_blank', 'noopener,noreferrer');
+    });
+  }
+}
+
 // Load and display components from hybrid storage (sync metadata + local data)
 (async () => {
   try {
@@ -261,9 +407,8 @@ startEngagementTimer();
     injectCleanupCSS();
   
     if (components.length === 0) {
-      // Show empty state (hidden by default in CSS to prevent flash)
-      const emptyState = container.querySelector('.empty-state');
-      if (emptyState) emptyState.style.display = 'block';
+      // Show empty state with click-to-load demo
+      renderEmptyState(container);
       return;
     }
   
@@ -749,73 +894,9 @@ startEngagementTimer();
           // Remove card from DOM
           card.remove();
           
-          // Show empty state if no components left
+          // Show empty state with click-to-load demo
           if (updated.length === 0) {
-            container.innerHTML = `
-              <div class="empty-state" style="display: block;">
-                <!-- Main headline -->
-                <h2 style="font-size: 26px; font-weight: 600; color: #1a1a1a; margin-bottom: 12px;">Your board is empty</h2>
-                <p style="font-size: 18px; color: #5f6368; margin-bottom: 24px;">Here's what others track:</p>
-                
-                <!-- Categories -->
-                <div style="text-align: left; max-width: 500px; margin: 0 auto;">
-                  <!-- News -->
-                  <div style="margin-bottom: 16px;">
-                    <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">📰 News & Headlines</div>
-                    <div style="font-size: 17px; color: #5f6368;">
-                      <a href="https://bbc.co.uk/news" target="_blank" style="color: #1a73e8; text-decoration: none;">BBC</a> · 
-                      <a href="https://nbcnews.com" target="_blank" style="color: #1a73e8; text-decoration: none;">NBC News</a> · 
-                      <a href="https://techcrunch.com" target="_blank" style="color: #1a73e8; text-decoration: none;">TechCrunch</a>
-                    </div>
-                  </div>
-                  
-                  <!-- Sports -->
-                  <div style="margin-bottom: 16px;">
-                    <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🏆 Sports Scores</div>
-                    <div style="font-size: 17px; color: #5f6368;">
-                      <a href="https://espn.com" target="_blank" style="color: #1a73e8; text-decoration: none;">ESPN</a> · 
-                      <a href="https://skysports.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Sky Sports</a> · 
-                      <a href="https://as.com" target="_blank" style="color: #1a73e8; text-decoration: none;">AS</a>
-                    </div>
-                  </div>
-                  
-                  <!-- Tech -->
-                  <div style="margin-bottom: 16px;">
-                    <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🚀 Tech News & Launches</div>
-                    <div style="font-size: 17px; color: #5f6368;">
-                      <a href="https://producthunt.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Product Hunt</a> · 
-                      <a href="https://github.com" target="_blank" style="color: #1a73e8; text-decoration: none;">GitHub</a> · 
-                      <a href="https://wired.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Wired</a>
-                    </div>
-                  </div>
-                  
-                  <!-- Deals -->
-                  <div style="margin-bottom: 16px;">
-                    <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🛍️ Daily Deals</div>
-                    <div style="font-size: 17px; color: #5f6368;">
-                      <a href="https://amazon.co.uk" target="_blank" style="color: #1a73e8; text-decoration: none;">Amazon</a> · 
-                      <a href="https://gumtree.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Gumtree</a> · 
-                      <a href="https://hotukdeals.com" target="_blank" style="color: #1a73e8; text-decoration: none;">HotUKDeals</a>
-                    </div>
-                  </div>
-                  
-                  <!-- Weather -->
-                  <div style="margin-bottom: 24px;">
-                    <div style="font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px;">🌦️ Weather Forecast</div>
-                    <div style="font-size: 17px; color: #5f6368;">
-                      <a href="https://accuweather.com" target="_blank" style="color: #1a73e8; text-decoration: none;">AccuWeather</a> · 
-                      <a href="https://yr.no" target="_blank" style="color: #1a73e8; text-decoration: none;">YR.no</a> · 
-                      <a href="https://theweathernetwork.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Weather Network</a>
-                    </div>
-                  </div>
-                </div>
-                
-                <!-- Help tip -->
-                <p style="font-size: 18px; color: #5f6368; margin-top: 16px;">
-                  💡 <strong>Need help?</strong> Click the ℹ️ button in the top bar anytime to see how to capture.
-                </p>
-              </div>
-            `;
+            renderEmptyState(container);
           }
         }
       });
