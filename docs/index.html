@@ -777,6 +777,14 @@ description: Stop clicking through pages daily. Capture website sections, refres
             flex-wrap: wrap;
         }
 
+        .badges-group-hero {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            margin-bottom: var(--space-md);
+            flex-wrap: wrap;
+        }
+
         .featured-ribbon {
             display: inline-flex;
             align-items: center;
@@ -1026,6 +1034,10 @@ description: Stop clicking through pages daily. Capture website sections, refres
                 margin-top: var(--space-sm);
             }
 
+            .badges-group-hero {
+                margin-bottom: var(--space-sm);
+            }
+
             .cws-badge img {
                 height: 48px;
             }
@@ -1070,20 +1082,16 @@ description: Stop clicking through pages daily. Capture website sections, refres
     <!-- Hero Section -->
     <section class="hero">
         <div class="hero-content">
-            <div class="brand-header">
-                <img src="assets/logo.png" alt="SpotBoard" class="logo" />
-                <h1 class="brand-name">SpotBoard</h1>
-                <div class="badges-group">
-                    <span class="featured-ribbon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
-                            <path d="M18.8 8A6.8 6.8 0 1 0 8 13.487v10.262l4-3.755 4 3.755V13.487A6.788 6.788 0 0 0 18.8 8zM15 21.438l-3-2.816-3 2.816v-7.345a6.72 6.72 0 0 0 6 0zM12 13.8A5.8 5.8 0 1 1 17.8 8a5.806 5.806 0 0 1-5.8 5.8zM12 4a4 4 0 1 0 4 4 4.004 4.004 0 0 0-4-4zm0 7a3 3 0 1 1 3-3 3.003 3.003 0 0 1-3 3z"/>
-                        </svg>
-                        Featured on CWS
-                    </span>
-                    <a href="https://chromewebstore.google.com/detail/spotboard/dnjleheimdlmdfajlciheclfbhmafiai?utm_source=github&utm_medium=pages&utm_campaign=badge" class="cws-badge" target="_blank" rel="noopener">
-                        <img src="https://storage.googleapis.com/web-dev-uploads/image/WlD8wC6g8khYWPJUsQceQkhXSlv1/iNEddTyWiMfLSwFD6qGq.png" alt="Available in the Chrome Web Store" height="58" />
-                    </a>
-                </div>
+            <div class="badges-group-hero">
+                <span class="featured-ribbon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+                        <path d="M18.8 8A6.8 6.8 0 1 0 8 13.487v10.262l4-3.755 4 3.755V13.487A6.788 6.788 0 0 0 18.8 8zM15 21.438l-3-2.816-3 2.816v-7.345a6.72 6.72 0 0 0 6 0zM12 13.8A5.8 5.8 0 1 1 17.8 8a5.806 5.806 0 0 1-5.8 5.8zM12 4a4 4 0 1 0 4 4 4.004 4.004 0 0 0-4-4zm0 7a3 3 0 1 1 3-3 3.003 3.003 0 0 1-3 3z"/>
+                    </svg>
+                    Featured on CWS
+                </span>
+                <a href="https://chromewebstore.google.com/detail/spotboard/dnjleheimdlmdfajlciheclfbhmafiai?utm_source=github&utm_medium=pages&utm_campaign=badge" class="cws-badge" target="_blank" rel="noopener">
+                    <img src="assets/chrome-web-store-badge.png" alt="Available in the Chrome Web Store" height="58" />
+                </a>
             </div>
             <h1>Stop clicking through pages daily</h1>
             <p class="hero-subtitle">
@@ -1124,8 +1132,8 @@ description: Stop clicking through pages daily. Capture website sections, refres
     <!-- Use Cases Section -->
     <section class="use-cases" id="use-cases">
         <div class="section-header">
-            <div class="section-tag">Perfect For</div>
-            <h2>Who It's For</h2>
+            <div class="section-tag">Use Cases</div>
+            <h2>Perfect For</h2>
         </div>
 
         <div class="cases-grid">
@@ -1212,8 +1220,8 @@ description: Stop clicking through pages daily. Capture website sections, refres
     <!-- Features Section -->
     <section class="features" id="features">
         <div class="section-header">
-            <div class="section-tag">Features</div>
-            <h2>What Makes SpotBoard Different</h2>
+            <div class="section-tag">What Makes SpotBoard Different</div>
+            <h2>Features</h2>
         </div>
 
         <div class="features-grid">
