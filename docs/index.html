@@ -813,7 +813,7 @@ description: Stop clicking through pages daily. Capture website sections, refres
 
         .cws-badge-hero {
             display: inline-block;
-            margin-top: var(--space-lg);
+            margin-top: var(--space-sm);
             transition: transform 0.3s ease, opacity 0.3s ease;
         }
 
@@ -950,75 +950,6 @@ description: Stop clicking through pages daily. Capture website sections, refres
             }
         }
 
-        /* How It Works Section */
-        .how-it-works {
-            max-width: var(--content-width);
-            margin: var(--space-xl) auto;
-            padding: var(--space-xl) var(--space-lg);
-        }
-
-        .how-it-works h2 {
-            text-align: center;
-            margin-bottom: var(--space-xl);
-        }
-
-        .steps {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: var(--space-lg);
-            position: relative;
-        }
-
-        .step {
-            text-align: center;
-            padding: var(--space-lg);
-            background: var(--color-card);
-            border-radius: var(--radius);
-            border: 1px solid var(--color-border);
-            position: relative;
-        }
-
-        .step-number {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 60px;
-            height: 60px;
-            background: var(--color-accent);
-            color: white;
-            border-radius: 50%;
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: var(--space-md);
-        }
-
-        .step h3 {
-            font-size: 1.25rem;
-            margin-bottom: var(--space-sm);
-        }
-
-        .step p {
-            color: var(--color-slate);
-            font-size: 0.95rem;
-            line-height: 1.6;
-        }
-
-        /* Connector lines between steps */
-        .steps::before {
-            content: '';
-            position: absolute;
-            top: 80px;
-            left: 25%;
-            right: 25%;
-            height: 2px;
-            background: linear-gradient(to right, transparent, var(--color-border) 20%, var(--color-border) 80%, transparent);
-            z-index: 0;
-        }
-
-        .step {
-            position: relative;
-            z-index: 1;
-        }
 
         @media (max-width: 768px) {
             .brand-header {
@@ -1028,15 +959,6 @@ description: Stop clicking through pages daily. Capture website sections, refres
 
             .brand-name {
                 font-size: 2.5rem;
-            }
-
-            .steps {
-                grid-template-columns: 1fr;
-                gap: var(--space-md);
-            }
-
-            .steps::before {
-                display: none;
             }
 
             .badges-group {
@@ -1083,7 +1005,7 @@ description: Stop clicking through pages daily. Capture website sections, refres
             </a>
             <div class="nav-links">
                 <a href="#use-cases">Use Cases</a>
-                <a href="#how-it-works">Steps</a>
+                <a href="#demo">Demo</a>
                 <a href="#features">Features</a>
                 <a href="#privacy">Privacy</a>
                 <a href="https://chromewebstore.google.com/detail/spotboard/dnjleheimdlmdfajlciheclfbhmafiai?utm_source=github&utm_medium=pages&utm_campaign=nav" class="nav-cta" target="_blank" rel="noopener">Add to Chrome</a>
@@ -1189,32 +1111,11 @@ description: Stop clicking through pages daily. Capture website sections, refres
         </div>
     </section>
 
-    <!-- How It Works Section -->
-    <section class="how-it-works" id="how-it-works">
-        <h2>Steps</h2>
-        <div class="steps">
-            <div class="step">
-                <span class="step-number">1</span>
-                <h3>Capture</h3>
-                <p>Click extension → hover over any section → confirm</p>
-            </div>
-            <div class="step">
-                <span class="step-number">2</span>
-                <h3>Dashboard</h3>
-                <p>All sections in one place, manual refresh button</p>
-            </div>
-            <div class="step">
-                <span class="step-number">3</span>
-                <h3>Sync</h3>
-                <p>Metadata syncs across devices (Chrome sync)</p>
-            </div>
-        </div>
-    </section>
-
     <!-- Video Section -->
-    <section class="video-section" id="video-section">
+    <section class="video-section" id="demo">
         <div class="video-container">
-            <h2>See SpotBoard in Action</h2>
+            <h2>Demo</h2>
+            <p style="color: rgba(255, 255, 255, 0.8); font-size: 1.1rem; margin-bottom: var(--space-lg);">See how SpotBoard works</p>
             <div class="video-wrapper">
                 <iframe
                     src="https://www.youtube.com/embed/M6wkcgjFp88"
