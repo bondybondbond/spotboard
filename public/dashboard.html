@@ -586,63 +586,33 @@
     }
 
     /* Demo placeholder (click-to-load) */
-    .demo-placeholder {
-      position: relative;
-      padding-bottom: 56.25%; /* 16:9 aspect ratio */
-      height: 0;
-      overflow: hidden;
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      cursor: pointer;
-      transition: transform 0.2s ease;
-      border: none;
+    /* Empty State Primary CTA */
+    .empty-state-primary-cta {
       width: 100%;
-    }
-
-    .demo-placeholder:hover {
-      transform: scale(1.02);
-    }
-
-    .demo-placeholder-content {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      color: white;
-    }
-
-    .demo-play-icon {
-      font-size: 48px;
-      margin-bottom: 12px;
-    }
-
-    .demo-button-text {
-      background: rgba(255, 255, 255, 0.9);
-      color: #667eea;
-      padding: 10px 20px;
-      border-radius: 6px;
+      padding: 14px 24px;
+      font-size: 18px;
       font-weight: 600;
-      font-size: 16px;
-      display: inline-block;
-      transition: background 0.2s ease;
+      color: white;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.2s ease, filter 0.2s ease;
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
     }
 
-    .demo-placeholder:hover .demo-button-text {
-      background: white;
+    .empty-state-primary-cta:hover {
+      transform: scale(1.02);
+      filter: brightness(1.1);
     }
 
-    .demo-fallback-link {
-      display: block;
-      margin-top: 8px;
-      font-size: 14px;
-      color: #5f6368;
-      text-decoration: none;
+    .empty-state-primary-cta:active {
+      transform: scale(0.98);
     }
 
-    .demo-fallback-link:hover {
-      text-decoration: underline;
+    .empty-state-primary-cta:focus-visible {
+      outline: 3px solid #667eea;
+      outline-offset: 2px;
     }
 
     /* Responsive: stack columns on mobile */

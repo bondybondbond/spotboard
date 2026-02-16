@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Practice Capture - SpotBoard Sandbox</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      color: #1a1a1a;
+      background: #f5f5f5;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+      padding-bottom: 24px;
+      border-bottom: 2px solid #667eea;
+    }
+
+    .header h1 {
+      font-size: 32px;
+      color: #667eea;
+      margin-bottom: 12px;
+    }
+
+    .header p {
+      font-size: 18px;
+      color: #5f6368;
+    }
+
+    .instructions {
+      background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 32px;
+      border-left: 4px solid #667eea;
+    }
+
+    .instructions h2 {
+      font-size: 20px;
+      margin-bottom: 12px;
+      color: #667eea;
+    }
+
+    .instructions ol {
+      padding-left: 24px;
+      color: #5f6368;
+    }
+
+    .instructions li {
+      margin-bottom: 8px;
+    }
+
+    .section {
+      margin-bottom: 32px;
+      padding: 24px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      transition: border-color 0.2s ease;
+    }
+
+    .section:hover {
+      border-color: #667eea;
+    }
+
+    .section h2 {
+      font-size: 24px;
+      margin-bottom: 12px;
+      color: #1a1a1a;
+    }
+
+    .section p {
+      margin-bottom: 12px;
+      color: #5f6368;
+    }
+
+    .section .meta {
+      font-size: 14px;
+      color: #999;
+      margin-top: 12px;
+    }
+
+    .section .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      background: #667eea;
+      color: white;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-right: 8px;
+    }
+
+    .stock-ticker {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .stock-item {
+      flex: 1;
+      min-width: 150px;
+      padding: 16px;
+      background: #f9f9f9;
+      border-radius: 6px;
+    }
+
+    .stock-item .symbol {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .stock-item .price {
+      font-size: 24px;
+      font-weight: 700;
+      color: #16a34a;
+    }
+
+    .stock-item .change {
+      font-size: 14px;
+      color: #16a34a;
+    }
+
+    .stock-item .change.negative {
+      color: #dc2626;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎯 Practice Capture</h1>
+      <p>Use this page to practice capturing content with SpotBoard</p>
+    </div>
+
+    <div class="instructions">
+      <h2>How to capture</h2>
+      <ol>
+        <li>Click the <strong>SpotBoard icon</strong> in your browser toolbar</li>
+        <li>Your cursor will change — click and drag to select any section below</li>
+        <li>Click <strong>"Save to Dashboard"</strong> in the confirmation modal</li>
+        <li>Return to your dashboard to see the captured content!</li>
+      </ol>
+    </div>
+
+    <div class="section">
+      <span class="badge">Latest</span>
+      <span class="badge">Tech</span>
+      <h2>📰 Breaking News: AI Startup Raises $500M</h2>
+      <p>
+        A new artificial intelligence startup focused on code generation has raised $500 million
+        in Series B funding, valuing the company at $5 billion. The funding round was led by
+        top venture capital firms and will be used to expand the team and accelerate product development.
+      </p>
+      <p>
+        "This is a transformative moment for developers," said the CEO in a statement.
+        "We're building tools that will fundamentally change how software is created."
+      </p>
+      <div class="meta">Published 2 hours ago • Technology • 5 min read</div>
+    </div>
+
+    <div class="section">
+      <span class="badge">Weather</span>
+      <h2>🌤️ Weather Forecast: Sunny Week Ahead</h2>
+      <p>
+        <strong>Today:</strong> Sunny with a high of 72°F (22°C). Light winds from the west at 5-10 mph.
+      </p>
+      <p>
+        <strong>Tomorrow:</strong> Partly cloudy, high of 68°F (20°C). 10% chance of rain in the evening.
+      </p>
+      <p>
+        <strong>Weekend:</strong> Clear skies expected with temperatures reaching 75°F (24°C) on Saturday.
+      </p>
+      <div class="meta">Last updated 1 hour ago</div>
+    </div>
+
+    <div class="section">
+      <span class="badge">Markets</span>
+      <h2>📈 Stock Market Update</h2>
+      <div class="stock-ticker">
+        <div class="stock-item">
+          <div class="symbol">TECH</div>
+          <div class="price">$428.50</div>
+          <div class="change">+12.30 (+2.95%)</div>
+        </div>
+        <div class="stock-item">
+          <div class="symbol">AUTO</div>
+          <div class="price">$215.75</div>
+          <div class="change negative">-5.20 (-2.35%)</div>
+        </div>
+        <div class="stock-item">
+          <div class="symbol">RETAIL</div>
+          <div class="price">$89.40</div>
+          <div class="change">+1.15 (+1.30%)</div>
+        </div>
+      </div>
+      <div class="meta">Market close • Feb 16, 2026</div>
+    </div>
+
+    <div class="section">
+      <span class="badge">Sports</span>
+      <h2>⚽ Match Results</h2>
+      <p>
+        <strong>Premier League:</strong> Manchester United 2 - 1 Liverpool<br>
+        <strong>La Liga:</strong> Real Madrid 3 - 0 Barcelona<br>
+        <strong>NBA:</strong> Lakers 108 - 105 Celtics
+      </p>
+      <div class="meta">Final scores • Feb 16, 2026</div>
+    </div>
+
+    <div class="section">
+      <span class="badge">Deals</span>
+      <h2>💰 Today's Top Deals</h2>
+      <p>
+        <strong>50% OFF</strong> - Premium Headphones (Was $200, Now $100)<br>
+        <strong>30% OFF</strong> - Laptop Backpack (Was $80, Now $56)<br>
+        <strong>BOGO</strong> - Kitchen Knife Set (Buy One, Get One Free)
+      </p>
+      <div class="meta">Deals expire in 18 hours</div>
+    </div>
+
+  </div>
+</body>
+</html>

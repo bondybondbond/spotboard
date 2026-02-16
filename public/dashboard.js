@@ -183,9 +183,163 @@ function getEngagementTime() {
 
 // Start engagement tracking immediately when script loads
 startEngagementTimer();
+/**
+ * Shows the "Capture Quickstart" modal with 3-step instructions.
+ * Attempts to open extension popup via chrome.action.openPopup()
+ */
+function showCaptureQuickstartModal() {
+  // Create modal overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'capture-modal-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+  // Create modal box
+  const modal = document.createElement('div');
+  modal.id = 'capture-modal';
+  modal.style.cssText = `
+    background: white;
+    border-radius: 12px;
+    padding: 32px;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 8px 32px rgba(0, 20, 60, 0.3);
+  `;
+
+  modal.innerHTML = `
+    <h2 style="font-size: 22px; font-weight: 600; color: #1a1a1a; margin-bottom: 20px;">
+      Capture your first card
+    </h2>
+
+    <ol style="font-size: 16px; color: #5f6368; line-height: 1.6; margin-bottom: 24px; padding-left: 20px;">
+      <li style="margin-bottom: 8px;">Go to the webpage you want to capture <em style="color: #999;">(not the dashboard)</em></li>
+      <li style="margin-bottom: 8px;">Click the SpotBoard icon in your toolbar</li>
+      <li style="margin-bottom: 8px;">Select the section → click "Save"</li>
+    </ol>
+
+    <button
+      id="open-popup-btn"
+      style="
+        width: 100%;
+        padding: 14px 24px;
+        font-size: 16px;
+        font-weight: 600;
+        color: white;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        margin-bottom: 16px;
+      ">
+      Open extension popup
+    </button>
+
+    <div id="fallback-message" style="display: none; padding: 12px; background: #FFF3E0; border-left: 3px solid #FF9800; border-radius: 4px; margin-bottom: 16px;">
+      <p style="font-size: 14px; color: #5D4037; margin: 0;">
+        👉 Click the SpotBoard icon in your toolbar (pin it if needed)
+      </p>
+    </div>
+
+    <div style="text-align: center; font-size: 14px;">
+      <a href="https://bondybondbond.github.io/spotboard/sandbox.html" target="_blank" rel="noopener noreferrer" id="sandbox-link" style="color: #1a73e8; text-decoration: none; margin-right: 16px;">Practice capture on a sample page</a>
+      <a href="https://bondybondbond.github.io/spotboard/demo.html" target="_blank" rel="noopener noreferrer" id="modal-demo-link" style="color: #1a73e8; text-decoration: none; margin-right: 16px;">Watch 30s demo</a>
+      <a href="#" id="close-modal" style="color: #5f6368; text-decoration: none;">Close</a>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  // Handle "Open extension popup" button click
+  const openPopupBtn = modal.querySelector('#open-popup-btn');
+  const fallbackMsg = modal.querySelector('#fallback-message');
+
+  openPopupBtn.addEventListener('click', async function() {
+    try {
+      // CRITICAL: Call chrome.action.openPopup() immediately (no delays/awaits before this)
+      await chrome.action.openPopup();
+
+      // Track success
+      if (typeof gtag !== 'undefined') {
+        gtag('event', 'open_popup_clicked', {
+          result: 'succeeded',
+          source: 'empty_state_modal'
+        });
+      }
+
+      // Auto-close modal on success
+      overlay.remove();
+
+    } catch (error) {
+      // Track failure
+      if (typeof gtag !== 'undefined') {
+        gtag('event', 'open_popup_clicked', {
+          result: 'failed',
+          source: 'empty_state_modal'
+        });
+      }
+
+      // Show fallback message (modal stays open)
+      fallbackMsg.style.display = 'block';
+    }
+  });
+
+  // Handle sandbox link click
+  const sandboxLink = modal.querySelector('#sandbox-link');
+  sandboxLink.addEventListener('click', function() {
+    if (typeof gtag !== 'undefined') {
+      gtag('event', 'sandbox_opened', {
+        source: 'empty_state_modal'
+      });
+    }
+  });
+
+  // Handle demo link click in modal
+  const modalDemoLink = modal.querySelector('#modal-demo-link');
+  modalDemoLink.addEventListener('click', function() {
+    if (typeof gtag !== 'undefined') {
+      gtag('event', 'demo_link_clicked', {
+        source: 'empty_state_modal'
+      });
+    }
+  });
+
+  // Handle close link
+  const closeLink = modal.querySelector('#close-modal');
+  closeLink.addEventListener('click', function(e) {
+    e.preventDefault();
+    overlay.remove();
+  });
+
+  // Handle overlay click (dismiss)
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) {
+      overlay.remove();
+    }
+  });
+
+  // Handle Escape key
+  function handleEscape(e) {
+    if (e.key === 'Escape') {
+      overlay.remove();
+      document.removeEventListener('keydown', handleEscape);
+    }
+  }
+  document.addEventListener('keydown', handleEscape);
+}
 
 /**
- * Renders the empty dashboard state with click-to-load demo.
+ * Renders the empty dashboard state with primary CTA.
  * Used by both initial page load and "last card deleted" scenarios.
  */
 function renderEmptyState(container) {
@@ -195,35 +349,39 @@ function renderEmptyState(container) {
         Your board is empty
       </h2>
 
-      <!-- Two-column layout: Demo + Suggestions -->
+      <!-- Two-column layout: Primary CTA + Suggestions -->
       <div class="empty-state-columns">
 
-        <!-- Left Column: Click-to-load Demo -->
+        <!-- Left Column: Primary CTA + Helper Text + Demo Link -->
         <div class="empty-state-column">
-          <p class="empty-state-heading">See how it works</p>
-
+          
+          <!-- Primary CTA Button -->
           <button
-            class="demo-placeholder"
-            id="demo-placeholder"
+            class="empty-state-primary-cta"
+            id="capture-cta"
             type="button"
-            aria-label="Watch 30s demo">
-            <div class="demo-placeholder-content">
-              <div class="demo-play-icon">▶️</div>
-              <span class="demo-button-text">Watch 30s demo</span>
-            </div>
+            aria-label="Capture your first card">
+            <span>✨ Capture your first card</span>
           </button>
 
-          <a href="https://www.youtube.com/watch?v=M6wkcgjFp88"
+          <!-- Helper Text -->
+          <p style="font-size: 15px; color: #5f6368; margin-top: 16px; margin-bottom: 12px;">
+            On any webpage: click the SpotBoard icon → select a section → Save.
+          </p>
+
+          <!-- Demo Link (demoted to secondary) -->
+          <a href="https://bondybondbond.github.io/spotboard/demo.html"
              target="_blank"
              rel="noopener noreferrer"
-             class="demo-fallback-link">
-            Open demo in new tab →
+             id="demo-link"
+             style="font-size: 14px; color: #1a73e8; text-decoration: none;">
+            Watch 30s demo →
           </a>
         </div>
 
         <!-- Right Column: Suggestions -->
         <div class="empty-state-column">
-          <p class="empty-state-heading">Out of ideas? These websites are popular to track</p>
+          <p class="empty-state-heading">Popular sites to track</p>
 
           <div style="text-align: left;">
             <!-- News & Headlines -->
@@ -257,7 +415,7 @@ function renderEmptyState(container) {
               </div>
               <div style="font-size: 17px; color: #5f6368;">
                 <a href="https://producthunt.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Product Hunt</a> ·
-                <a href="https://github.com" target="_blank" style="color: #1a73e8; text-decoration: none;">GitHub</a> ·
+                <a href="https://github.com"" target="_blank" style="color: #1a73e8; text-decoration: none;">GitHub</a> ·
                 <a href="https://wired.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Wired</a>
               </div>
             </div>
@@ -296,36 +454,38 @@ function renderEmptyState(container) {
     </div>
   `;
 
-  // Add click handler for demo placeholder
-  const placeholder = container.querySelector('#demo-placeholder');
-  if (placeholder) {
-    // Preconnect on hover/focus for instant click feel (import-on-interaction pattern)
-    let preconnected = false;
-    const preconnect = () => {
-      if (preconnected) return;
-      preconnected = true;
+  // Track empty state viewed
+  if (typeof gtag !== 'undefined') {
+    gtag('event', 'empty_state_viewed');
+  }
 
-      const link = document.createElement('link');
-      link.rel = 'preconnect';
-      link.href = 'https://www.youtube-nocookie.com';
-      link.crossOrigin = 'anonymous';
-      document.head.appendChild(link);
-    };
-
-    placeholder.addEventListener('mouseenter', preconnect);
-    placeholder.addEventListener('focus', preconnect);
-
-    placeholder.addEventListener('click', function() {
+  // Add click handler for primary CTA
+  const captureBtn = container.querySelector('#capture-cta');
+  if (captureBtn) {
+    captureBtn.addEventListener('click', function() {
       // Track analytics
       if (typeof gtag !== 'undefined') {
-        gtag('event', 'empty_state_demo_clicked', {
-          event_category: 'onboarding',
-          event_label: 'empty_dashboard_demo'
+        gtag('event', 'capture_cta_clicked', {
+          surface: 'dashboard_empty_state',
+          action: 'open_modal'
         });
       }
 
-      // Open hosted demo page (HTTPS environment = no YouTube Error 153)
-      window.open('https://bondybondbond.github.io/spotboard/demo.html', '_blank', 'noopener,noreferrer');
+      // Open quickstart modal
+      showCaptureQuickstartModal();
+    });
+  }
+
+  // Add click handler for demo link
+  const demoLink = container.querySelector('#demo-link');
+  if (demoLink) {
+    demoLink.addEventListener('click', function() {
+      // Track analytics
+      if (typeof gtag !== 'undefined') {
+        gtag('event', 'demo_link_clicked', {
+          source: 'empty_state'
+        });
+      }
     });
   }
 }
