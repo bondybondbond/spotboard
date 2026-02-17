@@ -48,3 +48,11 @@
 - **License**: Public Domain (PD)
 - **Used in**: Card top bar "Delete" button
 - **Location in repo**: Inline SVG in `public/dashboard.js`
+
+### Weather Icons (Sunny, Cloudy, Rainy)
+
+- **Source**: Basicons (https://basicons.xyz/)
+- **License**: MIT
+- **MIT License Text**: https://opensource.org/licenses/MIT
+- **Used in**: Onboarding playground page weather widget
+- **Location in repo**: Inline SVGs in `docs/sandbox.html`

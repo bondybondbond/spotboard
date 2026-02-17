@@ -3,241 +3,873 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Practice Capture - SpotBoard Sandbox</title>
+  <title>SpotBoard — Interactive Tutorial</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    /* ═══════════════════════════════════════
+       RESET & ROOT
+       ═══════════════════════════════════════ */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --brand: #667eea;
+      --brand-deep: #764ba2;
+      --brand-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      --positive: #16a34a;
+      --negative: #dc2626;
+      --paper: #faf9f7;
+      --ink: #1a1a1a;
+      --ink-light: #5f6368;
+      --ink-faint: #999;
+      --rule: #d4d0ca;
+      --card-bg: #fff;
+      --sidebar-bg: #f6f5f2;
+      --tracker-height: 110px;
+      --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-headline: Georgia, 'Times New Roman', serif;
     }
+
+    html { scroll-behavior: smooth; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      line-height: 1.6;
-      color: #1a1a1a;
-      background: #f5f5f5;
-      padding: 40px 20px;
+      font-family: var(--font-body);
+      line-height: 1.55;
+      color: var(--ink);
+      background: var(--paper);
+      padding-top: var(--tracker-height);
     }
 
-    .container {
-      max-width: 900px;
-      margin: 0 auto;
-      background: white;
-      padding: 40px;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
+    img { display: block; max-width: 100%; height: auto; }
+    a { color: var(--brand); text-decoration: none; }
+    a:hover { text-decoration: underline; }
 
-    .header {
+    /* ═══════════════════════════════════════
+       STEP TRACKER (STICKY COACHING RIBBON)
+       ═══════════════════════════════════════ */
+    .tracker {
+      position: fixed; top: 0; left: 0; right: 0;
+      z-index: 9000;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--rule);
+      padding: 12px 24px;
+      transition: box-shadow 0.3s;
+    }
+    .tracker.scrolled { box-shadow: 0 2px 20px rgba(0,0,0,0.08); }
+
+    .tracker-welcome {
       text-align: center;
-      margin-bottom: 40px;
-      padding-bottom: 24px;
-      border-bottom: 2px solid #667eea;
+      font-size: 13px;
+      color: var(--ink-light);
+      margin-bottom: 10px;
+      letter-spacing: 0.3px;
+    }
+    .tracker-welcome strong { color: var(--brand); font-weight: 700; }
+
+    .tracker-steps {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      max-width: 720px;
+      margin: 0 auto;
     }
 
-    .header h1 {
-      font-size: 32px;
-      color: #667eea;
-      margin-bottom: 12px;
+    .tracker-step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      position: relative;
     }
 
-    .header p {
-      font-size: 18px;
-      color: #5f6368;
+    .step-circle {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700;
+      color: #fff;
+      background: #ccc;
+      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      flex-shrink: 0;
+    }
+    .tracker-step.active .step-circle {
+      background: var(--brand-gradient);
+      animation: pulse-ring 2s ease-in-out infinite;
+    }
+    .tracker-step.done .step-circle {
+      background: var(--positive);
+      transform: scale(1.05);
     }
 
-    .instructions {
-      background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
-      padding: 20px;
-      border-radius: 8px;
-      margin-bottom: 32px;
-      border-left: 4px solid #667eea;
+    @keyframes pulse-ring {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(102,126,234,0.4); }
+      50% { box-shadow: 0 0 0 8px rgba(102,126,234,0); }
     }
 
-    .instructions h2 {
-      font-size: 20px;
-      margin-bottom: 12px;
-      color: #667eea;
+    .step-label {
+      font-size: 13px;
+      color: var(--ink-faint);
+      transition: color 0.3s;
+      white-space: nowrap;
     }
+    .tracker-step.active .step-label { color: var(--ink); font-weight: 600; }
+    .tracker-step.done .step-label { color: var(--positive); }
 
-    .instructions ol {
-      padding-left: 24px;
-      color: #5f6368;
+    .step-fallback {
+      font-size: 11px;
+      color: var(--brand);
+      cursor: pointer;
+      margin-left: 4px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      border: none; background: none;
+      font-family: inherit;
     }
+    .tracker-step.active .step-fallback { opacity: 1; }
+    .step-fallback:hover { text-decoration: underline; }
 
-    .instructions li {
-      margin-bottom: 8px;
+    .step-connector {
+      width: 48px; height: 2px;
+      background: #ddd;
+      margin: 0 8px;
+      transition: background 0.4s;
+      flex-shrink: 0;
     }
+    .step-connector.filled { background: var(--positive); }
 
-    .section {
-      margin-bottom: 32px;
-      padding: 24px;
-      border: 1px solid #e0e0e0;
-      border-radius: 8px;
-      transition: border-color 0.2s ease;
+    /* Dashboard CTA (appears on step 3 done) */
+    .tracker-cta {
+      display: none;
+      text-align: center;
+      margin-top: 8px;
     }
-
-    .section:hover {
-      border-color: #667eea;
-    }
-
-    .section h2 {
-      font-size: 24px;
-      margin-bottom: 12px;
-      color: #1a1a1a;
-    }
-
-    .section p {
-      margin-bottom: 12px;
-      color: #5f6368;
-    }
-
-    .section .meta {
-      font-size: 14px;
-      color: #999;
-      margin-top: 12px;
-    }
-
-    .section .badge {
+    .tracker-cta.visible { display: block; }
+    .tracker-cta-btn {
       display: inline-block;
-      padding: 4px 12px;
-      background: #667eea;
-      color: white;
-      border-radius: 12px;
+      padding: 8px 28px;
+      background: var(--brand-gradient);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .tracker-cta-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(102,126,234,0.35);
+    }
+    .tracker-cta-text {
+      display: block;
+      font-size: 12px;
+      color: var(--ink-faint);
+      margin-top: 4px;
+    }
+
+    /* Help text (appears after 60s stuck) */
+    .tracker-help {
+      display: none;
+      text-align: center;
+      font-size: 12px;
+      color: var(--negative);
+      margin-top: 6px;
+    }
+    .tracker-help.visible { display: block; }
+
+    /* ═══════════════════════════════════════
+       ANIMATED ARROW (STEP 1)
+       ═══════════════════════════════════════ */
+    .toolbar-arrow {
+      position: fixed;
+      top: calc(var(--tracker-height) + 12px);
+      right: 32px;
+      z-index: 8999;
+      text-align: right;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.5s, transform 0.5s;
+      pointer-events: none;
+    }
+    .toolbar-arrow.visible {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+    .toolbar-arrow svg {
+      width: 36px; height: 36px;
+      animation: float-arrow 1.5s ease-in-out infinite;
+    }
+    .toolbar-arrow-label {
       font-size: 13px;
       font-weight: 600;
-      margin-right: 8px;
+      color: var(--brand);
+      margin-top: 2px;
+    }
+    .toolbar-arrow-hint {
+      font-size: 11px;
+      color: var(--ink-faint);
+      max-width: 200px;
+      margin-left: auto;
+      margin-top: 2px;
     }
 
-    .stock-ticker {
+    @keyframes float-arrow {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    /* ═══════════════════════════════════════
+       NEWSPAPER MASTHEAD
+       ═══════════════════════════════════════ */
+    .masthead {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px 24px 12px;
+      border-bottom: 3px double var(--rule);
       display: flex;
-      gap: 16px;
-      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+    .masthead-title {
+      font-family: var(--font-headline);
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--ink);
+    }
+    .masthead-date {
+      font-size: 13px;
+      color: var(--ink-faint);
+      font-style: italic;
     }
 
-    .stock-item {
-      flex: 1;
-      min-width: 150px;
-      padding: 16px;
-      background: #f9f9f9;
+    /* ═══════════════════════════════════════
+       3-COLUMN LAYOUT
+       ═══════════════════════════════════════ */
+    .page-grid {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 16px 24px 60px;
+      display: grid;
+      grid-template-columns: 220px 1fr 220px;
+      gap: 20px;
+    }
+
+    /* ─── SIDEBAR WIDGETS ─── */
+    .sidebar-widget {
+      background: var(--sidebar-bg);
+      border: 1px solid var(--rule);
       border-radius: 6px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+    .sidebar-widget-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--ink-faint);
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--rule);
     }
 
-    .stock-item .symbol {
-      font-size: 18px;
-      font-weight: 600;
+    /* Weather */
+    .weather-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+    }
+    .weather-row + .weather-row { border-top: 1px solid rgba(0,0,0,0.05); }
+    .weather-icon { width: 22px; height: 22px; color: var(--ink-light); flex-shrink: 0; }
+    .weather-city { font-size: 13px; font-weight: 600; flex: 1; }
+    .weather-temp { font-size: 13px; color: var(--ink-light); font-variant-numeric: tabular-nums; }
+
+    /* Stocks */
+    .stock-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 5px 0;
+    }
+    .stock-row + .stock-row { border-top: 1px solid rgba(0,0,0,0.05); }
+    .stock-sym { font-size: 13px; font-weight: 700; letter-spacing: 0.5px; }
+    .stock-price { font-size: 13px; font-variant-numeric: tabular-nums; }
+    .stock-change { font-size: 12px; font-variant-numeric: tabular-nums; }
+    .stock-change.up { color: var(--positive); }
+    .stock-change.down { color: var(--negative); }
+
+    /* Sports */
+    .match-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      font-size: 13px;
+    }
+    .match-row + .match-row { border-top: 1px solid rgba(0,0,0,0.05); }
+    .match-teams { font-weight: 500; }
+    .match-score { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+    .match-league {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--ink-faint);
+      margin-top: 2px;
+    }
+
+    /* Deals */
+    .deal-row {
+      padding: 6px 0;
+      font-size: 13px;
+    }
+    .deal-row + .deal-row { border-top: 1px solid rgba(0,0,0,0.05); }
+    .deal-tag {
+      display: inline-block;
+      background: var(--negative);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 3px;
+      margin-right: 4px;
+    }
+    .deal-name { color: var(--ink-light); }
+
+    /* Product card */
+    .product-card { text-align: center; }
+    .product-card img {
+      width: 100%;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      aspect-ratio: 4/3;
+      object-fit: cover;
+    }
+    .product-name { font-size: 13px; font-weight: 600; }
+    .product-price { font-size: 15px; font-weight: 700; color: var(--brand); margin-top: 2px; }
+
+    /* ─── MAIN COLUMN ARTICLES ─── */
+    .article {
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 24px;
+      margin-bottom: 24px;
+    }
+    .article:last-child { border-bottom: none; margin-bottom: 0; }
+
+    .article-img {
+      width: 100%;
+      border-radius: 6px;
+      margin-bottom: 14px;
+      aspect-ratio: 16/9;
+      object-fit: cover;
+    }
+
+    .article-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--brand);
+      margin-bottom: 6px;
+    }
+
+    .article h2 {
+      font-family: var(--font-headline);
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.25;
+      margin-bottom: 10px;
+      color: var(--ink);
+    }
+    .article:first-child h2 { font-size: 30px; }
+
+    .article p {
+      font-size: 15px;
+      color: var(--ink-light);
       margin-bottom: 8px;
     }
 
-    .stock-item .price {
-      font-size: 24px;
-      font-weight: 700;
-      color: #16a34a;
+    .article-meta {
+      font-size: 12px;
+      color: var(--ink-faint);
+      margin-top: 8px;
     }
 
-    .stock-item .change {
-      font-size: 14px;
-      color: #16a34a;
+    /* ═══════════════════════════════════════
+       CONFETTI CANVAS
+       ═══════════════════════════════════════ */
+    #confetti-canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 10000;
     }
 
-    .stock-item .change.negative {
-      color: #dc2626;
+    /* ═══════════════════════════════════════
+       RESPONSIVE
+       ═══════════════════════════════════════ */
+    @media (max-width: 960px) {
+      .page-grid {
+        grid-template-columns: 1fr;
+        max-width: 640px;
+      }
+      .page-grid > .sidebar-left { order: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .page-grid > .main-col { order: 1; }
+      .page-grid > .sidebar-right { order: 3; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .sidebar-widget { margin-bottom: 0; }
+      .masthead { flex-direction: column; gap: 4px; }
+    }
+
+    @media (max-width: 600px) {
+      :root { --tracker-height: 90px; }
+      .tracker { padding: 8px 12px; }
+      .tracker-welcome { font-size: 11px; margin-bottom: 6px; }
+      .step-circle { width: 26px; height: 26px; font-size: 12px; }
+      .step-label { font-size: 11px; }
+      .step-connector { width: 24px; margin: 0 4px; }
+      .toolbar-arrow { right: 12px; }
+      .page-grid > .sidebar-left,
+      .page-grid > .sidebar-right { grid-template-columns: 1fr; }
+      .article:first-child h2 { font-size: 24px; }
+      .article h2 { font-size: 20px; }
+    }
+
+    /* ═══════════════════════════════════════
+       FOOTER ATTRIBUTION
+       ═══════════════════════════════════════ */
+    .page-footer {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 16px 24px 32px;
+      text-align: center;
+      font-size: 11px;
+      color: var(--ink-faint);
+      border-top: 1px solid var(--rule);
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>🎯 Practice Capture</h1>
-      <p>Use this page to practice capturing content with SpotBoard</p>
-    </div>
 
-    <div class="instructions">
-      <h2>How to capture</h2>
-      <ol>
-        <li>Click the <strong>SpotBoard icon</strong> in your browser toolbar</li>
-        <li>Your cursor will change — click and drag to select any section below</li>
-        <li>Click <strong>"Save to Dashboard"</strong> in the confirmation modal</li>
-        <li>Return to your dashboard to see the captured content!</li>
-      </ol>
+  <!-- ════════════════════════════════════
+       STEP TRACKER
+       ════════════════════════════════════ -->
+  <div class="tracker" id="tracker">
+    <div class="tracker-welcome">
+      Welcome to <strong>SpotBoard</strong> — learn to capture content in 30 seconds
     </div>
-
-    <div class="section">
-      <span class="badge">Latest</span>
-      <span class="badge">Tech</span>
-      <h2>📰 Breaking News: AI Startup Raises $500M</h2>
-      <p>
-        A new artificial intelligence startup focused on code generation has raised $500 million
-        in Series B funding, valuing the company at $5 billion. The funding round was led by
-        top venture capital firms and will be used to expand the team and accelerate product development.
-      </p>
-      <p>
-        "This is a transformative moment for developers," said the CEO in a statement.
-        "We're building tools that will fundamentally change how software is created."
-      </p>
-      <div class="meta">Published 2 hours ago • Technology • 5 min read</div>
+    <div class="tracker-steps">
+      <div class="tracker-step active" id="step1">
+        <div class="step-circle">1</div>
+        <span class="step-label">Open SpotBoard</span>
+        <button class="step-fallback" onclick="advanceStep(2)">I did it &rarr;</button>
+      </div>
+      <div class="step-connector" id="conn1"></div>
+      <div class="tracker-step" id="step2">
+        <div class="step-circle">2</div>
+        <span class="step-label">Select a section</span>
+        <button class="step-fallback" onclick="advanceStep(3)">I did it &rarr;</button>
+      </div>
+      <div class="step-connector" id="conn2"></div>
+      <div class="tracker-step" id="step3">
+        <div class="step-circle">3</div>
+        <span class="step-label">Confirm capture</span>
+        <button class="step-fallback" onclick="advanceStep(4)">I did it &rarr;</button>
+      </div>
     </div>
-
-    <div class="section">
-      <span class="badge">Weather</span>
-      <h2>🌤️ Weather Forecast: Sunny Week Ahead</h2>
-      <p>
-        <strong>Today:</strong> Sunny with a high of 72°F (22°C). Light winds from the west at 5-10 mph.
-      </p>
-      <p>
-        <strong>Tomorrow:</strong> Partly cloudy, high of 68°F (20°C). 10% chance of rain in the evening.
-      </p>
-      <p>
-        <strong>Weekend:</strong> Clear skies expected with temperatures reaching 75°F (24°C) on Saturday.
-      </p>
-      <div class="meta">Last updated 1 hour ago</div>
+    <div class="tracker-help" id="tracker-help">
+      Having trouble? Try clicking on one of the highlighted sections below.
     </div>
+    <div class="tracker-cta" id="tracker-cta">
+      <div style="margin-bottom: 6px; font-size: 15px; font-weight: 600; color: var(--positive);">
+        &#10003; You got it!
+      </div>
+      <div class="tracker-cta-text">
+        Open a new tab, click the SpotBoard icon, then select <strong>Open Board</strong> to see your capture.
+      </div>
+    </div>
+  </div>
 
-    <div class="section">
-      <span class="badge">Markets</span>
-      <h2>📈 Stock Market Update</h2>
-      <div class="stock-ticker">
-        <div class="stock-item">
-          <div class="symbol">TECH</div>
-          <div class="price">$428.50</div>
-          <div class="change">+12.30 (+2.95%)</div>
+  <!-- ════════════════════════════════════
+       ANIMATED ARROW (STEP 1)
+       ════════════════════════════════════ -->
+  <div class="toolbar-arrow visible" id="toolbar-arrow">
+    <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M18 30V8" stroke="#667eea" stroke-width="3" stroke-linecap="round"/>
+      <path d="M10 16L18 6L26 16" stroke="#667eea" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="toolbar-arrow-label">Click the SpotBoard icon</div>
+    <div class="toolbar-arrow-hint">Don't see it? Click the puzzle piece &#x1F9E9; icon first, then pin SpotBoard</div>
+  </div>
+
+  <!-- ════════════════════════════════════
+       MASTHEAD
+       ════════════════════════════════════ -->
+  <div class="masthead">
+    <div class="masthead-title">The Daily Digest</div>
+    <div class="masthead-date" id="masthead-date"></div>
+  </div>
+
+  <!-- ════════════════════════════════════
+       3-COLUMN GRID
+       ════════════════════════════════════ -->
+  <div class="page-grid">
+
+    <!-- ── LEFT SIDEBAR ── -->
+    <div class="sidebar-left">
+
+      <!-- Weather Icons: MIT License, basicons (https://basicons.xyz/) -->
+      <div class="sidebar-widget">
+        <div class="sidebar-widget-title">Weather</div>
+        <div class="weather-row">
+          <svg class="weather-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.5 17.5L19 19M20 12H22M6.5 6.5L5 5M17.5 6.5L19 5M6.5 17.5L5 19M2 12H4M12 2V4M12 20V22M16 12C16 14.2091 14.2091 16 12 16C9.79086 16 8 14.2091 8 12C8 9.79086 9.79086 8 12 8C14.2091 8 16 9.79086 16 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="weather-city">London</span>
+          <span class="weather-temp">22 °C</span>
         </div>
-        <div class="stock-item">
-          <div class="symbol">AUTO</div>
-          <div class="price">$215.75</div>
-          <div class="change negative">-5.20 (-2.35%)</div>
+        <div class="weather-row">
+          <svg class="weather-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.34141 9C7.16508 6.66962 9.38756 5 12 5C15.3137 5 18 7.68629 18 11C20.2091 11 22 12.7909 22 15C22 17.2091 20.2091 19 18 19H7C4.23858 19 2 16.7614 2 14C2 11.469 3.8806 9.37721 6.32069 9.04576" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="weather-city">Paris</span>
+          <span class="weather-temp">18 °C</span>
         </div>
-        <div class="stock-item">
-          <div class="symbol">RETAIL</div>
-          <div class="price">$89.40</div>
-          <div class="change">+1.15 (+1.30%)</div>
+        <div class="weather-row">
+          <svg class="weather-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.34141 6C7.16508 3.66962 9.38756 2 12 2C15.3137 2 18 4.68629 18 8C20.2091 8 22 9.79086 22 12C22 14.2091 20.2091 16 18 16H7C4.23858 16 2 13.7614 2 11C2 8.46898 3.8806 6.37721 6.32069 6.04576" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 20L6 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 20L11 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 20L16 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="weather-city">New York</span>
+          <span class="weather-temp">15 °C</span>
         </div>
       </div>
-      <div class="meta">Market close • Feb 16, 2026</div>
+
+      <div class="sidebar-widget">
+        <div class="sidebar-widget-title">Markets</div>
+        <div class="stock-row">
+          <span class="stock-sym">TECH</span>
+          <span class="stock-price">$428.50</span>
+          <span class="stock-change up">+2.95%</span>
+        </div>
+        <div class="stock-row">
+          <span class="stock-sym">AUTO</span>
+          <span class="stock-price">$215.75</span>
+          <span class="stock-change down">-2.35%</span>
+        </div>
+        <div class="stock-row">
+          <span class="stock-sym">RETL</span>
+          <span class="stock-price">$89.40</span>
+          <span class="stock-change up">+1.30%</span>
+        </div>
+      </div>
     </div>
 
-    <div class="section">
-      <span class="badge">Sports</span>
-      <h2>⚽ Match Results</h2>
-      <p>
-        <strong>Premier League:</strong> Manchester United 2 - 1 Liverpool<br>
-        <strong>La Liga:</strong> Real Madrid 3 - 0 Barcelona<br>
-        <strong>NBA:</strong> Lakers 108 - 105 Celtics
-      </p>
-      <div class="meta">Final scores • Feb 16, 2026</div>
+    <!-- ── MAIN COLUMN ── -->
+    <div class="main-col">
+
+      <div class="article">
+        <div class="article-badge">Technology</div>
+        <img class="article-img" src="sandbox-images/business.jpg" alt="Business meeting" loading="eager">
+        <h2>Tech Giants Report Record Q4 Revenue Amid AI Boom</h2>
+        <p>
+          The world's five largest technology companies have collectively reported their strongest
+          quarterly earnings in over a decade, driven by surging demand for artificial intelligence
+          infrastructure and cloud computing services.
+        </p>
+        <p>
+          Analysts note that enterprise AI spending shows no signs of slowing, with capital
+          expenditure forecasts revised upward across the sector. "We're still in the first inning
+          of the AI infrastructure build-out," said one portfolio manager.
+        </p>
+        <div class="article-meta">2 hours ago &middot; 4 min read</div>
+      </div>
+
+      <div class="article">
+        <div class="article-badge">Markets</div>
+        <img class="article-img" src="sandbox-images/laptop.jpg" alt="Laptop with charts" loading="lazy">
+        <h2>Markets Rally as Central Banks Signal Rate Cuts</h2>
+        <p>
+          Global equity markets surged to multi-month highs after the Federal Reserve and European
+          Central Bank signalled a coordinated shift toward monetary easing in the second half of the year.
+          Bond yields fell sharply in response.
+        </p>
+        <div class="article-meta">4 hours ago &middot; 3 min read</div>
+      </div>
+
+      <div class="article">
+        <div class="article-badge">Football</div>
+        <img class="article-img" src="sandbox-images/football.jpg" alt="Football match" loading="lazy">
+        <h2>Premier League Transfer Window: Who's Moving?</h2>
+        <p>
+          With the winter transfer window now open, several high-profile moves are expected.
+          Manchester United are reportedly close to signing a creative midfielder from Serie A,
+          while Liverpool are exploring defensive reinforcements after a string of injuries.
+        </p>
+        <div class="article-meta">6 hours ago &middot; 5 min read</div>
+      </div>
+
+      <div class="article">
+        <div class="article-badge">Olympics</div>
+        <img class="article-img" src="sandbox-images/olympics.jpg" alt="Athletics track" loading="lazy">
+        <h2>Olympics Preview: Track &amp; Field Stars to Watch</h2>
+        <p>
+          As the athletics programme approaches, attention is turning to a new generation of
+          sprinters and distance runners who could rewrite the record books. Qualifying times
+          suggest the 100m final will be the most competitive in a decade.
+        </p>
+        <div class="article-meta">8 hours ago &middot; 6 min read</div>
+      </div>
+
     </div>
 
-    <div class="section">
-      <span class="badge">Deals</span>
-      <h2>💰 Today's Top Deals</h2>
-      <p>
-        <strong>50% OFF</strong> - Premium Headphones (Was $200, Now $100)<br>
-        <strong>30% OFF</strong> - Laptop Backpack (Was $80, Now $56)<br>
-        <strong>BOGO</strong> - Kitchen Knife Set (Buy One, Get One Free)
-      </p>
-      <div class="meta">Deals expire in 18 hours</div>
-    </div>
+    <!-- ── RIGHT SIDEBAR ── -->
+    <div class="sidebar-right">
 
+      <div class="sidebar-widget">
+        <div class="sidebar-widget-title">Match Results</div>
+        <div class="match-row">
+          <div>
+            <div class="match-teams">Man Utd vs Liverpool</div>
+            <div class="match-league">Premier League</div>
+          </div>
+          <div class="match-score">2 – 1</div>
+        </div>
+        <div class="match-row">
+          <div>
+            <div class="match-teams">Real Madrid vs Barcelona</div>
+            <div class="match-league">La Liga</div>
+          </div>
+          <div class="match-score">3 – 0</div>
+        </div>
+        <div class="match-row">
+          <div>
+            <div class="match-teams">Lakers vs Celtics</div>
+            <div class="match-league">NBA</div>
+          </div>
+          <div class="match-score">108 – 105</div>
+        </div>
+      </div>
+
+      <div class="sidebar-widget product-card">
+        <div class="sidebar-widget-title">Trending</div>
+        <img src="sandbox-images/headphones.jpg" alt="Wireless headphones" loading="lazy">
+        <div class="product-name">Wireless Pro Headphones</div>
+        <div class="product-price">$199</div>
+      </div>
+
+      <div class="sidebar-widget">
+        <div class="sidebar-widget-title">Today's Deals</div>
+        <div class="deal-row">
+          <span class="deal-tag">50% OFF</span>
+          <span class="deal-name">Premium Electronics</span>
+        </div>
+        <div class="deal-row">
+          <span class="deal-tag">30% OFF</span>
+          <span class="deal-name">Laptop Backpack</span>
+        </div>
+        <div class="deal-row">
+          <span class="deal-tag">BOGO</span>
+          <span class="deal-name">Kitchen Knife Set</span>
+        </div>
+      </div>
+
+    </div>
   </div>
+
+  <div class="page-footer">
+    This is a practice page for SpotBoard. Content is fictional.
+  </div>
+
+  <!-- Confetti canvas -->
+  <canvas id="confetti-canvas"></canvas>
+
+  <!-- ════════════════════════════════════
+       JAVASCRIPT
+       ════════════════════════════════════ -->
+  <script>
+    /* ── Date ── */
+    document.getElementById('masthead-date').textContent =
+      new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+    /* ── Tracker shadow on scroll ── */
+    window.addEventListener('scroll', () => {
+      document.getElementById('tracker').classList.toggle('scrolled', window.scrollY > 4);
+    }, { passive: true });
+
+    /* ═══════════════════════════════════════
+       STEP STATE MACHINE
+       ═══════════════════════════════════════ */
+    let currentStep = 1;
+    let capturingTimeout = null;
+
+    function advanceStep(toStep) {
+      if (toStep <= currentStep) return;
+      currentStep = toStep;
+
+      // Update circles & labels
+      for (let i = 1; i <= 3; i++) {
+        const el = document.getElementById('step' + i);
+        const circle = el.querySelector('.step-circle');
+        el.classList.remove('active', 'done');
+
+        if (i < currentStep) {
+          el.classList.add('done');
+          circle.innerHTML = '&#10003;';
+        } else if (i === currentStep && currentStep <= 3) {
+          el.classList.add('active');
+        }
+      }
+
+      // Connectors
+      document.getElementById('conn1').classList.toggle('filled', currentStep > 1);
+      document.getElementById('conn2').classList.toggle('filled', currentStep > 2);
+
+      // Arrow visibility
+      document.getElementById('toolbar-arrow').classList.toggle('visible', currentStep === 1);
+
+      // Clear stuck timeout
+      if (capturingTimeout) { clearTimeout(capturingTimeout); capturingTimeout = null; }
+
+      // Step-specific actions
+      if (currentStep === 2) {
+        fireConfetti(60);
+        // Start 60s timeout for stuck detection
+        capturingTimeout = setTimeout(() => {
+          if (currentStep === 2) {
+            document.getElementById('tracker-help').classList.add('visible');
+          }
+        }, 60000);
+      }
+
+      if (currentStep === 3) {
+        fireConfetti(60);
+      }
+
+      if (currentStep >= 4) {
+        // All done
+        const step3 = document.getElementById('step3');
+        step3.classList.remove('active');
+        step3.classList.add('done');
+        step3.querySelector('.step-circle').innerHTML = '&#10003;';
+        document.getElementById('conn2').classList.add('filled');
+        document.getElementById('tracker-help').classList.remove('visible');
+        document.getElementById('tracker-cta').classList.add('visible');
+        fireConfetti(150);
+
+        // Disconnect beacon observer
+        if (beaconObserver) beaconObserver.disconnect();
+        if (bodyObserver) bodyObserver.disconnect();
+      }
+    }
+
+    /* ═══════════════════════════════════════
+       CONFETTI (VANILLA CANVAS)
+       ═══════════════════════════════════════ */
+    const confettiCanvas = document.getElementById('confetti-canvas');
+    const ctx = confettiCanvas.getContext('2d');
+    let confettiPieces = [];
+    let confettiFrame = null;
+
+    function resizeCanvas() {
+      confettiCanvas.width = window.innerWidth;
+      confettiCanvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    const CONFETTI_COLORS = ['#667eea', '#764ba2', '#16a34a', '#f59e0b', '#ec4899', '#06b6d4'];
+
+    function fireConfetti(count) {
+      for (let i = 0; i < count; i++) {
+        confettiPieces.push({
+          x: Math.random() * confettiCanvas.width,
+          y: -10 - Math.random() * 40,
+          w: 6 + Math.random() * 6,
+          h: 4 + Math.random() * 4,
+          color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+          vx: (Math.random() - 0.5) * 4,
+          vy: 2 + Math.random() * 3,
+          rot: Math.random() * 360,
+          rotV: (Math.random() - 0.5) * 12,
+          life: 1
+        });
+      }
+      if (!confettiFrame) animateConfetti();
+    }
+
+    function animateConfetti() {
+      ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+      confettiPieces = confettiPieces.filter(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.06;
+        p.rot += p.rotV;
+        p.life -= 0.004;
+        if (p.life <= 0 || p.y > confettiCanvas.height + 20) return false;
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rot * Math.PI) / 180);
+        ctx.globalAlpha = Math.min(p.life, 1);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+        return true;
+      });
+      if (confettiPieces.length > 0) {
+        confettiFrame = requestAnimationFrame(animateConfetti);
+      } else {
+        ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+        confettiFrame = null;
+      }
+    }
+
+    /* ═══════════════════════════════════════
+       BEACON OBSERVER
+       Watches for #sb-onboarding-beacon injected
+       by SpotBoard content script.
+       Contract: data-version="1", data-stage values:
+         "ready" | "capturing" | "completed"
+       ═══════════════════════════════════════ */
+    let beaconObserver = null;
+    let bodyObserver = null;
+
+    function watchBeacon(beaconEl) {
+      if (beaconEl.dataset.version !== '1') return;
+
+      beaconObserver = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          if (m.attributeName !== 'data-stage') continue;
+          const stage = beaconEl.dataset.stage;
+          if (stage === 'capturing' && currentStep < 2) advanceStep(2);
+          if (stage === 'completed' && currentStep < 4) advanceStep(4);
+        }
+      });
+      beaconObserver.observe(beaconEl, { attributes: true, attributeFilter: ['data-stage'] });
+
+      // Process current state immediately
+      const stage = beaconEl.dataset.stage;
+      if (stage === 'capturing' && currentStep < 2) advanceStep(2);
+      if (stage === 'completed' && currentStep < 4) advanceStep(4);
+    }
+
+    // Watch for beacon element to appear in DOM
+    const existingBeacon = document.getElementById('sb-onboarding-beacon');
+    if (existingBeacon) {
+      watchBeacon(existingBeacon);
+    } else {
+      bodyObserver = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          for (const node of m.addedNodes) {
+            if (node.id === 'sb-onboarding-beacon') {
+              watchBeacon(node);
+              bodyObserver.disconnect();
+              bodyObserver = null;
+              return;
+            }
+          }
+        }
+      });
+      bodyObserver.observe(document.body, { childList: true, subtree: true });
+    }
+  </script>
 </body>
 </html>

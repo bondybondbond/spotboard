@@ -490,6 +490,213 @@ function renderEmptyState(container) {
   }
 }
 
+// ===== ONBOARDING: Category Picker + Pre-populated Cards =====
+
+const ONBOARDING_CATEGORIES = {
+  news: {
+    label: 'News & Headlines',
+    emoji: '📰',
+    cards: [
+      { name: 'BBC News - Top Stories', url: 'https://www.bbc.co.uk/news', selector: 'h3', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=bbc.co.uk' },
+      { name: 'NBC News - Latest', url: 'https://www.nbcnews.com/', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=nbcnews.com' },
+      { name: 'TechCrunch - Latest', url: 'https://techcrunch.com/', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=techcrunch.com' }
+    ]
+  },
+  sports: {
+    label: 'Sports Scores',
+    emoji: '⚽',
+    cards: [
+      { name: 'ESPN - Top Headlines', url: 'https://www.espn.com/', selector: 'h1', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=espn.com' },
+      { name: 'Sky Sports - Football', url: 'https://www.skysports.com/football', selector: 'h3', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=skysports.com' },
+      { name: 'AS English - Sports', url: 'https://en.as.com/', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=as.com' }
+    ]
+  },
+  stocks: {
+    label: 'Stock Markets',
+    emoji: '📈',
+    cards: [
+      { name: 'Yahoo Finance - Markets', url: 'https://finance.yahoo.com/', selector: '[data-testid="trending-tickers"]', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=finance.yahoo.com' },
+      { name: 'Google Finance - Markets', url: 'https://www.google.com/finance/', selector: 'ul', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=google.com' },
+      { name: 'MarketWatch - Markets', url: 'https://www.marketwatch.com/', selector: 'h3', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=marketwatch.com' }
+    ]
+  },
+  tech: {
+    label: 'Tech & Products',
+    emoji: '🚀',
+    cards: [
+      { name: 'Product Hunt - Today', url: 'https://www.producthunt.com/', selector: 'h3', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=producthunt.com' },
+      { name: 'GitHub Trending', url: 'https://github.com/trending', selector: 'article h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=github.com' },
+      { name: 'Wired - Latest', url: 'https://www.wired.com/', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=wired.com' }
+    ]
+  },
+  deals: {
+    label: 'Deals & Shopping',
+    emoji: '💰',
+    cards: [
+      { name: 'Amazon - Today\'s Deals', url: 'https://www.amazon.com/gp/goldbox', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=amazon.com' },
+      { name: 'Gumtree - Trending', url: 'https://www.gumtree.com/', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=gumtree.com' },
+      { name: 'HotUKDeals - Hot', url: 'https://www.hotukdeals.com/', selector: 'article', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=hotukdeals.com' }
+    ]
+  }
+};
+
+function showCategoryPickerOverlay(container) {
+  return new Promise((resolve) => {
+    // Clear container and show full-screen overlay
+    container.innerHTML = '';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'category-picker-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      animation: fadeIn 0.3s ease;
+    `;
+
+    const selected = new Set();
+
+    overlay.innerHTML = `
+      <div style="
+        background: white;
+        border-radius: 16px;
+        padding: 40px;
+        max-width: 600px;
+        width: 90%;
+        max-height: 85vh;
+        overflow-y: auto;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      ">
+        <h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin: 0 0 8px 0; text-align: center;">
+          What do you want to track?
+        </h2>
+        <p style="font-size: 15px; color: #5f6368; margin: 0 0 28px 0; text-align: center;">
+          Pick 1 or more categories. We'll set up starter cards for you.
+        </p>
+
+        <div id="category-tiles" style="
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 12px;
+          margin-bottom: 28px;
+        ">
+          ${Object.entries(ONBOARDING_CATEGORIES).map(([key, cat]) => `
+            <button data-category="${key}" style="
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 8px;
+              padding: 20px 12px;
+              border: 2px solid #e5e7eb;
+              border-radius: 12px;
+              background: white;
+              cursor: pointer;
+              transition: all 0.15s ease;
+              font-family: inherit;
+            ">
+              <span style="font-size: 28px;">${cat.emoji}</span>
+              <span style="font-size: 13px; font-weight: 500; color: #374151;">${cat.label}</span>
+            </button>
+          `).join('')}
+        </div>
+
+        <button id="category-submit" disabled style="
+          width: 100%;
+          padding: 14px;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          border: none;
+          border-radius: 10px;
+          font-size: 16px;
+          font-weight: 600;
+          cursor: pointer;
+          opacity: 0.5;
+          transition: opacity 0.2s ease;
+          font-family: inherit;
+        ">
+          Get started
+        </button>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Category tile toggle behavior
+    overlay.querySelectorAll('[data-category]').forEach(tile => {
+      tile.addEventListener('click', () => {
+        const cat = tile.dataset.category;
+        if (selected.has(cat)) {
+          selected.delete(cat);
+          tile.style.borderColor = '#e5e7eb';
+          tile.style.background = 'white';
+          tile.style.boxShadow = 'none';
+        } else {
+          selected.add(cat);
+          tile.style.borderColor = '#667eea';
+          tile.style.background = 'rgba(102, 126, 234, 0.06)';
+          tile.style.boxShadow = '0 0 0 1px rgba(102, 126, 234, 0.3)';
+        }
+        const submitBtn = overlay.querySelector('#category-submit');
+        submitBtn.disabled = selected.size === 0;
+        submitBtn.style.opacity = selected.size > 0 ? '1' : '0.5';
+      });
+    });
+
+    // Submit handler: create pre-populated cards
+    overlay.querySelector('#category-submit').addEventListener('click', async () => {
+      const submitBtn = overlay.querySelector('#category-submit');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Setting up...';
+
+      const now = new Date().toISOString();
+      const syncBatch = {};
+      let cardCount = 0;
+
+      selected.forEach(catKey => {
+        const cat = ONBOARDING_CATEGORIES[catKey];
+        if (!cat) return;
+
+        cat.cards.forEach(card => {
+          const id = crypto.randomUUID();
+          const syncKey = `comp-${id}`;
+          syncBatch[syncKey] = {
+            id,
+            name: card.name,
+            url: card.url,
+            favicon: card.favicon,
+            selector: card.selector,
+            needsRefresh: true,
+            isPrePopulated: true,
+            last_refresh: now,
+            created_at: now
+          };
+          cardCount++;
+        });
+      });
+
+      // Save all pre-populated cards to sync storage
+      await new Promise(resolve => chrome.storage.sync.set(syncBatch, resolve));
+      await chrome.storage.local.set({ categoriesChosen: true });
+
+      // GA4: Track category selection
+      if (window.GA4 && window.GA4.sendEvent) {
+        window.GA4.sendEvent('onboarding_category_selected', {
+          categories: Array.from(selected).join(','),
+          card_count: cardCount
+        }, getEngagementTime());
+      }
+
+      // Remove overlay
+      overlay.remove();
+      resolve();
+    });
+  });
+}
+
 // Load and display components from hybrid storage (sync metadata + local data)
 (async () => {
   try {
@@ -504,7 +711,7 @@ function renderEmptyState(container) {
     
     // Step 3: Load component metadata from sync storage
     const metadata = await loadComponentsFromSync();
-    
+
     // GA4: Track welcome_viewed for first-time users
     const { hasSeenWelcome } = await chrome.storage.local.get('hasSeenWelcome');
     if (!hasSeenWelcome && window.GA4 && window.GA4.sendEvent) {
@@ -513,15 +720,76 @@ function renderEmptyState(container) {
       }, getEngagementTime());
       await chrome.storage.local.set({ hasSeenWelcome: true });
     }
-  
+
+    // ===== ONBOARDING: Playground capture cleanup + category picker =====
+    const fromPlayground = new URLSearchParams(window.location.search).get('from') === 'playground';
+    const allLocalData = await new Promise(resolve => chrome.storage.local.get(null, resolve));
+    const playgroundKeys = Object.keys(allLocalData).filter(k => k.startsWith('playground-'));
+
+    if (playgroundKeys.length > 0) {
+      const container = document.getElementById('components-container');
+
+      // GA4: Track reaching dashboard from playground
+      if (fromPlayground && window.GA4 && window.GA4.sendEvent) {
+        const { install_date } = await chrome.storage.local.get('install_date');
+        const totalSec = install_date ? Math.round((Date.now() - parseInt(install_date)) / 1000) : 0;
+        window.GA4.sendEvent('onboarding_dashboard_reached', {
+          total_onboarding_sec: totalSec
+        }, getEngagementTime());
+      }
+
+      // Briefly show the practice capture card (proof it worked)
+      const pg = allLocalData[playgroundKeys[0]];
+      container.innerHTML = `
+        <div class="components-grid">
+          <div class="component-card size-1x1" style="opacity: 1; transition: opacity 0.5s ease;">
+            <div class="component-header">
+              <div class="component-header-left">
+                <img src="${pg.favicon || ''}" class="component-favicon" width="16" height="16" alt="">
+                <span class="component-title">${pg.name || 'Practice Capture'}</span>
+              </div>
+            </div>
+            <div class="component-content">${pg.html_cache || '<p style="color:#999;padding:16px;">Practice capture content</p>'}</div>
+          </div>
+        </div>
+      `;
+
+      // Wait 2.5s, then fade out and clean up
+      await new Promise(r => setTimeout(r, 2500));
+      const practiceCard = container.querySelector('.component-card');
+      if (practiceCard) practiceCard.style.opacity = '0';
+      await new Promise(r => setTimeout(r, 500));
+
+      // Delete all playground captures from storage.local
+      await new Promise(resolve => chrome.storage.local.remove(playgroundKeys, resolve));
+
+      // Mark onboarding as completed
+      await chrome.storage.local.set({ onboardingCompleted: true });
+
+      // Show category picker (state machine: no reload)
+      await showCategoryPickerOverlay(container);
+
+      // After category picker, reload to render the new pre-populated cards
+      location.reload();
+      return;
+    }
+    // Fallback: onboarding completed but categories never chosen (user navigated away)
+    if (allLocalData.onboardingCompleted && !allLocalData.categoriesChosen && metadata.length === 0) {
+      const container = document.getElementById('components-container');
+      await showCategoryPickerOverlay(container);
+      location.reload();
+      return;
+    }
+    // ===== END ONBOARDING =====
+
     // Step 4: Load component data from local storage
     const localResult = await new Promise(resolve => {
       chrome.storage.local.get(['componentsData'], resolve);
     });
     const localData = localResult.componentsData || {};
-    
+
     const container = document.getElementById('components-container');
-    
+
     // Step 5: Merge sync metadata with local HTML data by ID
   const components = metadata.map(meta => ({
     ...meta,
@@ -565,7 +833,23 @@ function renderEmptyState(container) {
   
     // Inject CSS cleanup for whitespace compression
     injectCleanupCSS();
-  
+
+    // GA4: Track onboarding abandonment (dashboard loaded >24h after install, no onboarding)
+    if (!allLocalData.onboardingCompleted && !allLocalData.onboardingAbandoned) {
+      const { install_date } = await chrome.storage.local.get('install_date');
+      if (install_date) {
+        const hoursSinceInstall = (Date.now() - parseInt(install_date)) / 3600000;
+        if (hoursSinceInstall > 24) {
+          await chrome.storage.local.set({ onboardingAbandoned: true });
+          if (window.GA4 && window.GA4.sendEvent) {
+            window.GA4.sendEvent('onboarding_abandoned', {
+              hours_since_install: Math.round(hoursSinceInstall)
+            }, getEngagementTime());
+          }
+        }
+      }
+    }
+
     if (components.length === 0) {
       // Show empty state with click-to-load demo
       renderEmptyState(container);
@@ -680,6 +964,7 @@ function renderEmptyState(container) {
             <span class="editable-title" style="font-weight: 600; font-size: 15px; color: #000; cursor: pointer; padding: 2px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="Click to edit label">
               ${component.customLabel || component.name || 'Unnamed'}
             </span>
+            ${component.isPrePopulated ? '<span style="font-size: 10px; padding: 2px 6px; background: #f3f4f6; color: #6b7280; border-radius: 4px; font-weight: 500; white-space: nowrap;">Template</span>' : ''}
           </div>
           <div style="display: flex; align-items: center;">
             <div class="clock-wrap">
@@ -1302,6 +1587,22 @@ function renderEmptyState(container) {
       
       grid.appendChild(card);
     });
+
+    // ===== STICKY CAPTURE NUDGE =====
+    // Show yellow "Capture your first card" button if no real captures exist
+    const hasRealCapture = components.some(c => !c.isPrePopulated);
+    if (!hasRealCapture && components.length > 0) {
+      const nudgeBtn = document.getElementById('capture-nudge-btn');
+      if (nudgeBtn) {
+        nudgeBtn.style.display = 'inline-block';
+        nudgeBtn.addEventListener('click', () => {
+          // Open the info/tutorial modal
+          const modal = document.getElementById('welcome-modal');
+          if (modal) modal.style.display = 'flex';
+        });
+      }
+    }
+
   } catch (error) {
     console.error('❌ Error loading components:', error);
     container.innerHTML = `
@@ -1498,12 +1799,20 @@ const welcomeModal = document.getElementById('welcome-modal');
 const gotItBtn = document.getElementById('got-it-btn');
 const infoBtn = document.getElementById('info-btn');
 
-// Check if this is first visit
+// Check if this is first visit — skip for onboarding completers (playground flow)
 const hasSeenWelcome = localStorage.getItem('hasSeenWelcome');
 
 if (!hasSeenWelcome) {
-  // First visit - show modal
-  welcomeModal.style.display = 'flex';
+  // Check if user completed onboarding playground (skip modal for them)
+  chrome.storage.local.get(['onboardingCompleted'], (result) => {
+    if (!result.onboardingCompleted) {
+      // Truly first visit without playground — show modal
+      welcomeModal.style.display = 'flex';
+    } else {
+      // Playground completer — mark as seen silently
+      localStorage.setItem('hasSeenWelcome', 'true');
+    }
+  });
 }
 
 // "Got it" button - dismiss modal and mark as seen

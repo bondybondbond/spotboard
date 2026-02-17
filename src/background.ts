@@ -152,9 +152,10 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     });
     if (DEBUG) console.log('📊 GA4: extension_installed sent');
     
-    // First-time install - open dashboard with tutorial modal
+    // First-time install - open interactive playground for onboarding
+    await chrome.storage.local.set({ onboardingStarted: true });
     chrome.tabs.create({
-      url: chrome.runtime.getURL('dashboard.html')
+      url: 'https://bondybondbond.github.io/spotboard/sandbox.html'
     });
   }
   
