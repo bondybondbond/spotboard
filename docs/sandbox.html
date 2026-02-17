@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SpotBoard — Interactive Tutorial</title>
+  <title>SpotBoard — Practice Page</title>
   <style>
     /* ═══════════════════════════════════════
        RESET & ROOT
@@ -23,7 +23,6 @@
       --rule: #d4d0ca;
       --card-bg: #fff;
       --sidebar-bg: #f6f5f2;
-      --tracker-height: 110px;
       --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       --font-headline: Georgia, 'Times New Roman', serif;
     }
@@ -35,7 +34,7 @@
       line-height: 1.55;
       color: var(--ink);
       background: var(--paper);
-      padding-top: var(--tracker-height);
+      padding-top: 0;
     }
 
     img { display: block; max-width: 100%; height: auto; }
@@ -43,181 +42,304 @@
     a:hover { text-decoration: underline; }
 
     /* ═══════════════════════════════════════
-       STEP TRACKER (STICKY COACHING RIBBON)
+       WELCOME CARD (bottom-anchored, non-modal)
        ═══════════════════════════════════════ */
-    .tracker {
-      position: fixed; top: 0; left: 0; right: 0;
-      z-index: 9000;
-      background: rgba(255,255,255,0.92);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--rule);
-      padding: 12px 24px;
-      transition: box-shadow 0.3s;
+    .welcome-card {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(560px, calc(100vw - 32px));
+      background: #fff;
+      border: 1px solid var(--rule);
+      border-radius: 14px;
+      padding: 20px 24px 18px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.14), 0 0 0 1px rgba(102,126,234,0.15);
+      z-index: 9600;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: opacity 0.25s ease, transform 0.25s ease;
     }
-    .tracker.scrolled { box-shadow: 0 2px 20px rgba(0,0,0,0.08); }
-
-    .tracker-welcome {
-      text-align: center;
-      font-size: 13px;
-      color: var(--ink-light);
-      margin-bottom: 10px;
-      letter-spacing: 0.3px;
+    .welcome-card.hidden {
+      opacity: 0;
+      transform: translateX(-50%) translateY(16px);
+      pointer-events: none;
     }
-    .tracker-welcome strong { color: var(--brand); font-weight: 700; }
 
-    .tracker-steps {
+    .welcome-header {
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 0;
-      max-width: 720px;
-      margin: 0 auto;
+      gap: 10px;
     }
-
-    .tracker-step {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      position: relative;
-    }
-
-    .step-circle {
-      width: 32px; height: 32px;
-      border-radius: 50%;
+    .welcome-logo {
+      width: 28px; height: 28px;
+      background: var(--brand-gradient);
+      border-radius: 7px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 14px; font-weight: 700;
-      color: #fff;
-      background: #ccc;
-      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      color: #fff; font-size: 16px;
       flex-shrink: 0;
     }
-    .tracker-step.active .step-circle {
-      background: var(--brand-gradient);
-      animation: pulse-ring 2s ease-in-out infinite;
-    }
-    .tracker-step.done .step-circle {
-      background: var(--positive);
-      transform: scale(1.05);
+    .welcome-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--ink);
     }
 
-    @keyframes pulse-ring {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(102,126,234,0.4); }
-      50% { box-shadow: 0 0 0 8px rgba(102,126,234,0); }
+    .welcome-body {
+      font-size: 14px;
+      color: var(--ink-light);
+      line-height: 1.55;
+    }
+    .welcome-body strong { color: var(--ink); }
+
+    .welcome-subtext {
+      font-size: 12px;
+      color: var(--ink-faint);
     }
 
-    .step-label {
+    .welcome-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 16px;
+      margin-top: 4px;
+    }
+    .welcome-skip {
+      background: none;
+      border: none;
       font-size: 13px;
       color: var(--ink-faint);
-      transition: color 0.3s;
-      white-space: nowrap;
-    }
-    .tracker-step.active .step-label { color: var(--ink); font-weight: 600; }
-    .tracker-step.done .step-label { color: var(--positive); }
-
-    .step-fallback {
-      font-size: 11px;
-      color: var(--brand);
       cursor: pointer;
-      margin-left: 4px;
-      opacity: 0;
-      transition: opacity 0.3s;
-      border: none; background: none;
       font-family: inherit;
+      padding: 0;
     }
-    .tracker-step.active .step-fallback { opacity: 1; }
-    .step-fallback:hover { text-decoration: underline; }
-
-    .step-connector {
-      width: 48px; height: 2px;
-      background: #ddd;
-      margin: 0 8px;
-      transition: background 0.4s;
-      flex-shrink: 0;
-    }
-    .step-connector.filled { background: var(--positive); }
-
-    /* Dashboard CTA (appears on step 3 done) */
-    .tracker-cta {
-      display: none;
-      text-align: center;
-      margin-top: 8px;
-    }
-    .tracker-cta.visible { display: block; }
-    .tracker-cta-btn {
-      display: inline-block;
-      padding: 8px 28px;
+    .welcome-skip:hover { color: var(--ink-light); text-decoration: underline; }
+    .welcome-go {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 22px;
       background: var(--brand-gradient);
       color: #fff;
       border: none;
-      border-radius: 6px;
+      border-radius: 8px;
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       font-family: inherit;
-      transition: transform 0.2s, box-shadow 0.2s;
+      transition: transform 0.15s, box-shadow 0.15s;
     }
-    .tracker-cta-btn:hover {
+    .welcome-go:hover {
       transform: translateY(-1px);
       box-shadow: 0 4px 14px rgba(102,126,234,0.35);
     }
-    .tracker-cta-text {
-      display: block;
-      font-size: 12px;
-      color: var(--ink-faint);
-      margin-top: 4px;
-    }
-
-    /* Help text (appears after 60s stuck) */
-    .tracker-help {
-      display: none;
-      text-align: center;
-      font-size: 12px;
-      color: var(--negative);
-      margin-top: 6px;
-    }
-    .tracker-help.visible { display: block; }
 
     /* ═══════════════════════════════════════
-       ANIMATED ARROW (STEP 1)
+       COACH CARDS (Supademo-style)
+       ═══════════════════════════════════════ */
+    .coach-card {
+      position: fixed;
+      width: 360px;
+      background: #1c1c1e;
+      color: #fff;
+      border-radius: 14px;
+      padding: 22px 24px 20px;
+      z-index: 9500;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      animation: coach-glow 2.5s ease-in-out infinite;
+    }
+    .coach-card.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    @keyframes coach-glow {
+      0%, 100% {
+        box-shadow: 0 24px 64px rgba(0,0,0,0.45),
+                    0 0 0 1px rgba(102,126,234,0.25);
+      }
+      50% {
+        box-shadow: 0 24px 64px rgba(0,0,0,0.45),
+                    0 0 0 2px rgba(102,126,234,0.55),
+                    0 0 36px rgba(102,126,234,0.2);
+      }
+    }
+
+    /* Positions */
+    .coach-card.pos-right {
+      right: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    .coach-card.pos-left {
+      left: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    .coach-card.pos-center {
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .coach-step-pill {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.3px;
+      color: #a78bfa;
+      background: rgba(167,139,250,0.12);
+      border-radius: 20px;
+      padding: 3px 10px;
+      margin-bottom: 12px;
+    }
+
+    .coach-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      line-height: 1.3;
+    }
+
+    .coach-body {
+      font-size: 13.5px;
+      line-height: 1.65;
+      color: #b0b0b8;
+      margin-bottom: 12px;
+    }
+    .coach-body strong { color: #fff; }
+
+    .coach-tip {
+      font-size: 12px;
+      color: #6b6b78;
+      margin-bottom: 18px;
+      line-height: 1.5;
+    }
+
+    .coach-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .coach-next {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 18px;
+      background: var(--brand-gradient);
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity 0.15s;
+    }
+    .coach-next:hover { opacity: 0.88; }
+
+    .coach-auto-label {
+      font-size: 11px;
+      color: #4a4a55;
+      font-style: italic;
+    }
+
+    /* Completion card */
+    .coach-card.completion {
+      text-align: center;
+      width: 420px;
+    }
+    .coach-celebration {
+      font-size: 36px;
+      margin-bottom: 8px;
+    }
+    .coach-card.completion .coach-title {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+    .coach-card.completion .coach-body {
+      margin-bottom: 20px;
+    }
+    .coach-open-board {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 28px;
+      background: var(--brand-gradient);
+      color: #fff;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: transform 0.15s, box-shadow 0.15s;
+      margin-bottom: 10px;
+    }
+    .coach-open-board:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(102,126,234,0.4);
+      text-decoration: none;
+      color: #fff;
+    }
+    .coach-capture-another {
+      display: block;
+      font-size: 12px;
+      color: #6b6b78;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      margin-top: 4px;
+    }
+    .coach-capture-another:hover { color: #a78bfa; }
+
+    /* ═══════════════════════════════════════
+       ANIMATED ARROW (Step 1 only)
        ═══════════════════════════════════════ */
     .toolbar-arrow {
       position: fixed;
-      top: calc(var(--tracker-height) + 12px);
-      right: 32px;
-      z-index: 8999;
+      top: 16px;
+      right: 28px;
+      z-index: 9400;
       text-align: right;
       opacity: 0;
-      transform: translateY(8px);
-      transition: opacity 0.5s, transform 0.5s;
+      transform: translateY(6px);
+      transition: opacity 0.4s ease, transform 0.4s ease;
       pointer-events: none;
     }
     .toolbar-arrow.visible {
       opacity: 1;
       transform: translateY(0);
-      pointer-events: auto;
     }
     .toolbar-arrow svg {
-      width: 36px; height: 36px;
+      width: 52px; height: 52px;
+      filter: drop-shadow(0 0 10px rgba(102,126,234,0.85));
       animation: float-arrow 1.5s ease-in-out infinite;
+      margin-left: auto;
     }
     .toolbar-arrow-label {
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 14px;
+      font-weight: 700;
       color: var(--brand);
       margin-top: 2px;
     }
     .toolbar-arrow-hint {
       font-size: 11px;
       color: var(--ink-faint);
-      max-width: 200px;
+      max-width: 210px;
       margin-left: auto;
       margin-top: 2px;
+      line-height: 1.4;
     }
 
     @keyframes float-arrow {
       0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-8px); }
+      50% { transform: translateY(-9px); }
     }
 
     /* ═══════════════════════════════════════
@@ -246,12 +368,54 @@
     }
 
     /* ═══════════════════════════════════════
+       DUMMY PAGE LABEL
+       ═══════════════════════════════════════ */
+    .sandbox-label {
+      background: #fef3c7;
+      border: 1px solid #fbbf24;
+      border-radius: 6px;
+      padding: 9px 20px;
+      text-align: center;
+      font-size: 13px;
+      color: #92400e;
+      max-width: 1200px;
+      margin: 12px auto 0;
+    }
+
+    /* ═══════════════════════════════════════
+       STEP 2 SECTION HIGHLIGHTS
+       ═══════════════════════════════════════ */
+    [data-sb-highlight] {
+      position: relative;
+    }
+    body.step2-active [data-sb-highlight] {
+      outline: 2px dashed rgba(102,126,234,0.5);
+      border-radius: 5px;
+    }
+    body.step2-active [data-sb-highlight]::after {
+      content: 'Try capturing this \2192';
+      position: absolute;
+      top: 6px;
+      right: 8px;
+      background: rgba(102,126,234,0.9);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.3px;
+      pointer-events: none;
+      white-space: nowrap;
+      font-family: var(--font-body);
+    }
+
+    /* ═══════════════════════════════════════
        3-COLUMN LAYOUT
        ═══════════════════════════════════════ */
     .page-grid {
       max-width: 1200px;
       margin: 0 auto;
-      padding: 16px 24px 60px;
+      padding: 16px 24px 80px;
       display: grid;
       grid-template-columns: 220px 1fr 220px;
       gap: 20px;
@@ -423,87 +587,161 @@
       .page-grid > .sidebar-right { order: 3; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
       .sidebar-widget { margin-bottom: 0; }
       .masthead { flex-direction: column; gap: 4px; }
+      .coach-card { width: calc(100vw - 40px) !important; }
+      .coach-card.pos-right,
+      .coach-card.pos-left { left: 20px; right: 20px; top: auto; bottom: 120px; transform: none; }
+      .coach-card.pos-center { left: 50%; top: 50%; transform: translate(-50%, -50%); }
     }
 
     @media (max-width: 600px) {
-      :root { --tracker-height: 90px; }
-      .tracker { padding: 8px 12px; }
-      .tracker-welcome { font-size: 11px; margin-bottom: 6px; }
-      .step-circle { width: 26px; height: 26px; font-size: 12px; }
-      .step-label { font-size: 11px; }
-      .step-connector { width: 24px; margin: 0 4px; }
-      .toolbar-arrow { right: 12px; }
+      .toolbar-arrow { right: 10px; }
       .page-grid > .sidebar-left,
       .page-grid > .sidebar-right { grid-template-columns: 1fr; }
       .article:first-child h2 { font-size: 24px; }
       .article h2 { font-size: 20px; }
+      .welcome-card { bottom: 12px; }
     }
 
     /* ═══════════════════════════════════════
-       FOOTER ATTRIBUTION
+       REDUCED MOTION
+       ═══════════════════════════════════════ */
+    @media (prefers-reduced-motion: reduce) {
+      .coach-card {
+        animation: none !important;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.45), 0 0 0 2px rgba(102,126,234,0.45) !important;
+      }
+      .toolbar-arrow svg {
+        animation: none !important;
+        filter: drop-shadow(0 0 6px rgba(102,126,234,0.6));
+      }
+      .welcome-card { transition: none; }
+    }
+
+    /* ═══════════════════════════════════════
+       FOOTER
        ═══════════════════════════════════════ */
     .page-footer {
       max-width: 1200px;
       margin: 0 auto;
-      padding: 16px 24px 32px;
+      padding: 16px 24px 100px;
       text-align: center;
       font-size: 11px;
       color: var(--ink-faint);
       border-top: 1px solid var(--rule);
     }
+    #replay-btn {
+      background: none;
+      border: none;
+      color: var(--brand);
+      cursor: pointer;
+      font-size: 11px;
+      font-family: inherit;
+    }
+    #replay-btn:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
 
   <!-- ════════════════════════════════════
-       STEP TRACKER
+       WELCOME CARD (bottom-anchored)
        ════════════════════════════════════ -->
-  <div class="tracker" id="tracker">
-    <div class="tracker-welcome">
-      Welcome to <strong>SpotBoard</strong> — learn to capture content in 30 seconds
+  <div class="welcome-card hidden" id="welcome-card">
+    <div class="welcome-header">
+      <div class="welcome-logo">&#127919;</div>
+      <div class="welcome-title">Welcome to SpotBoard!</div>
     </div>
-    <div class="tracker-steps">
-      <div class="tracker-step active" id="step1">
-        <div class="step-circle">1</div>
-        <span class="step-label">Open SpotBoard</span>
-        <button class="step-fallback" onclick="advanceStep(2)">I did it &rarr;</button>
-      </div>
-      <div class="step-connector" id="conn1"></div>
-      <div class="tracker-step" id="step2">
-        <div class="step-circle">2</div>
-        <span class="step-label">Select a section</span>
-        <button class="step-fallback" onclick="advanceStep(3)">I did it &rarr;</button>
-      </div>
-      <div class="step-connector" id="conn2"></div>
-      <div class="tracker-step" id="step3">
-        <div class="step-circle">3</div>
-        <span class="step-label">Confirm capture</span>
-        <button class="step-fallback" onclick="advanceStep(4)">I did it &rarr;</button>
-      </div>
+    <div class="welcome-body">
+      Save any section from any website &#8212; <strong>it&#8217;ll stay updated in your board automatically.</strong>
     </div>
-    <div class="tracker-help" id="tracker-help">
-      Having trouble? Try clicking on one of the highlighted sections below.
+    <div class="welcome-subtext">
+      This is a practice page &#8212; fake content so you can try SpotBoard safely in ~30 seconds.
     </div>
-    <div class="tracker-cta" id="tracker-cta">
-      <div style="margin-bottom: 6px; font-size: 15px; font-weight: 600; color: var(--positive);">
-        &#10003; You got it!
-      </div>
-      <div class="tracker-cta-text">
-        Open a new tab, click the SpotBoard icon, then select <strong>Open Board</strong> to see your capture.
-      </div>
+    <div class="welcome-actions">
+      <button class="welcome-skip" id="welcome-skip">I already know how it works</button>
+      <button class="welcome-go" id="welcome-go">Let&#8217;s go &#8594;</button>
     </div>
   </div>
 
   <!-- ════════════════════════════════════
-       ANIMATED ARROW (STEP 1)
+       ANIMATED ARROW (Step 1)
        ════════════════════════════════════ -->
-  <div class="toolbar-arrow visible" id="toolbar-arrow">
-    <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M18 30V8" stroke="#667eea" stroke-width="3" stroke-linecap="round"/>
-      <path d="M10 16L18 6L26 16" stroke="#667eea" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <div class="toolbar-arrow" id="toolbar-arrow">
+    <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M26 46V10" stroke="#667eea" stroke-width="5" stroke-linecap="round"/>
+      <path d="M12 24L26 6L40 24" stroke="#667eea" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <div class="toolbar-arrow-label">Click the SpotBoard icon</div>
-    <div class="toolbar-arrow-hint">Don't see it? Click the puzzle piece &#x1F9E9; icon first, then pin SpotBoard</div>
+    <div class="toolbar-arrow-hint">Don&#8217;t see it? Click the &#x1F9E9; puzzle piece first, then pin SpotBoard</div>
+  </div>
+
+  <!-- ════════════════════════════════════
+       COACH CARD — STEP 1 (right side)
+       ════════════════════════════════════ -->
+  <div class="coach-card pos-right" id="card-step1">
+    <div class="coach-step-pill">Step 1 of 3</div>
+    <div class="coach-title">Open SpotBoard</div>
+    <div class="coach-body">
+      Click the <strong>SpotBoard icon</strong> in your browser toolbar
+      (it&#8217;s inside the &#x1F9E9; puzzle piece button). Then click <strong>Save a Spot</strong>.
+    </div>
+    <div class="coach-tip">&#x1F4A1; Tip: Pin SpotBoard so it&#8217;s easier to find in the future!</div>
+    <div class="coach-actions">
+      <span class="coach-auto-label">Auto-advances when detected</span>
+      <button class="coach-next" onclick="showCard(2)">Next &#8594;</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════
+       COACH CARD — STEP 2 (right side)
+       ════════════════════════════════════ -->
+  <div class="coach-card pos-right" id="card-step2">
+    <div class="coach-step-pill">Step 2 of 3</div>
+    <div class="coach-title">Select a section</div>
+    <div class="coach-body">
+      A <strong>red frame</strong> appears as you move your cursor. Click any whole block of
+      content &#8212; a news article, market table, or match results.<br><br>
+      <strong>Tip: grab the whole block</strong>, not just an image &#8212; that way your spot
+      updates when the page changes.
+    </div>
+    <div class="coach-actions">
+      <span class="coach-auto-label">Auto-advances when detected</span>
+      <button class="coach-next" onclick="showCard(3)">Next &#8594;</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════
+       COACH CARD — STEP 3 (LEFT side)
+       ════════════════════════════════════ -->
+  <div class="coach-card pos-left" id="card-step3">
+    <div class="coach-step-pill">Step 3 of 3</div>
+    <div class="coach-title">Confirm your capture</div>
+    <div class="coach-body">
+      A <strong>green frame</strong> marks your selection. Check the preview on the right &#8212;
+      happy with it? Press <strong>Confirm Spot</strong>.<br><br>
+      Not right? Press Cancel and try a different section.
+    </div>
+    <div class="coach-actions">
+      <span class="coach-auto-label"></span>
+      <button class="coach-next" onclick="showCompletion()">I confirmed it &#8594;</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════
+       COMPLETION CARD (centred)
+       ════════════════════════════════════ -->
+  <div class="coach-card pos-center completion" id="card-completion">
+    <div class="coach-celebration">&#127881;</div>
+    <div class="coach-title">You did it!</div>
+    <div class="coach-body">
+      Your first spot is saved. Press <strong>View on SpotBoard</strong> in the popup
+      to open your board &#8212; or close the popup and capture another section.
+    </div>
+    <a class="coach-open-board" id="open-board-btn" href="#" target="_blank">
+      &#8594; Open my SpotBoard
+    </a>
+    <button class="coach-capture-another" onclick="dismissCompletion()">
+      Capture another section
+    </button>
   </div>
 
   <!-- ════════════════════════════════════
@@ -515,6 +753,13 @@
   </div>
 
   <!-- ════════════════════════════════════
+       DUMMY PAGE LABEL
+       ════════════════════════════════════ -->
+  <div class="sandbox-label">
+    &#x1F9EA; This is a <strong>practice page</strong> &#8212; fake content so you can try SpotBoard safely
+  </div>
+
+  <!-- ════════════════════════════════════
        3-COLUMN GRID
        ════════════════════════════════════ -->
   <div class="page-grid">
@@ -523,26 +768,26 @@
     <div class="sidebar-left">
 
       <!-- Weather Icons: MIT License, basicons (https://basicons.xyz/) -->
-      <div class="sidebar-widget">
+      <div class="sidebar-widget" data-sb-highlight>
         <div class="sidebar-widget-title">Weather</div>
         <div class="weather-row">
           <svg class="weather-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.5 17.5L19 19M20 12H22M6.5 6.5L5 5M17.5 6.5L19 5M6.5 17.5L5 19M2 12H4M12 2V4M12 20V22M16 12C16 14.2091 14.2091 16 12 16C9.79086 16 8 14.2091 8 12C8 9.79086 9.79086 8 12 8C14.2091 8 16 9.79086 16 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span class="weather-city">London</span>
-          <span class="weather-temp">22 °C</span>
+          <span class="weather-temp">22 &#176;C</span>
         </div>
         <div class="weather-row">
           <svg class="weather-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.34141 9C7.16508 6.66962 9.38756 5 12 5C15.3137 5 18 7.68629 18 11C20.2091 11 22 12.7909 22 15C22 17.2091 20.2091 19 18 19H7C4.23858 19 2 16.7614 2 14C2 11.469 3.8806 9.37721 6.32069 9.04576" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span class="weather-city">Paris</span>
-          <span class="weather-temp">18 °C</span>
+          <span class="weather-temp">18 &#176;C</span>
         </div>
         <div class="weather-row">
           <svg class="weather-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.34141 6C7.16508 3.66962 9.38756 2 12 2C15.3137 2 18 4.68629 18 8C20.2091 8 22 9.79086 22 12C22 14.2091 20.2091 16 18 16H7C4.23858 16 2 13.7614 2 11C2 8.46898 3.8806 6.37721 6.32069 6.04576" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 20L6 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 20L11 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 20L16 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span class="weather-city">New York</span>
-          <span class="weather-temp">15 °C</span>
+          <span class="weather-temp">15 &#176;C</span>
         </div>
       </div>
 
-      <div class="sidebar-widget">
+      <div class="sidebar-widget" data-sb-highlight>
         <div class="sidebar-widget-title">Markets</div>
         <div class="stock-row">
           <span class="stock-sym">TECH</span>
@@ -565,19 +810,19 @@
     <!-- ── MAIN COLUMN ── -->
     <div class="main-col">
 
-      <div class="article">
+      <div class="article" data-sb-highlight>
         <div class="article-badge">Technology</div>
         <img class="article-img" src="sandbox-images/business.jpg" alt="Business meeting" loading="eager">
         <h2>Tech Giants Report Record Q4 Revenue Amid AI Boom</h2>
         <p>
-          The world's five largest technology companies have collectively reported their strongest
+          The world&#8217;s five largest technology companies have collectively reported their strongest
           quarterly earnings in over a decade, driven by surging demand for artificial intelligence
           infrastructure and cloud computing services.
         </p>
         <p>
           Analysts note that enterprise AI spending shows no signs of slowing, with capital
-          expenditure forecasts revised upward across the sector. "We're still in the first inning
-          of the AI infrastructure build-out," said one portfolio manager.
+          expenditure forecasts revised upward across the sector. &#8220;We&#8217;re still in the first inning
+          of the AI infrastructure build-out,&#8221; said one portfolio manager.
         </p>
         <div class="article-meta">2 hours ago &middot; 4 min read</div>
       </div>
@@ -597,7 +842,7 @@
       <div class="article">
         <div class="article-badge">Football</div>
         <img class="article-img" src="sandbox-images/football.jpg" alt="Football match" loading="lazy">
-        <h2>Premier League Transfer Window: Who's Moving?</h2>
+        <h2>Premier League Transfer Window: Who&#8217;s Moving?</h2>
         <p>
           With the winter transfer window now open, several high-profile moves are expected.
           Manchester United are reportedly close to signing a creative midfielder from Serie A,
@@ -623,28 +868,28 @@
     <!-- ── RIGHT SIDEBAR ── -->
     <div class="sidebar-right">
 
-      <div class="sidebar-widget">
+      <div class="sidebar-widget" data-sb-highlight>
         <div class="sidebar-widget-title">Match Results</div>
         <div class="match-row">
           <div>
             <div class="match-teams">Man Utd vs Liverpool</div>
             <div class="match-league">Premier League</div>
           </div>
-          <div class="match-score">2 – 1</div>
+          <div class="match-score">2 &#8211; 1</div>
         </div>
         <div class="match-row">
           <div>
             <div class="match-teams">Real Madrid vs Barcelona</div>
             <div class="match-league">La Liga</div>
           </div>
-          <div class="match-score">3 – 0</div>
+          <div class="match-score">3 &#8211; 0</div>
         </div>
         <div class="match-row">
           <div>
             <div class="match-teams">Lakers vs Celtics</div>
             <div class="match-league">NBA</div>
           </div>
-          <div class="match-score">108 – 105</div>
+          <div class="match-score">108 &#8211; 105</div>
         </div>
       </div>
 
@@ -656,7 +901,7 @@
       </div>
 
       <div class="sidebar-widget">
-        <div class="sidebar-widget-title">Today's Deals</div>
+        <div class="sidebar-widget-title">Today&#8217;s Deals</div>
         <div class="deal-row">
           <span class="deal-tag">50% OFF</span>
           <span class="deal-name">Premium Electronics</span>
@@ -675,7 +920,8 @@
   </div>
 
   <div class="page-footer">
-    This is a practice page for SpotBoard. Content is fictional.
+    This is a practice page for SpotBoard. Content is fictional. &nbsp;&middot;&nbsp;
+    <button id="replay-btn" onclick="replayTutorial()">Replay tutorial</button>
   </div>
 
   <!-- Confetti canvas -->
@@ -689,84 +935,159 @@
     document.getElementById('masthead-date').textContent =
       new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-    /* ── Tracker shadow on scroll ── */
-    window.addEventListener('scroll', () => {
-      document.getElementById('tracker').classList.toggle('scrolled', window.scrollY > 4);
-    }, { passive: true });
+    /* ═══════════════════════════════════════
+       localStorage KEYS
+       ═══════════════════════════════════════ */
+    var SB_KEY_SEEN = 'sb_onboarding_seen';
+    var SB_KEY_STEP = 'sb_onboarding_step';
 
     /* ═══════════════════════════════════════
-       STEP STATE MACHINE
+       WELCOME CARD
        ═══════════════════════════════════════ */
-    let currentStep = 1;
-    let capturingTimeout = null;
-
-    function advanceStep(toStep) {
-      if (toStep <= currentStep) return;
-      currentStep = toStep;
-
-      // Update circles & labels
-      for (let i = 1; i <= 3; i++) {
-        const el = document.getElementById('step' + i);
-        const circle = el.querySelector('.step-circle');
-        el.classList.remove('active', 'done');
-
-        if (i < currentStep) {
-          el.classList.add('done');
-          circle.innerHTML = '&#10003;';
-        } else if (i === currentStep && currentStep <= 3) {
-          el.classList.add('active');
-        }
-      }
-
-      // Connectors
-      document.getElementById('conn1').classList.toggle('filled', currentStep > 1);
-      document.getElementById('conn2').classList.toggle('filled', currentStep > 2);
-
-      // Arrow visibility
-      document.getElementById('toolbar-arrow').classList.toggle('visible', currentStep === 1);
-
-      // Clear stuck timeout
-      if (capturingTimeout) { clearTimeout(capturingTimeout); capturingTimeout = null; }
-
-      // Step-specific actions
-      if (currentStep === 2) {
-        fireConfetti(60);
-        // Start 60s timeout for stuck detection
-        capturingTimeout = setTimeout(() => {
-          if (currentStep === 2) {
-            document.getElementById('tracker-help').classList.add('visible');
-          }
-        }, 60000);
-      }
-
-      if (currentStep === 3) {
-        fireConfetti(60);
-      }
-
-      if (currentStep >= 4) {
-        // All done
-        const step3 = document.getElementById('step3');
-        step3.classList.remove('active');
-        step3.classList.add('done');
-        step3.querySelector('.step-circle').innerHTML = '&#10003;';
-        document.getElementById('conn2').classList.add('filled');
-        document.getElementById('tracker-help').classList.remove('visible');
-        document.getElementById('tracker-cta').classList.add('visible');
-        fireConfetti(150);
-
-        // Disconnect beacon observer
-        if (beaconObserver) beaconObserver.disconnect();
-        if (bodyObserver) bodyObserver.disconnect();
-      }
+    function showWelcomeCard() {
+      document.getElementById('welcome-card').classList.remove('hidden');
     }
+
+    function hideWelcomeCard() {
+      document.getElementById('welcome-card').classList.add('hidden');
+    }
+
+    document.getElementById('welcome-go').addEventListener('click', function() {
+      localStorage.setItem(SB_KEY_SEEN, 'true');
+      localStorage.setItem(SB_KEY_STEP, '1');
+      hideWelcomeCard();
+      showCard(1);
+    });
+
+    document.getElementById('welcome-skip').addEventListener('click', function() {
+      localStorage.setItem(SB_KEY_SEEN, 'true');
+      localStorage.setItem(SB_KEY_STEP, 'skipped');
+      hideWelcomeCard();
+    });
+
+    /* ═══════════════════════════════════════
+       CARD SYSTEM
+       ═══════════════════════════════════════ */
+    var CARD_IDS = {
+      1: 'card-step1',
+      2: 'card-step2',
+      3: 'card-step3',
+      'completion': 'card-completion'
+    };
+
+    var currentCard = null;
+
+    function showCard(step) {
+      var cardId = CARD_IDS[step];
+      if (!cardId) return;
+
+      // Hide previously visible card
+      if (currentCard && currentCard !== cardId) {
+        var prev = document.getElementById(currentCard);
+        if (prev) prev.classList.remove('visible');
+      }
+
+      currentCard = cardId;
+
+      // Step-specific side effects
+      if (step === 1) {
+        document.getElementById('toolbar-arrow').classList.add('visible');
+        document.body.classList.remove('step2-active');
+        localStorage.setItem(SB_KEY_STEP, '1');
+      } else if (step === 2) {
+        document.getElementById('toolbar-arrow').classList.remove('visible');
+        document.body.classList.add('step2-active');
+        fireConfetti(40);
+        localStorage.setItem(SB_KEY_STEP, '2');
+      } else if (step === 3) {
+        document.body.classList.remove('step2-active');
+        localStorage.setItem(SB_KEY_STEP, '3');
+      }
+
+      // Show new card
+      var card = document.getElementById(cardId);
+      if (card) card.classList.add('visible');
+    }
+
+    function showCompletion() {
+      // Hide step 3 card
+      var s3 = document.getElementById('card-step3');
+      if (s3) s3.classList.remove('visible');
+
+      // Set dashboard URL from beacon (if available)
+      var beacon = document.getElementById('sb-onboarding-beacon');
+      var dashUrl = beacon && beacon.dataset && beacon.dataset.dashboardUrl;
+      if (dashUrl) {
+        document.getElementById('open-board-btn').setAttribute('href', dashUrl);
+      }
+
+      localStorage.setItem(SB_KEY_STEP, 'completed');
+      document.body.classList.remove('step2-active');
+      document.getElementById('toolbar-arrow').classList.remove('visible');
+
+      fireConfetti(150);
+
+      var card = document.getElementById('card-completion');
+      if (card) card.classList.add('visible');
+      currentCard = 'card-completion';
+    }
+
+    function dismissCompletion() {
+      var card = document.getElementById('card-completion');
+      if (card) card.classList.remove('visible');
+      currentCard = null;
+    }
+
+    /* ═══════════════════════════════════════
+       REPLAY
+       ═══════════════════════════════════════ */
+    function replayTutorial() {
+      localStorage.removeItem(SB_KEY_SEEN);
+      localStorage.removeItem(SB_KEY_STEP);
+
+      // Hide all cards
+      Object.keys(CARD_IDS).forEach(function(key) {
+        var el = document.getElementById(CARD_IDS[key]);
+        if (el) el.classList.remove('visible');
+      });
+      document.body.classList.remove('step2-active');
+      document.getElementById('toolbar-arrow').classList.remove('visible');
+      currentCard = null;
+
+      // Re-attach beacon observer if disconnected
+      var existingBeacon = document.getElementById('sb-onboarding-beacon');
+      if (existingBeacon && !beaconObserver) watchBeacon(existingBeacon);
+
+      // Show welcome card
+      showWelcomeCard();
+    }
+
+    /* ═══════════════════════════════════════
+       INITIALISATION (on page load)
+       ═══════════════════════════════════════ */
+    (function initOnboarding() {
+      var savedStep = localStorage.getItem(SB_KEY_STEP);
+
+      if (savedStep === 'completed' || savedStep === 'skipped') {
+        // Already done — hide welcome card, page loads clean
+        hideWelcomeCard();
+      } else if (savedStep === '1' || savedStep === '2' || savedStep === '3') {
+        // Mid-tour resume: skip welcome card, jump to saved step
+        hideWelcomeCard();
+        showCard(parseInt(savedStep, 10));
+      } else {
+        // First visit — show welcome card
+        showWelcomeCard();
+      }
+    })();
 
     /* ═══════════════════════════════════════
        CONFETTI (VANILLA CANVAS)
        ═══════════════════════════════════════ */
-    const confettiCanvas = document.getElementById('confetti-canvas');
-    const ctx = confettiCanvas.getContext('2d');
-    let confettiPieces = [];
-    let confettiFrame = null;
+    var confettiCanvas = document.getElementById('confetti-canvas');
+    var ctx = confettiCanvas.getContext('2d');
+    var confettiPieces = [];
+    var confettiFrame = null;
 
     function resizeCanvas() {
       confettiCanvas.width = window.innerWidth;
@@ -775,10 +1096,13 @@
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
-    const CONFETTI_COLORS = ['#667eea', '#764ba2', '#16a34a', '#f59e0b', '#ec4899', '#06b6d4'];
+    var CONFETTI_COLORS = ['#667eea', '#764ba2', '#16a34a', '#f59e0b', '#ec4899', '#06b6d4'];
 
     function fireConfetti(count) {
-      for (let i = 0; i < count; i++) {
+      // Respect reduced motion
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+      for (var i = 0; i < count; i++) {
         confettiPieces.push({
           x: Math.random() * confettiCanvas.width,
           y: -10 - Math.random() * 40,
@@ -797,7 +1121,7 @@
 
     function animateConfetti() {
       ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
-      confettiPieces = confettiPieces.filter(p => {
+      confettiPieces = confettiPieces.filter(function(p) {
         p.x += p.vx;
         p.y += p.vy;
         p.vy += 0.06;
@@ -828,37 +1152,75 @@
        by SpotBoard content script.
        Contract: data-version="1", data-stage values:
          "ready" | "capturing" | "completed"
+       Also reads data-dashboard-url for the CTA.
        ═══════════════════════════════════════ */
-    let beaconObserver = null;
-    let bodyObserver = null;
+    var beaconObserver = null;
+    var bodyObserver = null;
 
     function watchBeacon(beaconEl) {
       if (beaconEl.dataset.version !== '1') return;
 
-      beaconObserver = new MutationObserver((mutations) => {
-        for (const m of mutations) {
-          if (m.attributeName !== 'data-stage') continue;
-          const stage = beaconEl.dataset.stage;
-          if (stage === 'capturing' && currentStep < 2) advanceStep(2);
-          if (stage === 'completed' && currentStep < 4) advanceStep(4);
+      // Set dashboard URL immediately if available
+      var dashUrl = beaconEl.dataset.dashboardUrl;
+      if (dashUrl) {
+        document.getElementById('open-board-btn').setAttribute('href', dashUrl);
+      }
+
+      beaconObserver = new MutationObserver(function(mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+          var m = mutations[i];
+          if (m.attributeName === 'data-stage') {
+            var stage = beaconEl.dataset.stage;
+            // Advance to step 2 if we're at step 1 (or welcome)
+            if (stage === 'capturing' &&
+                currentCard !== 'card-step2' &&
+                currentCard !== 'card-step3' &&
+                currentCard !== 'card-completion') {
+              showCard(2);
+            }
+            // Advance to step 3 if we're at step 2
+            if (stage === 'completed' &&
+                currentCard !== 'card-step3' &&
+                currentCard !== 'card-completion') {
+              showCard(3);
+            }
+          }
+          if (m.attributeName === 'data-dashboard-url') {
+            var url = beaconEl.dataset.dashboardUrl;
+            if (url) document.getElementById('open-board-btn').setAttribute('href', url);
+          }
         }
       });
-      beaconObserver.observe(beaconEl, { attributes: true, attributeFilter: ['data-stage'] });
 
-      // Process current state immediately
-      const stage = beaconEl.dataset.stage;
-      if (stage === 'capturing' && currentStep < 2) advanceStep(2);
-      if (stage === 'completed' && currentStep < 4) advanceStep(4);
+      beaconObserver.observe(beaconEl, {
+        attributes: true,
+        attributeFilter: ['data-stage', 'data-dashboard-url']
+      });
+
+      // Process current state immediately (content script may have already run)
+      var stage = beaconEl.dataset.stage;
+      if (stage === 'capturing' &&
+          currentCard !== 'card-step2' &&
+          currentCard !== 'card-step3' &&
+          currentCard !== 'card-completion') {
+        showCard(2);
+      }
+      if (stage === 'completed' &&
+          currentCard !== 'card-step3' &&
+          currentCard !== 'card-completion') {
+        showCard(3);
+      }
     }
 
     // Watch for beacon element to appear in DOM
-    const existingBeacon = document.getElementById('sb-onboarding-beacon');
+    var existingBeacon = document.getElementById('sb-onboarding-beacon');
     if (existingBeacon) {
       watchBeacon(existingBeacon);
     } else {
-      bodyObserver = new MutationObserver((mutations) => {
-        for (const m of mutations) {
-          for (const node of m.addedNodes) {
+      bodyObserver = new MutationObserver(function(mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+          for (var j = 0; j < mutations[i].addedNodes.length; j++) {
+            var node = mutations[i].addedNodes[j];
             if (node.id === 'sb-onboarding-beacon') {
               watchBeacon(node);
               bodyObserver.disconnect();

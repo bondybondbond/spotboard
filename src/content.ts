@@ -20,6 +20,7 @@ if (isPlaygroundPage) {
   beacon.id = 'sb-onboarding-beacon';
   beacon.dataset.stage = 'ready';
   beacon.dataset.version = '1';
+  beacon.dataset.dashboardUrl = chrome.runtime.getURL('dashboard.html') + '?from=playground';
   beacon.style.display = 'none';
   document.documentElement.appendChild(beacon);
   log('🎯 Playground beacon injected: data-stage=ready');
