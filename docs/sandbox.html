@@ -42,98 +42,130 @@
     a:hover { text-decoration: underline; }
 
     /* ═══════════════════════════════════════
-       WELCOME CARD (bottom-anchored, non-modal)
+       WELCOME OVERLAY + CARD (centred modal)
        ═══════════════════════════════════════ */
+    .welcome-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 9590;
+      transition: opacity 0.25s ease;
+    }
+    .welcome-overlay.hidden { opacity: 0; pointer-events: none; }
+
     .welcome-card {
       position: fixed;
-      bottom: 24px;
+      top: 50%;
       left: 50%;
-      transform: translateX(-50%);
-      width: min(560px, calc(100vw - 32px));
-      background: #fff;
-      border: 1px solid var(--rule);
-      border-radius: 14px;
-      padding: 20px 24px 18px;
-      box-shadow: 0 8px 40px rgba(0,0,0,0.14), 0 0 0 1px rgba(102,126,234,0.15);
+      transform: translate(-50%, -50%);
+      width: min(480px, calc(100vw - 32px));
+      background: #C5FFF9;
+      border: none;
+      border-radius: 20px;
+      padding: 32px 32px 26px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.22);
       z-index: 9600;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 14px;
       transition: opacity 0.25s ease, transform 0.25s ease;
     }
     .welcome-card.hidden {
       opacity: 0;
-      transform: translateX(-50%) translateY(16px);
+      transform: translate(-50%, -48%);
       pointer-events: none;
     }
 
     .welcome-header {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
     .welcome-logo {
-      width: 28px; height: 28px;
-      background: var(--brand-gradient);
-      border-radius: 7px;
-      display: flex; align-items: center; justify-content: center;
-      color: #fff; font-size: 16px;
+      width: 44px; height: 44px;
+      border-radius: 10px;
       flex-shrink: 0;
+      display: block;
     }
     .welcome-title {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--ink);
+      font-size: 22px;
+      font-weight: 800;
+      color: #0d1117;
+      letter-spacing: -0.3px;
     }
 
     .welcome-body {
-      font-size: 14px;
-      color: var(--ink-light);
-      line-height: 1.55;
+      font-size: 16px;
+      color: #1a2733;
+      line-height: 1.6;
     }
-    .welcome-body strong { color: var(--ink); }
-
-    .welcome-subtext {
-      font-size: 12px;
-      color: var(--ink-faint);
-    }
+    .welcome-body strong { color: #0d1117; }
 
     .welcome-actions {
       display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 16px;
-      margin-top: 4px;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 6px;
     }
+    .welcome-go {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 13px 28px;
+      background: #0d1117;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      transition: transform 0.15s, opacity 0.15s;
+      width: 100%;
+    }
+    .welcome-go:hover { opacity: 0.88; transform: translateY(-1px); }
+
     .welcome-skip {
       background: none;
       border: none;
       font-size: 13px;
-      color: var(--ink-faint);
+      color: #3a5a52;
       cursor: pointer;
       font-family: inherit;
-      padding: 0;
+      padding: 4px 0;
+      text-align: center;
+      text-decoration: underline;
+      text-underline-offset: 2px;
     }
-    .welcome-skip:hover { color: var(--ink-light); text-decoration: underline; }
-    .welcome-go {
+    .welcome-skip:hover { color: #0d1117; }
+
+    /* ═══════════════════════════════════════
+       REPLAY CHIP (always visible top-left)
+       ═══════════════════════════════════════ */
+    .replay-chip {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      z-index: 9400;
+      background: rgba(255,255,255,0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--rule);
+      border-radius: 20px;
+      padding: 5px 12px 5px 8px;
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 9px 22px;
-      background: var(--brand-gradient);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
+      font-size: 12px;
+      color: var(--ink-light);
       cursor: pointer;
-      font-family: inherit;
-      transition: transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      transition: box-shadow 0.15s, color 0.15s;
+      font-family: var(--font-body);
+      border: none;
     }
-    .welcome-go:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 14px rgba(102,126,234,0.35);
-    }
+    .replay-chip:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.13); color: var(--ink); }
+    .replay-chip svg { width: 14px; height: 14px; flex-shrink: 0; }
 
     /* ═══════════════════════════════════════
        COACH CARDS (Supademo-style)
@@ -629,36 +661,41 @@
       color: var(--ink-faint);
       border-top: 1px solid var(--rule);
     }
-    #replay-btn {
-      background: none;
-      border: none;
-      color: var(--brand);
-      cursor: pointer;
-      font-size: 11px;
-      font-family: inherit;
-    }
-    #replay-btn:hover { text-decoration: underline; }
+
   </style>
 </head>
 <body>
 
   <!-- ════════════════════════════════════
-       WELCOME CARD (bottom-anchored)
+       REPLAY CHIP (always visible)
+       ════════════════════════════════════ -->
+  <button class="replay-chip" id="replay-chip" onclick="replayTutorial()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+      <path d="M3 3v5h5"/>
+    </svg>
+    Replay tutorial
+  </button>
+
+  <!-- ════════════════════════════════════
+       WELCOME OVERLAY
+       ════════════════════════════════════ -->
+  <div class="welcome-overlay hidden" id="welcome-overlay"></div>
+
+  <!-- ════════════════════════════════════
+       WELCOME CARD (centred modal)
        ════════════════════════════════════ -->
   <div class="welcome-card hidden" id="welcome-card">
     <div class="welcome-header">
-      <div class="welcome-logo">&#127919;</div>
+      <img class="welcome-logo" src="assets/logo.png" alt="SpotBoard">
       <div class="welcome-title">Welcome to SpotBoard!</div>
     </div>
     <div class="welcome-body">
-      Save any section from any website &#8212; <strong>it&#8217;ll stay updated in your board automatically.</strong>
-    </div>
-    <div class="welcome-subtext">
-      This is a practice page &#8212; fake content so you can try SpotBoard safely in ~30 seconds.
+      Save any section from any website &#8212; <strong>check it whenever you want, all in one place.</strong>
     </div>
     <div class="welcome-actions">
-      <button class="welcome-skip" id="welcome-skip">I already know how it works</button>
       <button class="welcome-go" id="welcome-go">Let&#8217;s go &#8594;</button>
+      <button class="welcome-skip" id="welcome-skip">I already know how it works</button>
     </div>
   </div>
 
@@ -920,8 +957,7 @@
   </div>
 
   <div class="page-footer">
-    This is a practice page for SpotBoard. Content is fictional. &nbsp;&middot;&nbsp;
-    <button id="replay-btn" onclick="replayTutorial()">Replay tutorial</button>
+    This is a practice page for SpotBoard. Content is fictional.
   </div>
 
   <!-- Confetti canvas -->
@@ -945,10 +981,12 @@
        WELCOME CARD
        ═══════════════════════════════════════ */
     function showWelcomeCard() {
+      document.getElementById('welcome-overlay').classList.remove('hidden');
       document.getElementById('welcome-card').classList.remove('hidden');
     }
 
     function hideWelcomeCard() {
+      document.getElementById('welcome-overlay').classList.add('hidden');
       document.getElementById('welcome-card').classList.add('hidden');
     }
 
@@ -960,9 +998,15 @@
     });
 
     document.getElementById('welcome-skip').addEventListener('click', function() {
-      localStorage.setItem(SB_KEY_SEEN, 'true');
-      localStorage.setItem(SB_KEY_STEP, 'skipped');
+      // Session-only skip — do NOT write SB_KEY_STEP so next visit shows welcome again
+      sessionStorage.setItem('sb_skipped_this_session', 'true');
       hideWelcomeCard();
+      // If beacon has dashboardUrl, open board — otherwise just close
+      var beacon = document.getElementById('sb-onboarding-beacon');
+      var dashUrl = beacon && beacon.dataset && beacon.dataset.dashboardUrl;
+      if (dashUrl) {
+        window.open(dashUrl, '_blank');
+      }
     });
 
     /* ═══════════════════════════════════════
@@ -1044,8 +1088,9 @@
     function replayTutorial() {
       localStorage.removeItem(SB_KEY_SEEN);
       localStorage.removeItem(SB_KEY_STEP);
+      sessionStorage.removeItem('sb_skipped_this_session');
 
-      // Hide all cards
+      // Hide all coach cards
       Object.keys(CARD_IDS).forEach(function(key) {
         var el = document.getElementById(CARD_IDS[key]);
         if (el) el.classList.remove('visible');
@@ -1058,7 +1103,7 @@
       var existingBeacon = document.getElementById('sb-onboarding-beacon');
       if (existingBeacon && !beaconObserver) watchBeacon(existingBeacon);
 
-      // Show welcome card
+      // Show welcome card with overlay
       showWelcomeCard();
     }
 
@@ -1067,16 +1112,20 @@
        ═══════════════════════════════════════ */
     (function initOnboarding() {
       var savedStep = localStorage.getItem(SB_KEY_STEP);
+      var skippedThisSession = sessionStorage.getItem('sb_skipped_this_session');
 
-      if (savedStep === 'completed' || savedStep === 'skipped') {
-        // Already done — hide welcome card, page loads clean
+      if (savedStep === 'completed') {
+        // Fully completed — show page clean, replay chip visible
+        hideWelcomeCard();
+      } else if (skippedThisSession) {
+        // Skipped in this session (tab) only — hide card, show page
         hideWelcomeCard();
       } else if (savedStep === '1' || savedStep === '2' || savedStep === '3') {
         // Mid-tour resume: skip welcome card, jump to saved step
         hideWelcomeCard();
         showCard(parseInt(savedStep, 10));
       } else {
-        // First visit — show welcome card
+        // First visit OR returning visit after skip — show welcome card
         showWelcomeCard();
       }
     })();
