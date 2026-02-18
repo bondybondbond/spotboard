@@ -245,8 +245,8 @@
     .coach-body strong { color: #fff; }
 
     .coach-tip {
-      font-size: 12px;
-      color: #a0a0b0;
+      font-size: 13px;
+      color: #facc15;
       margin-bottom: 18px;
       line-height: 1.5;
     }
@@ -285,6 +285,21 @@
     .coach-card.completion {
       text-align: center;
       width: 380px;
+      z-index: 2147483647;
+    }
+    /* Backdrop behind completion card */
+    .completion-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 2147483646;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    .completion-backdrop.visible {
+      opacity: 1;
+      pointer-events: auto;
     }
     .coach-celebration {
       font-size: 36px;
@@ -304,17 +319,18 @@
       padding: 11px 28px;
       background: var(--brand-gradient);
       color: #fff;
+      border: none;
       border-radius: 8px;
       font-size: 14px;
       font-weight: 600;
-      text-decoration: none;
+      cursor: pointer;
+      font-family: inherit;
       transition: transform 0.15s, box-shadow 0.15s;
       margin-bottom: 10px;
     }
     .coach-open-board:hover {
       transform: translateY(-1px);
       box-shadow: 0 6px 20px rgba(102,126,234,0.4);
-      text-decoration: none;
       color: #fff;
     }
     .coach-capture-another {
@@ -325,10 +341,11 @@
       border: none;
       cursor: pointer;
       font-family: inherit;
-      margin-top: 8px;
+      margin: 8px auto 0;
       text-decoration: underline;
       text-underline-offset: 2px;
       text-align: center;
+      width: 100%;
     }
     .coach-capture-another:hover { color: #e0e0ff; }
 
@@ -338,7 +355,7 @@
     .toolbar-arrow {
       position: fixed;
       top: 16px;
-      right: 28px;
+      right: 100px;
       z-index: 9400;
       text-align: right;
       opacity: 0;
@@ -443,18 +460,7 @@
       font-family: var(--font-body);
     }
 
-    /* ═══════════════════════════════════════
-       COLUMN CAP ZONES (issue #5)
-       Invisible wide targets at top of each column
-       so hovering there selects the whole column widget
-       ═══════════════════════════════════════ */
-    .col-cap {
-      height: 28px;
-      cursor: default;
-      margin-bottom: -28px; /* sits above content without pushing it down */
-      position: relative;
-      z-index: 1;
-    }
+    /* col-cap zones removed — they were blocking SpotBoard hover detection on widget headers */
 
     /* ═══════════════════════════════════════
        3-COLUMN LAYOUT
@@ -641,7 +647,7 @@
     }
 
     @media (max-width: 600px) {
-      .toolbar-arrow { right: 10px; }
+      .toolbar-arrow { right: 60px; }
       .page-grid > .sidebar-left,
       .page-grid > .sidebar-right { grid-template-columns: 1fr; }
       .article:first-child h2 { font-size: 24px; }
@@ -750,10 +756,9 @@
     <div class="coach-title">Select a section</div>
     <div class="coach-body">
       A <strong>red frame</strong> appears as you move your cursor. Click any whole block of
-      content &#8212; a news article, market table, or match results.<br><br>
-      <strong>Tip: grab the whole block</strong>, not just an image &#8212; that way your spot
-      updates when the page changes.
+      content &#8212; a news article, market table, or match results.
     </div>
+    <div class="coach-tip">&#x1F4A1; Tip: Grab the whole block, not just an image &#8212; that way your spot updates when the page changes.</div>
     <div class="coach-actions">
       <button class="coach-next" onclick="showCard(3)">Next &#8594;</button>
     </div>
@@ -766,25 +771,25 @@
     <div class="coach-step-pill">Step 3 of 3</div>
     <div class="coach-title">Confirm your capture</div>
     <div class="coach-body">
-      A <strong>green frame</strong> marks your selection.<br><br>
-      Happy with it? Press <strong>Confirm Spot</strong>.
-      Not right? Press Cancel and try a different section.
+      A <strong>green frame</strong> marks your selection. See a quick preview of how the spot will look on your board.<br><br>
+      Happy with it? Press <strong>Confirm Spot</strong>.<br>
+      Not right? Press <strong>Cancel</strong> and try a different section.
     </div>
   </div>
 
   <!-- ════════════════════════════════════
-       COMPLETION CARD (centred)
+       COMPLETION BACKDROP + CARD (centred)
        ════════════════════════════════════ -->
-  <div class="coach-card pos-left completion" id="card-completion" data-sb-no-capture>
+  <div class="completion-backdrop" id="completion-backdrop" data-sb-no-capture></div>
+  <div class="coach-card pos-center completion" id="card-completion" data-sb-no-capture>
     <div class="coach-celebration">&#127881;</div>
     <div class="coach-title">You did it!</div>
     <div class="coach-body">
-      Your first spot is saved. Press <strong>View on SpotBoard</strong> in the popup
-      to open your board &#8212; or close the popup and capture another section.
+      Your first spot is saved and will stay updated automatically.
     </div>
-    <a class="coach-open-board" id="open-board-btn" href="#" target="_blank">
+    <button class="coach-open-board" id="open-board-btn" onclick="openDashboard()">
       &#8594; Open my SpotBoard
-    </a>
+    </button>
     <button class="coach-capture-another" onclick="dismissCompletion()">
       Capture another section
     </button>
@@ -812,8 +817,6 @@
 
     <!-- ── LEFT SIDEBAR ── -->
     <div class="sidebar-left">
-      <div class="col-cap" data-sb-no-capture></div>
-
       <!-- Weather Icons: MIT License, basicons (https://basicons.xyz/) -->
       <div class="sidebar-widget" data-sb-highlight>
         <div class="sidebar-widget-title">Weather</div>
@@ -856,8 +859,6 @@
 
     <!-- ── MAIN COLUMN ── -->
     <div class="main-col">
-      <div class="col-cap" data-sb-no-capture></div>
-
       <div class="article" data-sb-highlight>
         <div class="article-badge">Technology</div>
         <img class="article-img" src="sandbox-images/business.jpg" alt="Business meeting" loading="eager">
@@ -915,8 +916,6 @@
 
     <!-- ── RIGHT SIDEBAR ── -->
     <div class="sidebar-right">
-      <div class="col-cap" data-sb-no-capture></div>
-
       <div class="sidebar-widget" data-sb-highlight>
         <div class="sidebar-widget-title">Match Results</div>
         <div class="match-row">
@@ -1070,17 +1069,19 @@
       var s3 = document.getElementById('card-step3');
       if (s3) s3.classList.remove('visible');
 
-      // Dashboard URL: beacon takes priority, fallback already set via setDashUrl()
-      var beacon = document.getElementById('sb-onboarding-beacon');
-      var dashUrl = beacon && beacon.dataset && beacon.dataset.dashboardUrl;
-      if (dashUrl) setDashUrl(dashUrl);
-
       localStorage.setItem(SB_KEY_STEP, 'completed');
       document.body.classList.remove('step2-active');
       document.getElementById('toolbar-arrow').classList.remove('visible');
 
+      // Hide any SpotBoard confirmation/notification modals that may be behind us
+      var sbConfirm = document.getElementById('spotboard-capture-confirmation');
+      if (sbConfirm) sbConfirm.style.display = 'none';
+
       fireConfetti(150);
 
+      // Show backdrop + completion card
+      var backdrop = document.getElementById('completion-backdrop');
+      if (backdrop) backdrop.classList.add('visible');
       var card = document.getElementById('card-completion');
       if (card) card.classList.add('visible');
       currentCard = 'card-completion';
@@ -1089,6 +1090,8 @@
     function dismissCompletion() {
       var card = document.getElementById('card-completion');
       if (card) card.classList.remove('visible');
+      var backdrop = document.getElementById('completion-backdrop');
+      if (backdrop) backdrop.classList.remove('visible');
       currentCard = null;
     }
 
@@ -1213,17 +1216,27 @@
          "ready" | "capturing" | "selected" | "completed"
        Also reads data-dashboard-url for the CTA.
        ═══════════════════════════════════════ */
-    var FALLBACK_DASH_URL = 'chrome-extension://dnjleheimdlmdfajlciheclfbhmafiai/dashboard.html?from=playground';
     var beaconObserver = null;
     var bodyObserver = null;
 
-    function setDashUrl(url) {
-      var btn = document.getElementById('open-board-btn');
-      if (btn) btn.setAttribute('href', url || FALLBACK_DASH_URL);
+    function openDashboard() {
+      // Use chrome.runtime.sendMessage (same approach as "View on SpotBoard" in notification)
+      // This avoids ERR_BLOCKED_BY_CLIENT from navigating to chrome-extension:// URLs
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        try {
+          chrome.runtime.sendMessage({ action: 'focusDashboard' }, function(response) {
+            if (!response || !response.found) {
+              chrome.runtime.sendMessage({ action: 'openDashboard' });
+            }
+          });
+          return;
+        } catch(e) { /* extension not available, fall through */ }
+      }
+      // Fallback: try beacon URL (may be blocked but worth trying)
+      var beacon = document.getElementById('sb-onboarding-beacon');
+      var dashUrl = beacon && beacon.dataset && beacon.dataset.dashboardUrl;
+      if (dashUrl) window.open(dashUrl, '_blank');
     }
-
-    // Set fallback immediately so button is always functional
-    setDashUrl(FALLBACK_DASH_URL);
 
     function handleStage(stage) {
       // capturing → Step 2 (user opened popup + clicked Save a Spot)
@@ -1249,9 +1262,7 @@
     function watchBeacon(beaconEl) {
       if (beaconEl.dataset.version !== '1') return;
 
-      // Set dashboard URL immediately if available (overrides fallback)
-      var dashUrl = beaconEl.dataset.dashboardUrl;
-      if (dashUrl) setDashUrl(dashUrl);
+      // Dashboard URL read dynamically in openDashboard()
 
       beaconObserver = new MutationObserver(function(mutations) {
         for (var i = 0; i < mutations.length; i++) {
@@ -1259,16 +1270,13 @@
           if (m.attributeName === 'data-stage') {
             handleStage(beaconEl.dataset.stage);
           }
-          if (m.attributeName === 'data-dashboard-url') {
-            var url = beaconEl.dataset.dashboardUrl;
-            if (url) setDashUrl(url);
-          }
+          // data-dashboard-url read dynamically in openDashboard()
         }
       });
 
       beaconObserver.observe(beaconEl, {
         attributes: true,
-        attributeFilter: ['data-stage', 'data-dashboard-url']
+        attributeFilter: ['data-stage']
       });
 
       // Process current state immediately (content script may have already run)

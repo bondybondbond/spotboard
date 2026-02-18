@@ -1504,7 +1504,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
             lockedElement = null;
             resetExclusions();
 
-            showStyledNotification(`✅ Spotted: ${name}`, 'success');
+            // Skip notification on playground — "You did it!" card in sandbox.html takes over
             toggleCapture(false);
 
             // GA4: Track playground capture
