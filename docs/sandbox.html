@@ -1301,7 +1301,8 @@
           }
         }
       });
-      bodyObserver.observe(document.body, { childList: true, subtree: true });
+      // Watch documentElement (covers both <html> and <body> level appends)
+      bodyObserver.observe(document.documentElement, { childList: true, subtree: true });
     }
   </script>
 </body>

@@ -22,7 +22,8 @@ if (isPlaygroundPage) {
   beacon.dataset.version = '1';
   beacon.dataset.dashboardUrl = chrome.runtime.getURL('dashboard.html') + '?from=playground';
   beacon.style.display = 'none';
-  document.documentElement.appendChild(beacon);
+  // Append to body (not documentElement) so sandbox.html's body MutationObserver can detect it
+  (document.body || document.documentElement).appendChild(beacon);
   log('🎯 Playground beacon injected: data-stage=ready');
 }
 
