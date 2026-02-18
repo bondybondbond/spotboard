@@ -148,23 +148,22 @@
       top: 14px;
       left: 14px;
       z-index: 9400;
-      background: rgba(255,255,255,0.9);
-      backdrop-filter: blur(8px);
-      border: 1px solid var(--rule);
+      background: #FFCBA4;
+      border: none;
       border-radius: 20px;
       padding: 5px 12px 5px 8px;
       display: inline-flex;
       align-items: center;
       gap: 6px;
       font-size: 12px;
-      color: var(--ink-light);
+      color: #7a3a00;
       cursor: pointer;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      transition: box-shadow 0.15s, color 0.15s;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      transition: box-shadow 0.15s, background 0.15s;
       font-family: var(--font-body);
-      border: none;
+      font-weight: 600;
     }
-    .replay-chip:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.13); color: var(--ink); }
+    .replay-chip:hover { background: #ffb87a; box-shadow: 0 4px 14px rgba(0,0,0,0.16); }
     .replay-chip svg { width: 14px; height: 14px; flex-shrink: 0; }
 
     /* ═══════════════════════════════════════
@@ -240,14 +239,14 @@
     .coach-body {
       font-size: 13.5px;
       line-height: 1.65;
-      color: #b0b0b8;
+      color: #fff;
       margin-bottom: 12px;
     }
     .coach-body strong { color: #fff; }
 
     .coach-tip {
       font-size: 12px;
-      color: #6b6b78;
+      color: #a0a0b0;
       margin-bottom: 18px;
       line-height: 1.5;
     }
@@ -285,7 +284,7 @@
     /* Completion card */
     .coach-card.completion {
       text-align: center;
-      width: 420px;
+      width: 380px;
     }
     .coach-celebration {
       font-size: 36px;
@@ -320,15 +319,18 @@
     }
     .coach-capture-another {
       display: block;
-      font-size: 12px;
-      color: #6b6b78;
+      font-size: 13px;
+      color: #fff;
       background: none;
       border: none;
       cursor: pointer;
       font-family: inherit;
-      margin-top: 4px;
+      margin-top: 8px;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      text-align: center;
     }
-    .coach-capture-another:hover { color: #a78bfa; }
+    .coach-capture-another:hover { color: #e0e0ff; }
 
     /* ═══════════════════════════════════════
        ANIMATED ARROW (Step 1 only)
@@ -439,6 +441,19 @@
       pointer-events: none;
       white-space: nowrap;
       font-family: var(--font-body);
+    }
+
+    /* ═══════════════════════════════════════
+       COLUMN CAP ZONES (issue #5)
+       Invisible wide targets at top of each column
+       so hovering there selects the whole column widget
+       ═══════════════════════════════════════ */
+    .col-cap {
+      height: 28px;
+      cursor: default;
+      margin-bottom: -28px; /* sits above content without pushing it down */
+      position: relative;
+      z-index: 1;
     }
 
     /* ═══════════════════════════════════════
@@ -669,7 +684,7 @@
   <!-- ════════════════════════════════════
        REPLAY CHIP (always visible)
        ════════════════════════════════════ -->
-  <button class="replay-chip" id="replay-chip" onclick="replayTutorial()">
+  <button class="replay-chip" id="replay-chip" onclick="replayTutorial()" data-sb-no-capture>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
       <path d="M3 3v5h5"/>
@@ -680,12 +695,12 @@
   <!-- ════════════════════════════════════
        WELCOME OVERLAY
        ════════════════════════════════════ -->
-  <div class="welcome-overlay hidden" id="welcome-overlay"></div>
+  <div class="welcome-overlay hidden" id="welcome-overlay" data-sb-no-capture></div>
 
   <!-- ════════════════════════════════════
        WELCOME CARD (centred modal)
        ════════════════════════════════════ -->
-  <div class="welcome-card hidden" id="welcome-card">
+  <div class="welcome-card hidden" id="welcome-card" data-sb-no-capture>
     <div class="welcome-header">
       <img class="welcome-logo" src="assets/logo.png" alt="SpotBoard">
       <div class="welcome-title">Welcome to SpotBoard!</div>
@@ -702,7 +717,7 @@
   <!-- ════════════════════════════════════
        ANIMATED ARROW (Step 1)
        ════════════════════════════════════ -->
-  <div class="toolbar-arrow" id="toolbar-arrow">
+  <div class="toolbar-arrow" id="toolbar-arrow" data-sb-no-capture>
     <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M26 46V10" stroke="#667eea" stroke-width="5" stroke-linecap="round"/>
       <path d="M12 24L26 6L40 24" stroke="#667eea" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -714,7 +729,7 @@
   <!-- ════════════════════════════════════
        COACH CARD — STEP 1 (right side)
        ════════════════════════════════════ -->
-  <div class="coach-card pos-right" id="card-step1">
+  <div class="coach-card pos-right" id="card-step1" data-sb-no-capture>
     <div class="coach-step-pill">Step 1 of 3</div>
     <div class="coach-title">Open SpotBoard</div>
     <div class="coach-body">
@@ -723,7 +738,6 @@
     </div>
     <div class="coach-tip">&#x1F4A1; Tip: Pin SpotBoard so it&#8217;s easier to find in the future!</div>
     <div class="coach-actions">
-      <span class="coach-auto-label">Auto-advances when detected</span>
       <button class="coach-next" onclick="showCard(2)">Next &#8594;</button>
     </div>
   </div>
@@ -731,7 +745,7 @@
   <!-- ════════════════════════════════════
        COACH CARD — STEP 2 (right side)
        ════════════════════════════════════ -->
-  <div class="coach-card pos-right" id="card-step2">
+  <div class="coach-card pos-right" id="card-step2" data-sb-no-capture>
     <div class="coach-step-pill">Step 2 of 3</div>
     <div class="coach-title">Select a section</div>
     <div class="coach-body">
@@ -741,7 +755,6 @@
       updates when the page changes.
     </div>
     <div class="coach-actions">
-      <span class="coach-auto-label">Auto-advances when detected</span>
       <button class="coach-next" onclick="showCard(3)">Next &#8594;</button>
     </div>
   </div>
@@ -749,24 +762,20 @@
   <!-- ════════════════════════════════════
        COACH CARD — STEP 3 (LEFT side)
        ════════════════════════════════════ -->
-  <div class="coach-card pos-left" id="card-step3">
+  <div class="coach-card pos-left" id="card-step3" data-sb-no-capture>
     <div class="coach-step-pill">Step 3 of 3</div>
     <div class="coach-title">Confirm your capture</div>
     <div class="coach-body">
-      A <strong>green frame</strong> marks your selection. Check the preview on the right &#8212;
-      happy with it? Press <strong>Confirm Spot</strong>.<br><br>
+      A <strong>green frame</strong> marks your selection.<br><br>
+      Happy with it? Press <strong>Confirm Spot</strong>.
       Not right? Press Cancel and try a different section.
-    </div>
-    <div class="coach-actions">
-      <span class="coach-auto-label"></span>
-      <button class="coach-next" onclick="showCompletion()">I confirmed it &#8594;</button>
     </div>
   </div>
 
   <!-- ════════════════════════════════════
        COMPLETION CARD (centred)
        ════════════════════════════════════ -->
-  <div class="coach-card pos-center completion" id="card-completion">
+  <div class="coach-card pos-left completion" id="card-completion" data-sb-no-capture>
     <div class="coach-celebration">&#127881;</div>
     <div class="coach-title">You did it!</div>
     <div class="coach-body">
@@ -803,6 +812,7 @@
 
     <!-- ── LEFT SIDEBAR ── -->
     <div class="sidebar-left">
+      <div class="col-cap" data-sb-no-capture></div>
 
       <!-- Weather Icons: MIT License, basicons (https://basicons.xyz/) -->
       <div class="sidebar-widget" data-sb-highlight>
@@ -846,6 +856,7 @@
 
     <!-- ── MAIN COLUMN ── -->
     <div class="main-col">
+      <div class="col-cap" data-sb-no-capture></div>
 
       <div class="article" data-sb-highlight>
         <div class="article-badge">Technology</div>
@@ -904,6 +915,7 @@
 
     <!-- ── RIGHT SIDEBAR ── -->
     <div class="sidebar-right">
+      <div class="col-cap" data-sb-no-capture></div>
 
       <div class="sidebar-widget" data-sb-highlight>
         <div class="sidebar-widget-title">Match Results</div>
@@ -1058,12 +1070,10 @@
       var s3 = document.getElementById('card-step3');
       if (s3) s3.classList.remove('visible');
 
-      // Set dashboard URL from beacon (if available)
+      // Dashboard URL: beacon takes priority, fallback already set via setDashUrl()
       var beacon = document.getElementById('sb-onboarding-beacon');
       var dashUrl = beacon && beacon.dataset && beacon.dataset.dashboardUrl;
-      if (dashUrl) {
-        document.getElementById('open-board-btn').setAttribute('href', dashUrl);
-      }
+      if (dashUrl) setDashUrl(dashUrl);
 
       localStorage.setItem(SB_KEY_STEP, 'completed');
       document.body.classList.remove('step2-active');
@@ -1200,43 +1210,58 @@
        Watches for #sb-onboarding-beacon injected
        by SpotBoard content script.
        Contract: data-version="1", data-stage values:
-         "ready" | "capturing" | "completed"
+         "ready" | "capturing" | "selected" | "completed"
        Also reads data-dashboard-url for the CTA.
        ═══════════════════════════════════════ */
+    var FALLBACK_DASH_URL = 'chrome-extension://dnjleheimdlmdfajlciheclfbhmafiai/dashboard.html?from=playground';
     var beaconObserver = null;
     var bodyObserver = null;
+
+    function setDashUrl(url) {
+      var btn = document.getElementById('open-board-btn');
+      if (btn) btn.setAttribute('href', url || FALLBACK_DASH_URL);
+    }
+
+    // Set fallback immediately so button is always functional
+    setDashUrl(FALLBACK_DASH_URL);
+
+    function handleStage(stage) {
+      // capturing → Step 2 (user opened popup + clicked Save a Spot)
+      if (stage === 'capturing' &&
+          currentCard !== 'card-step2' &&
+          currentCard !== 'card-step3' &&
+          currentCard !== 'card-completion') {
+        showCard(2);
+      }
+      // selected → Step 3 (user clicked element, green frame showing)
+      if (stage === 'selected' &&
+          currentCard !== 'card-step3' &&
+          currentCard !== 'card-completion') {
+        fireConfetti(40);
+        showCard(3);
+      }
+      // completed → Completion card (user pressed Confirm Spot)
+      if (stage === 'completed' && currentCard !== 'card-completion') {
+        showCompletion();
+      }
+    }
 
     function watchBeacon(beaconEl) {
       if (beaconEl.dataset.version !== '1') return;
 
-      // Set dashboard URL immediately if available
+      // Set dashboard URL immediately if available (overrides fallback)
       var dashUrl = beaconEl.dataset.dashboardUrl;
-      if (dashUrl) {
-        document.getElementById('open-board-btn').setAttribute('href', dashUrl);
-      }
+      if (dashUrl) setDashUrl(dashUrl);
 
       beaconObserver = new MutationObserver(function(mutations) {
         for (var i = 0; i < mutations.length; i++) {
           var m = mutations[i];
           if (m.attributeName === 'data-stage') {
-            var stage = beaconEl.dataset.stage;
-            // Advance to step 2 if we're at step 1 (or welcome)
-            if (stage === 'capturing' &&
-                currentCard !== 'card-step2' &&
-                currentCard !== 'card-step3' &&
-                currentCard !== 'card-completion') {
-              showCard(2);
-            }
-            // Advance to step 3 if we're at step 2
-            if (stage === 'completed' &&
-                currentCard !== 'card-step3' &&
-                currentCard !== 'card-completion') {
-              showCard(3);
-            }
+            handleStage(beaconEl.dataset.stage);
           }
           if (m.attributeName === 'data-dashboard-url') {
             var url = beaconEl.dataset.dashboardUrl;
-            if (url) document.getElementById('open-board-btn').setAttribute('href', url);
+            if (url) setDashUrl(url);
           }
         }
       });
@@ -1247,18 +1272,7 @@
       });
 
       // Process current state immediately (content script may have already run)
-      var stage = beaconEl.dataset.stage;
-      if (stage === 'capturing' &&
-          currentCard !== 'card-step2' &&
-          currentCard !== 'card-step3' &&
-          currentCard !== 'card-completion') {
-        showCard(2);
-      }
-      if (stage === 'completed' &&
-          currentCard !== 'card-step3' &&
-          currentCard !== 'card-completion') {
-        showCard(3);
-      }
+      handleStage(beaconEl.dataset.stage);
     }
 
     // Watch for beacon element to appear in DOM

@@ -266,7 +266,12 @@ function handleHover(event: MouseEvent) {
   if (target.closest('[data-spotboard-ignore]')) {
     return;
   }
-  
+
+  // Ignore playground onboarding UI elements
+  if (target.closest('[data-sb-no-capture]')) {
+    return;
+  }
+
   // FIRST: Don't touch modal at all - this must come before ANY other logic
   if (target.closest('#spotboard-capture-confirmation')) {
     return;
@@ -974,7 +979,12 @@ function handleClick(event: MouseEvent) {
   if (target.closest('[data-spotboard-ignore]')) {
     return;
   }
-  
+
+  // Ignore playground onboarding UI elements
+  if (target.closest('[data-sb-no-capture]')) {
+    return;
+  }
+
   // If clicking on modal buttons, let them handle it (don't intercept)
   if (target.closest('#spotboard-capture-confirmation')) {
         return;
@@ -1001,7 +1011,16 @@ function handleClick(event: MouseEvent) {
   
   // Lock this element and set green outline
   lockedElement = target;
-    target.style.setProperty('outline', '5px solid #00ff00', 'important');
+  target.style.setProperty('outline', '5px solid #00ff00', 'important');
+
+  // 🎯 Playground beacon: element selected (green frame showing, confirmation modal opening)
+  if (isPlaygroundPage) {
+    const beacon = document.getElementById('sb-onboarding-beacon');
+    if (beacon) {
+      beacon.dataset.stage = 'selected';
+      log('🎯 Playground beacon updated: data-stage=selected');
+    }
+  }
   
   // Generate smart label using Option 1 strategy
   let name = '';
@@ -1474,6 +1493,10 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
               beacon.dataset.stage = 'completed';
               log('🎯 Playground beacon updated: data-stage=completed');
             }
+
+            // Auto-dismiss the confirmation modal on playground — "You did it!" card takes over
+            const confirmModal = document.getElementById('spotboard-capture-confirmation');
+            if (confirmModal) confirmModal.remove();
 
             // Clear visuals and show notification
             target.style.outline = '';
