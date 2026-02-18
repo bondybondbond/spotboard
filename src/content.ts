@@ -25,6 +25,22 @@ if (isPlaygroundPage) {
   // Append to body (not documentElement) so sandbox.html's body MutationObserver can detect it
   (document.body || document.documentElement).appendChild(beacon);
   log('🎯 Playground beacon injected: data-stage=ready');
+
+  // Watch for actions from sandbox page (e.g. "open-dashboard")
+  // Sandbox page can't call chrome.runtime.sendMessage (web context), so it sets
+  // data-action on the beacon and we relay it from the extension context.
+  new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.attributeName === 'data-action' && beacon.dataset.action === 'open-dashboard') {
+        beacon.dataset.action = ''; // consume
+        chrome.runtime.sendMessage({ action: 'focusDashboard' }, (response) => {
+          if (!response || !response.found) {
+            chrome.runtime.sendMessage({ action: 'openDashboard' });
+          }
+        });
+      }
+    }
+  }).observe(beacon, { attributes: true, attributeFilter: ['data-action'] });
 }
 
 

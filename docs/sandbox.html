@@ -1220,22 +1220,16 @@
     var bodyObserver = null;
 
     function openDashboard() {
-      // Use chrome.runtime.sendMessage (same approach as "View on SpotBoard" in notification)
-      // This avoids ERR_BLOCKED_BY_CLIENT from navigating to chrome-extension:// URLs
-      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-        try {
-          chrome.runtime.sendMessage({ action: 'focusDashboard' }, function(response) {
-            if (!response || !response.found) {
-              chrome.runtime.sendMessage({ action: 'openDashboard' });
-            }
-          });
-          return;
-        } catch(e) { /* extension not available, fall through */ }
-      }
-      // Fallback: try beacon URL (may be blocked but worth trying)
+      // Web pages can't call chrome.runtime.sendMessage (different context).
+      // Instead, set data-action on the beacon — the content script (extension context)
+      // watches for this and relays to the background service worker.
       var beacon = document.getElementById('sb-onboarding-beacon');
-      var dashUrl = beacon && beacon.dataset && beacon.dataset.dashboardUrl;
-      if (dashUrl) window.open(dashUrl, '_blank');
+      if (beacon) {
+        beacon.dataset.action = 'open-dashboard';
+        return;
+      }
+      // Fallback if no beacon (extension not installed) — direct URL attempt
+      alert('Please make sure the SpotBoard extension is installed and reload this page.');
     }
 
     function handleStage(stage) {
