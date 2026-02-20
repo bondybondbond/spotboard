@@ -540,10 +540,10 @@ const ONBOARDING_CATEGORIES = {
   }
 };
 
-function showCategoryPickerOverlay(container) {
+function showCategoryPickerOverlay(container, { clearContainer = true, showCancel = false } = {}) {
   return new Promise((resolve) => {
-    // Clear container and show full-screen overlay
-    container.innerHTML = '';
+    // Clear container and show full-screen overlay (skip when called from Inspire me)
+    if (clearContainer) container.innerHTML = '';
 
     const overlay = document.createElement('div');
     overlay.id = 'category-picker-overlay';
@@ -620,6 +620,20 @@ function showCategoryPickerOverlay(container) {
         ">
           Get started
         </button>
+        ${showCancel ? `<button id="category-cancel" style="
+          width: 100%;
+          padding: 10px;
+          margin-top: 10px;
+          background: none;
+          color: #5f6368;
+          border: none;
+          border-radius: 10px;
+          font-size: 14px;
+          cursor: pointer;
+          font-family: inherit;
+        ">
+          Cancel
+        </button>` : ''}
       </div>
     `;
 
@@ -694,6 +708,15 @@ function showCategoryPickerOverlay(container) {
       overlay.remove();
       resolve();
     });
+
+    // Cancel button (only shown when showCancel=true, i.e. Inspire me flow)
+    const cancelBtn = overlay.querySelector('#category-cancel');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => {
+        overlay.remove();
+        resolve(null); // null = cancelled, no reload needed
+      });
+    }
   });
 }
 
@@ -1827,6 +1850,16 @@ if (gotItBtn) {
 if (infoBtn) {
   infoBtn.addEventListener('click', () => {
     welcomeModal.style.display = 'flex';
+  });
+}
+
+// ===== INSPIRE ME BUTTON =====
+const inspireMeBtn = document.getElementById('inspire-me-btn');
+if (inspireMeBtn) {
+  inspireMeBtn.addEventListener('click', async () => {
+    const container = document.getElementById('components-container');
+    const result = await showCategoryPickerOverlay(container, { clearContainer: false, showCancel: true });
+    if (result !== null) location.reload();
   });
 }
 
