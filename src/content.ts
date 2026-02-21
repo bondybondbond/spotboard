@@ -1168,6 +1168,15 @@ function getPreviewCSS(): string {
       max-width: 25px !important; max-height: 25px !important;
       object-fit: contain; display: inline-block; vertical-align: middle;
     }
+    svg {
+      display: inline-block !important;
+      max-width: 24px !important;
+      max-height: 24px !important;
+      width: auto;
+      height: auto;
+      vertical-align: middle;
+      overflow: hidden;
+    }
 
     /* Font normalization */
     body, li, li span, li p, div, p {

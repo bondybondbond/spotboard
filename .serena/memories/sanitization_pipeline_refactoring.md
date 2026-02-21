@@ -19,6 +19,11 @@ As of v1.3.4, `dom-cleanup.js` is now auto-generated from `src/utils/dom-cleanup
 - `src/content.ts`: `const DEBUG = false;` — content script context (already existed, unchanged)
 - `console.error` and `console.warn` remain always visible
 
+## cleanupDuplicates() — Passes Added (Feb 2026)
+- **UI Chrome Button Stripping** (v1.3.2): Removes `button`/`[role="button"]` with < 2 chars visible text (after cloning + stripping `.sr-only`/`[hidden]`). Secondary ARIA exact-match for 2-4 char ambiguous buttons. Preserves "Go", "Buy", "Add".
+- **SVG Size Cap** (v1.3.2): CSS `.component-content svg { max-width: 24px !important; max-height: 24px !important; width: auto; height: auto; display: inline-block !important; }` in dashboard.html + getPreviewCSS(). Fixes location pins, rating stars.
+- **Detached DOM text rule**: Never use `innerText` in cleanupDuplicates() — detached DOM has no layout. Clone + strip hidden selectors, then read `textContent`.
+
 ## Key Rules
 - When adding new sanitization steps, add them to `applySanitizationPipeline()` in dom-cleanup.js
 - When changing GA4 credentials, update BOTH constants.js AND background.ts

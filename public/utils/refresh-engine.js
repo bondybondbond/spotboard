@@ -1084,8 +1084,10 @@ async function refreshComponent(component) {
     if (component.selector && !isGenericSelector) {
       // Get ALL matching elements, not just first one
       const matches = doc.querySelectorAll(component.selector);
-      
-            if (matches.length > 0) {
+      if (matches.length === 0) {
+        console.warn(`[SpotBoard] Dead selector: "${component.selector}" on ${component.url}`);
+      }
+      if (matches.length > 0) {
         let element = null;
         
         // If multiple matches, use fingerprint to find the right one

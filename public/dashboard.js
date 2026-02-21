@@ -497,9 +497,9 @@ const ONBOARDING_CATEGORIES = {
     label: 'News & Headlines',
     emoji: '📰',
     cards: [
-      { name: 'BBC News - Top Stories', url: 'https://www.bbc.co.uk/news', selector: 'h3', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=bbc.co.uk' },
-      { name: 'NBC News - Latest', url: 'https://www.nbcnews.com/', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=nbcnews.com' },
-      { name: 'TechCrunch - Latest', url: 'https://techcrunch.com/', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=techcrunch.com' }
+      { name: 'BBC News - Top Stories', url: 'https://www.bbc.co.uk/news', selector: '.gs-c-promo-heading__title', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=bbc.co.uk' },
+      { name: 'NBC News - Latest', url: 'https://www.nbcnews.com/', selector: 'h2.tease-card__headline', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=nbcnews.com' },
+      { name: 'TechCrunch - Latest', url: 'https://techcrunch.com/', selector: '.post-card__title', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=techcrunch.com' }
     ]
   },
   sports: {
@@ -516,17 +516,17 @@ const ONBOARDING_CATEGORIES = {
     emoji: '📈',
     cards: [
       { name: 'Yahoo Finance - Markets', url: 'https://finance.yahoo.com/', selector: '[data-testid="trending-tickers"]', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=finance.yahoo.com' },
-      { name: 'Google Finance - Markets', url: 'https://www.google.com/finance/', selector: 'ul', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=google.com' },
-      { name: 'MarketWatch - Markets', url: 'https://www.marketwatch.com/', selector: 'h3', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=marketwatch.com' }
+      { name: 'Google Finance - Markets', url: 'https://www.google.com/finance/', selector: '.YMlKec', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=google.com' },
+      { name: 'MarketWatch - Markets', url: 'https://www.marketwatch.com/', selector: '.element--article .article__headline', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=marketwatch.com' }
     ]
   },
   tech: {
     label: 'Tech & Products',
     emoji: '🚀',
     cards: [
-      { name: 'Product Hunt - Today', url: 'https://www.producthunt.com/', selector: 'h3', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=producthunt.com' },
-      { name: 'GitHub Trending', url: 'https://github.com/trending', selector: 'article h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=github.com' },
-      { name: 'Wired - Latest', url: 'https://www.wired.com/', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=wired.com' }
+      { name: 'Product Hunt - Today', url: 'https://www.producthunt.com/', selector: '[data-test="post-name"]', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=producthunt.com' },
+      { name: 'GitHub Trending', url: 'https://github.com/trending', selector: '.h3.lh-condensed', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=github.com' },
+      { name: 'Hacker News - Top', url: 'https://news.ycombinator.com/', selector: '.titleline', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=ycombinator.com' }
     ]
   },
   deals: {
@@ -534,8 +534,8 @@ const ONBOARDING_CATEGORIES = {
     emoji: '💰',
     cards: [
       { name: 'Amazon - Today\'s Deals', url: 'https://www.amazon.com/gp/goldbox', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=amazon.com' },
-      { name: 'Gumtree - Trending', url: 'https://www.gumtree.com/', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=gumtree.com' },
-      { name: 'HotUKDeals - Hot', url: 'https://www.hotukdeals.com/', selector: 'article', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=hotukdeals.com' }
+      { name: 'Slickdeals - Hot', url: 'https://slickdeals.net/', selector: '.dealCard__title', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=slickdeals.net' },
+      { name: 'Reddit - r/deals', url: 'https://www.reddit.com/r/deals/', selector: 'a[data-testid="post-title"]', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=reddit.com' }
     ]
   }
 };
@@ -793,6 +793,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       await showCategoryPickerOverlay(container);
 
       // After category picker, reload to render the new pre-populated cards
+      localStorage.setItem('hasSeenWelcome', 'true');
       location.reload();
       return;
     }
@@ -800,6 +801,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
     if (allLocalData.onboardingCompleted && !allLocalData.categoriesChosen && metadata.length === 0) {
       const container = document.getElementById('components-container');
       await showCategoryPickerOverlay(container);
+      localStorage.setItem('hasSeenWelcome', 'true');
       location.reload();
       return;
     }
@@ -1611,19 +1613,19 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       grid.appendChild(card);
     });
 
-    // ===== STICKY CAPTURE NUDGE =====
-    // Show yellow "Capture your first card" button if no real captures exist
-    const hasRealCapture = components.some(c => !c.isPrePopulated);
-    if (!hasRealCapture && components.length > 0) {
-      const nudgeBtn = document.getElementById('capture-nudge-btn');
-      if (nudgeBtn) {
-        nudgeBtn.style.display = 'inline-block';
-        nudgeBtn.addEventListener('click', () => {
-          // Open the info/tutorial modal
-          const modal = document.getElementById('welcome-modal');
-          if (modal) modal.style.display = 'flex';
-        });
-      }
+    // ===== AUTO-REFRESH PRE-POPULATED CARDS =====
+    // Trigger one refresh pass for any pre-pop card that hasn't been fetched yet
+    const staleCards = components.filter(c => c.needsRefresh && c.isPrePopulated);
+    if (staleCards.length > 0) {
+      setTimeout(async () => {
+        for (const comp of staleCards) {
+          try {
+            await refreshComponent(comp);
+          } catch (e) {
+            console.warn(`[SpotBoard] Auto-refresh failed for ${comp.url}:`, e);
+          }
+        }
+      }, 800); // slight delay so DOM is ready
     }
 
   } catch (error) {

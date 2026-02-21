@@ -479,6 +479,16 @@
       display: inline-block;
       vertical-align: middle;
     }
+    /* Cap all inline SVGs — known tech debt: may shrink brand logos; revisit if reported */
+    .component-content svg {
+      display: inline-block !important; /* Forces vertical-align to work reliably */
+      max-width: 24px !important;
+      max-height: 24px !important;
+      width: auto;  /* Lets rectangular SVGs keep aspect ratio within the 24px cap */
+      height: auto;
+      vertical-align: middle;
+      overflow: hidden;
+    }
     /* Only show pointer on actual links */
     .component-content a.canvas-link {
       cursor: pointer !important;
@@ -1161,9 +1171,6 @@
         SpotBoard | <span id="board-name" style="cursor: pointer; padding: 2px 6px; border-radius: 4px;" title="Click to edit board name">My Dashboard</span>
       </h1>
       <div style="display: flex; gap: 10px; align-items: center;">
-        <button id="capture-nudge-btn" style="display: none; padding: 6px 14px; background: #FBBF24; color: #1a1a1a; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap; transition: all 0.2s ease; box-shadow: 0 1px 4px rgba(0,0,0,0.15);" title="Learn how to capture your own card">
-          Capture your first card
-        </button>
         <button id="inspire-me-btn" style="padding: 6px 14px; background: rgba(255,255,255,0.18); color: white; border: 1px solid rgba(255,255,255,0.45); border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap; transition: all 0.2s ease;" title="Add starter cards by topic">
           ✨ Inspire me
         </button>

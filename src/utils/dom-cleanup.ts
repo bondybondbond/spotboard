@@ -142,6 +142,33 @@ export function cleanupDuplicates(html: string): string {
     matches.forEach(el => el.remove());
   });
 
+  // 🎯 STRIP UI CHROME BUTTONS: Remove icon-only buttons with no visible text
+  // Targets: heart/wishlist buttons, close buttons, share buttons — not text CTAs
+  // Uses clone+strip approach (not innerText) because detached DOM has no CSS layout
+  temp.querySelectorAll('button, [role="button"]').forEach(btn => {
+    const textProbe = btn.cloneNode(true) as HTMLElement;
+    textProbe.querySelectorAll('.sr-only, .visually-hidden, [hidden], [style*="display: none"]').forEach(el => el.remove());
+    const visibleText = (textProbe.textContent || '').trim().replace(/\s+/g, ' ');
+
+    // Pass A: empty + single-symbol buttons (×, ♡, ★); preserves "Go", "Buy", "Add"
+    if (visibleText.length < 2) {
+      btn.remove();
+      return;
+    }
+
+    // Pass B: ARIA exact-match on ambiguous short labels (<5 chars visible text)
+    // Only runs when text is short/ambiguous — never fires on "Save 20%" (>4 chars)
+    // Known limitation: English-only keywords; international sites rely on Pass A only
+    if (visibleText.length < 5) {
+      const UI_CHROME_ARIA = ['wishlist', 'favorite', 'save', 'like', 'heart', 'share',
+                              'follow', 'bookmark', 'close', 'dismiss'];
+      const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+      if (UI_CHROME_ARIA.some(kw => label === kw || label === `add to ${kw}`)) {
+        btn.remove();
+      }
+    }
+  });
+
   // 🎯 REMOVED from cleanupDuplicates: display:none check causes false positives here
   // This function is called on HTML WITHOUT its CSS loaded (dashboard display)
   // Elements default to display:none when CSS isn't present

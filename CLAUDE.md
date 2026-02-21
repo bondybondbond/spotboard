@@ -1,87 +1,76 @@
-# SpotBoard - Chrome Extension (Public Repo)
+# SpotBoard - Chrome Extension
 
-## What is This?
+Chrome extension that captures live website sections (news, deals, scores) into a personal dashboard. Manual refresh model — designed for 2-3 daily check-ins.
 
-Chrome extension that captures live website sections (news feeds, deal lists, sports scores) into a personal dashboard. Eliminates repetitive navigation - refresh when you want, not algorithmic push.
+**Private docs** (PRD, backlog, learnings, metrics): `C:\apps\spotboard-private\` — read CONTEXT.md there first every session.
 
-## Tech Stack
+---
 
-- Vanilla JS (no frameworks)
-- Chrome Extension Manifest V3
-- Intelligent three-tier refresh fallback (direct fetch → background tab → active tab)
-- Hybrid storage: Chrome Sync for metadata, Local for HTML content
+## Architecture
 
-## Project Structure
+**Tech**: Vanilla JS + TypeScript + React (popup only) · Manifest V3
 
-```
-src/
-├── popup/      # Extension popup UI
-├── background/ # Service worker
-├── content/    # Content scripts (capture, DOM cleanup)
-└── utils/      # Shared utilities
-```
+**Key files**:
 
-## Tool Preferences
+| File                          | Role                                              |
+| ----------------------------- | ------------------------------------------------- |
+| `src/background.ts`           | Service worker → compiles to `dist/assets/`       |
+| `src/content.ts`              | Content script (capture, DOM cleanup, preview)    |
+| `src/App.tsx`                 | Popup UI (React)                                  |
+| `src/utils/dom-cleanup.ts`    | Shared cleanup functions (source of truth)        |
+| `public/dashboard.js`         | Dashboard logic — loaded directly, NOT compiled   |
+| `public/dashboard.html`       | Dashboard page — loads ga4.js, dashboard.js, refresh-engine.js |
+| `public/utils/refresh-engine.js` | 3-tier refresh fallback — loaded directly      |
+| `public/ga4.js`               | GA4 analytics                                     |
+| `public/utils/constants.js`   | Shared constants (GA4 credentials, SESSION_TIMEOUT_MS) |
+| `scripts/build-shared.js`     | esbuild pre-build for dom-cleanup.ts → IIFE       |
 
-When working with files within `C:\apps\spotboard\`:
+**NEVER edit** `dist/` — build output only.
 
-- Use Serena MCP tools (edit_file, read_file) over your native commands. These are available to you:
-  
-  - activate_project
-    check_onboarding_performed
-    create_text_file
-    delete_memory
-    edit_memory
-    execute_shell_command
-    find_file
-    find_referencing_symbols
-    find_symbol
-    get_current_config
-    get_symbols_overview
-    initial_instructions
-    insert_after_symbol
-    insert_before_symbol
-    list_dir
-    list_memories
-    onboarding
-    prepare_for_new_conversation
-    read_file
-    read_memory
-    rename_symbol
-    replace_content
-    replace_symbol_body
-    search_for_pattern
-    switch_modes
-    think_about_collected_information
-    think_about_task_adherence
-    think_about_whether_you_are_done
-    write_memory
+**Build**: `node scripts/build-shared.js && tsc -b && vite build`
 
-- Serena handles file operations more efficiently for this codebase
+**Dev**: `npm start`
 
-- **Use native Edit tool for multi-line inserts** — Avoid Serena `replace_content` regex mode for anything with newlines.
+---
 
-- Important: When debugging, analyzing elements, websites etc - avoid full-page analysis as take_snapshot command, use alternatives as evaluate_script on specific elements - which is far more efficient.
+## Storage Model
+
+- **Chrome Sync** (`comp-{uuid}`): Metadata — URL, selector, label, fingerprint, excludedSelectors, positionBased, pauseRefresh, lastAttemptAt, lastSuccessAt, lastOutcome, lastErrorCode, lastErrorAt
+- **Chrome Local** (`{uuid}`): HTML content — device-specific, no size limit
+
+**Critical**: ALL code paths writing to `chrome.storage.sync` MUST spread ALL fields — partial writes silently strip metadata.
+
+---
+
+## Refresh Tiers
+
+1. Direct fetch (~70% of sites, fastest)
+2. Background tab with Page Visibility API spoofing (~20%)
+3. Active tab refresh (guaranteed fallback, 2-3s flash)
+
+When adding HTML enrichment (data attributes, classes), apply it in **all three paths** — see `refresh-engine.js`.
+
+---
 
 ## Code Style
 
-- ES6+ features
-- No semicolons
-- 2-space indentation
-- Descriptive variable names
-- Comments for non-obvious logic only
+- ES6+, no semicolons, 2-space indent
+- Descriptive variable names, comments for non-obvious logic only
+- `const DEBUG = false` in constants.js / background.ts — gate verbose logs with `if (DEBUG)`
 
-## Important Notes
+---
 
-**Private documentation** lives at `C:\apps\spotboard-private\`
+## Tool Preferences
 
-Check `PRD-DEV.md` there for feature roadmap before building
+- Use **Serena MCP tools** (`read_file`, `replace_content`, `find_symbol`, etc.) for file operations — more efficient than native tools
+- **Exception**: Use native `Edit` tool for multi-line inserts — Serena `replace_content` regex mode inserts literal `\n` instead of newlines
+- **Browser/DOM debugging**: Use `evaluate_script` on specific elements, not full-page `take_snapshot`
 
-This repo is **public** - no API keys, no strategy docs here
+---
 
-## Git Workflow
+## Git
 
+- Public repo — no API keys, no strategy docs, no private docs
 - Branch naming: `feature/`, `fix/`, `refactor/`
-- Commit to branches, PR to main
-- Keep commits focused and atomic
-- Version tags follow semantic versioning (e.g., `v1.2.0`)
+- Commits focused and atomic · Version tags: `v1.x.x`
+- Dev traffic filter: GA4 events send `user_id: "owner"` (v1.3.1+) — filter in BigQuery with `WHERE user_id != 'owner'`
