@@ -343,114 +343,28 @@ function showCaptureQuickstartModal() {
  * Used by both initial page load and "last card deleted" scenarios.
  */
 function renderEmptyState(container) {
+  const sitesHtml = ONBOARDING_PRACTICE_SITES.map(site => `
+    <div class="practice-site-card">
+      <img src="${site.favicon}" alt="${site.name} icon" class="practice-site-favicon" onerror="this.style.display='none'">
+      <div class="practice-site-name">${site.name}</div>
+      <div class="practice-site-desc">${site.desc}</div>
+      <button class="practice-site-btn" data-url="${site.url}" type="button">Open &amp; capture</button>
+    </div>
+  `).join('');
+
   container.innerHTML = `
     <div class="empty-state" style="display: block;">
-      <h2 style="font-size: 26px; font-weight: 600; color: #1a1a1a; margin-bottom: 12px;">
-        Your board is empty
-      </h2>
-
-      <!-- Two-column layout: Primary CTA + Suggestions -->
-      <div class="empty-state-columns">
-
-        <!-- Left Column: Primary CTA + Helper Text + Demo Link -->
-        <div class="empty-state-column">
-          
-          <!-- Primary CTA Button -->
-          <button
-            class="empty-state-primary-cta"
-            id="capture-cta"
-            type="button"
-            aria-label="Capture your first card">
-            <span>✨ Capture your first card</span>
-          </button>
-
-          <!-- Helper Text -->
-          <p style="font-size: 15px; color: #5f6368; margin-top: 16px; margin-bottom: 12px;">
-            On any webpage: click the SpotBoard icon → select a section → Save.
-          </p>
-
-          <!-- Demo Link (demoted to secondary) -->
-          <a href="https://bondybondbond.github.io/spotboard/demo.html"
-             target="_blank"
-             rel="noopener noreferrer"
-             id="demo-link"
-             style="font-size: 14px; color: #1a73e8; text-decoration: none;">
-            Watch 30s demo →
-          </a>
+      <div class="interactive-directory">
+        <h2 class="interactive-directory-title">Capture your first card</h2>
+        <p class="interactive-directory-subtitle">Click a site below — SpotBoard opens it and activates the capture tool automatically.</p>
+        <div class="practice-sites">${sitesHtml}</div>
+        <div class="practice-fallback">
+          Not sure what to click?
+          <a href="https://bondybondbond.github.io/spotboard/sandbox.html" target="_blank" rel="noopener noreferrer">Try the practice page first →</a>
+          &nbsp;·&nbsp;
+          <a href="https://bondybondbond.github.io/spotboard/demo.html" target="_blank" rel="noopener noreferrer">Watch 30s demo →</a>
         </div>
-
-        <!-- Right Column: Suggestions -->
-        <div class="empty-state-column">
-          <p class="empty-state-heading">Popular sites to track</p>
-
-          <div style="text-align: left;">
-            <!-- News & Headlines -->
-            <div style="margin-bottom: 16px;">
-              <div style="font-size: 18px; font-weight: 400; color: #1a1a1a; margin-bottom: 4px;">
-                📰 News & Headlines
-              </div>
-              <div style="font-size: 17px; color: #5f6368;">
-                <a href="https://bbc.co.uk/news" target="_blank" style="color: #1a73e8; text-decoration: none;">BBC</a> ·
-                <a href="https://nbcnews.com" target="_blank" style="color: #1a73e8; text-decoration: none;">NBC News</a> ·
-                <a href="https://techcrunch.com" target="_blank" style="color: #1a73e8; text-decoration: none;">TechCrunch</a>
-              </div>
-            </div>
-
-            <!-- Sports Scores -->
-            <div style="margin-bottom: 16px;">
-              <div style="font-size: 18px; font-weight: 400; color: #1a1a1a; margin-bottom: 4px;">
-                ⚽ Sports Scores
-              </div>
-              <div style="font-size: 17px; color: #5f6368;">
-                <a href="https://espn.com" target="_blank" style="color: #1a73e8; text-decoration: none;">ESPN</a> ·
-                <a href="https://skysports.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Sky Sports</a> ·
-                <a href="https://as.com" target="_blank" style="color: #1a73e8; text-decoration: none;">AS</a>
-              </div>
-            </div>
-
-            <!-- Tech News & Launches -->
-            <div style="margin-bottom: 16px;">
-              <div style="font-size: 18px; font-weight: 400; color: #1a1a1a; margin-bottom: 4px;">
-                🚀 Tech News & Launches
-              </div>
-              <div style="font-size: 17px; color: #5f6368;">
-                <a href="https://producthunt.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Product Hunt</a> ·
-                <a href="https://github.com"" target="_blank" style="color: #1a73e8; text-decoration: none;">GitHub</a> ·
-                <a href="https://wired.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Wired</a>
-              </div>
-            </div>
-
-            <!-- Daily Deals -->
-            <div style="margin-bottom: 16px;">
-              <div style="font-size: 18px; font-weight: 400; color: #1a1a1a; margin-bottom: 4px;">
-                💰 Daily Deals
-              </div>
-              <div style="font-size: 17px; color: #5f6368;">
-                <a href="https://amazon.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Amazon</a> ·
-                <a href="https://gumtree.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Gumtree</a> ·
-                <a href="https://hotukdeals.com" target="_blank" style="color: #1a73e8; text-decoration: none;">HotUKDeals</a>
-              </div>
-            </div>
-
-            <!-- Weather Forecast -->
-            <div style="margin-bottom: 16px;">
-              <div style="font-size: 18px; font-weight: 400; color: #1a1a1a; margin-bottom: 4px;">
-                🌤️ Weather Forecast
-              </div>
-              <div style="font-size: 17px; color: #5f6368;">
-                <a href="https://accuweather.com" target="_blank" style="color: #1a73e8; text-decoration: none;">AccuWeather</a> ·
-                <a href="https://yr.no" target="_blank" style="color: #1a73e8; text-decoration: none;">YR.no</a> ·
-                <a href="https://theweathernetwork.com" target="_blank" style="color: #1a73e8; text-decoration: none;">Weather Network</a>
-              </div>
-            </div>
-          </div>
-        </div>
-
       </div>
-
-      <p style="font-size: 18px; color: #5f6368; margin-top: 16px;">
-        💡 <strong>Need help?</strong> Click the ℹ️ button in the top bar anytime to see how to capture.
-      </p>
     </div>
   `;
 
@@ -459,86 +373,26 @@ function renderEmptyState(container) {
     gtag('event', 'empty_state_viewed');
   }
 
-  // Add click handler for primary CTA
-  const captureBtn = container.querySelector('#capture-cta');
-  if (captureBtn) {
-    captureBtn.addEventListener('click', function() {
-      // Track analytics
+  // Add click handlers for practice site buttons
+  container.querySelectorAll('.practice-site-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const url = this.dataset.url;
       if (typeof gtag !== 'undefined') {
-        gtag('event', 'capture_cta_clicked', {
-          surface: 'dashboard_empty_state',
-          action: 'open_modal'
-        });
+        gtag('event', 'interactive_directory_site_clicked', { site_url: url });
       }
-
-      // Open quickstart modal
-      showCaptureQuickstartModal();
+      chrome.tabs.create({ url: url + '?spotboard_capture=1' });
     });
-  }
-
-  // Add click handler for demo link
-  const demoLink = container.querySelector('#demo-link');
-  if (demoLink) {
-    demoLink.addEventListener('click', function() {
-      // Track analytics
-      if (typeof gtag !== 'undefined') {
-        gtag('event', 'demo_link_clicked', {
-          source: 'empty_state'
-        });
-      }
-    });
-  }
+  });
 }
 
 // ===== ONBOARDING: Category Picker + Pre-populated Cards =====
 
-const ONBOARDING_CATEGORIES = {
-  news: {
-    label: 'News & Headlines',
-    emoji: '📰',
-    cards: [
-      { name: 'BBC News - Top Stories', url: 'https://www.bbc.co.uk/news', selector: '.gs-c-promo-heading__title', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=bbc.co.uk' },
-      { name: 'NBC News - Latest', url: 'https://www.nbcnews.com/', selector: 'h2.tease-card__headline', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=nbcnews.com' },
-      { name: 'TechCrunch - Latest', url: 'https://techcrunch.com/', selector: '.post-card__title', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=techcrunch.com' }
-    ]
-  },
-  sports: {
-    label: 'Sports Scores',
-    emoji: '⚽',
-    cards: [
-      { name: 'ESPN - Top Headlines', url: 'https://www.espn.com/', selector: 'h1', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=espn.com' },
-      { name: 'Sky Sports - Football', url: 'https://www.skysports.com/football', selector: 'h3', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=skysports.com' },
-      { name: 'AS English - Sports', url: 'https://en.as.com/', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=as.com' }
-    ]
-  },
-  stocks: {
-    label: 'Stock Markets',
-    emoji: '📈',
-    cards: [
-      { name: 'Yahoo Finance - Markets', url: 'https://finance.yahoo.com/', selector: '[data-testid="trending-tickers"]', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=finance.yahoo.com' },
-      { name: 'Google Finance - Markets', url: 'https://www.google.com/finance/', selector: '.YMlKec', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=google.com' },
-      { name: 'MarketWatch - Markets', url: 'https://www.marketwatch.com/', selector: '.element--article .article__headline', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=marketwatch.com' }
-    ]
-  },
-  tech: {
-    label: 'Tech & Products',
-    emoji: '🚀',
-    cards: [
-      { name: 'Product Hunt - Today', url: 'https://www.producthunt.com/', selector: '[data-test="post-name"]', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=producthunt.com' },
-      { name: 'GitHub Trending', url: 'https://github.com/trending', selector: '.h3.lh-condensed', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=github.com' },
-      { name: 'Hacker News - Top', url: 'https://news.ycombinator.com/', selector: '.titleline', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=ycombinator.com' }
-    ]
-  },
-  deals: {
-    label: 'Deals & Shopping',
-    emoji: '💰',
-    cards: [
-      { name: 'Amazon - Today\'s Deals', url: 'https://www.amazon.com/gp/goldbox', selector: 'h2', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=amazon.com' },
-      { name: 'Slickdeals - Hot', url: 'https://slickdeals.net/', selector: '.dealCard__title', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=slickdeals.net' },
-      { name: 'Reddit - r/deals', url: 'https://www.reddit.com/r/deals/', selector: 'a[data-testid="post-title"]', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=reddit.com' }
-    ]
-  }
-};
+// Curated practice sites for the Interactive Directory (shown when dashboard has no cards)
+const ONBOARDING_PRACTICE_SITES = [
+  { name: 'BBC News', url: 'https://www.bbc.co.uk/news', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=bbc.co.uk', desc: 'Headlines & top stories' },
+  { name: 'ESPN', url: 'https://www.espn.com/', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=espn.com', desc: 'Scores & headlines' },
+  { name: 'Amazon Deals', url: 'https://www.amazon.com/gp/goldbox', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=amazon.com', desc: "Today's deals" }
+];
 
 function showCategoryPickerOverlay(container, { clearContainer = true, showCancel = false } = {}) {
   return new Promise((resolve) => {
@@ -769,13 +623,15 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             <div class="component-header">
               <div class="component-header-left">
                 <img src="${pg.favicon || ''}" class="component-favicon" width="16" height="16" alt="">
-                <span class="component-title">${pg.name || 'Practice Capture'}</span>
+                <span class="component-title"></span>
               </div>
             </div>
             <div class="component-content">${pg.html_cache || '<p style="color:#999;padding:16px;">Practice capture content</p>'}</div>
           </div>
         </div>
       `;
+
+      container.querySelector('.component-title').textContent = pg.name || 'Practice Capture';
 
       // Wait 2.5s, then fade out and clean up
       await new Promise(r => setTimeout(r, 2500));
@@ -789,19 +645,11 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       // Mark onboarding as completed
       await chrome.storage.local.set({ onboardingCompleted: true });
 
-      // Show category picker (state machine: no reload)
-      await showCategoryPickerOverlay(container);
-
-      // After category picker, reload to render the new pre-populated cards
-      localStorage.setItem('hasSeenWelcome', 'true');
       location.reload();
       return;
     }
-    // Fallback: onboarding completed but categories never chosen (user navigated away)
-    if (allLocalData.onboardingCompleted && !allLocalData.categoriesChosen && metadata.length === 0) {
-      const container = document.getElementById('components-container');
-      await showCategoryPickerOverlay(container);
-      localStorage.setItem('hasSeenWelcome', 'true');
+    // Fallback: onboarding completed but no cards yet (user navigated away before capturing)
+    if (allLocalData.onboardingCompleted && metadata.length === 0) {
       location.reload();
       return;
     }
@@ -986,9 +834,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 5px 12px; background: #EEEEEE; border-radius: 6px 6px 0 0; border-bottom: 1px solid #000;">
           <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #495057; min-width: 0; flex: 1;">
             ${component.favicon ? `<img src="${component.favicon}" alt="" style="width: 24px; height: 24px; flex-shrink: 0;" />` : ''}
-            <span class="editable-title" style="font-weight: 600; font-size: 15px; color: #000; cursor: pointer; padding: 2px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="Click to edit label">
-              ${component.customLabel || component.name || 'Unnamed'}
-            </span>
+            <span class="editable-title" style="font-weight: 600; font-size: 15px; color: #000; cursor: pointer; padding: 2px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="Click to edit label"></span>
             ${component.isPrePopulated ? '<span style="font-size: 10px; padding: 2px 6px; background: #f3f4f6; color: #6b7280; border-radius: 4px; font-weight: 500; white-space: nowrap;">Template</span>' : ''}
           </div>
           <div style="display: flex; align-items: center;">
@@ -1037,7 +883,9 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           ${cleanupDuplicates(component.html_cache) || '<div style="color: #6c757d; text-align: center; padding: 20px;"><div style="font-size: 18px; margin-bottom: 8px;">📭</div><div style="font-weight: 600; margin-bottom: 4px;">No content yet</div><div style="font-size: 13px;">Click "Refresh All" to fetch latest content</div></div>'}
         </div>
       `;
-      
+
+      card.querySelector('.editable-title').textContent = component.customLabel || component.name || 'Unnamed';
+
       // Fix relative URLs to absolute
       const contentDiv = card.querySelector('.component-content');
       if (contentDiv && component.url) {
@@ -1613,20 +1461,6 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       grid.appendChild(card);
     });
 
-    // ===== AUTO-REFRESH PRE-POPULATED CARDS =====
-    // Trigger one refresh pass for any pre-pop card that hasn't been fetched yet
-    const staleCards = components.filter(c => c.needsRefresh && c.isPrePopulated);
-    if (staleCards.length > 0) {
-      setTimeout(async () => {
-        for (const comp of staleCards) {
-          try {
-            await refreshComponent(comp);
-          } catch (e) {
-            console.warn(`[SpotBoard] Auto-refresh failed for ${comp.url}:`, e);
-          }
-        }
-      }, 800); // slight delay so DOM is ready
-    }
 
   } catch (error) {
     console.error('❌ Error loading components:', error);
@@ -1702,6 +1536,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     // Check if a new comp-* key was added (new component captured)
     for (const key in changes) {
       if (key.startsWith('comp-') && !changes[key].oldValue && changes[key].newValue) {
+        chrome.storage.local.set({ onboardingCompleted: true }); // Mark first capture done
         location.reload();
         return; // Only reload once
       }
@@ -1828,14 +1663,21 @@ const infoBtn = document.getElementById('info-btn');
 const hasSeenWelcome = localStorage.getItem('hasSeenWelcome');
 
 if (!hasSeenWelcome) {
-  // Check if user completed onboarding playground (skip modal for them)
   chrome.storage.local.get(['onboardingCompleted'], (result) => {
-    if (!result.onboardingCompleted) {
-      // Truly first visit without playground — show modal
+    if (result.onboardingCompleted) {
+      // First card captured — show welcome tips
       welcomeModal.style.display = 'flex';
     } else {
-      // Playground completer — mark as seen silently
-      localStorage.setItem('hasSeenWelcome', 'true');
+      // Closed-tab failsafe: if cards exist but onboardingCompleted was never set
+      // (user captured a card while the dashboard tab was closed)
+      chrome.storage.sync.get(null, (syncData) => {
+        const hasCards = Object.keys(syncData).some(k => k.startsWith('comp-'));
+        if (hasCards) {
+          chrome.storage.local.set({ onboardingCompleted: true });
+          welcomeModal.style.display = 'flex';
+        }
+        // Otherwise: Interactive Directory is showing — leave modal hidden
+      });
     }
   });
 }
@@ -1855,15 +1697,6 @@ if (infoBtn) {
   });
 }
 
-// ===== INSPIRE ME BUTTON =====
-const inspireMeBtn = document.getElementById('inspire-me-btn');
-if (inspireMeBtn) {
-  inspireMeBtn.addEventListener('click', async () => {
-    const container = document.getElementById('components-container');
-    const result = await showCategoryPickerOverlay(container, { clearContainer: false, showCancel: true });
-    if (result !== null) location.reload();
-  });
-}
 
 // ===== ROLLING WINDOW TRACKING HELPER =====
 // Stores timestamp arrays instead of counters

@@ -573,63 +573,107 @@
       color: #666;
     }
 
-    /* Empty state two-column layout */
-    .empty-state-columns {
-      display: flex;
-      gap: 40px;
-      max-width: 1000px;
-      margin: 0 auto 24px auto;
-      align-items: flex-start;
+    /* Interactive Directory */
+    .interactive-directory {
+      max-width: 640px;
+      margin: 0 auto;
     }
 
-    .empty-state-column {
-      flex: 1;
-      min-width: 0; /* Fix flexbox text overflow */
-    }
-
-    .empty-state-heading {
-      font-size: 19px;
-      color: #1a1a1a;
+    .interactive-directory-title {
+      font-size: 26px;
       font-weight: 600;
-      margin-bottom: 16px;
-      text-align: left;
+      color: #1a1a1a;
+      margin-bottom: 10px;
     }
 
-    /* Demo placeholder (click-to-load) */
-    /* Empty State Primary CTA */
-    .empty-state-primary-cta {
+    .interactive-directory-subtitle {
+      font-size: 15px;
+      color: #5f6368;
+      margin-bottom: 28px;
+    }
+
+    .practice-sites {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+
+    .practice-site-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 20px 16px 16px;
+      width: 168px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+
+    .practice-site-card:hover {
+      box-shadow: 0 3px 12px rgba(0,0,0,0.12);
+      border-color: #bbb;
+    }
+
+    .practice-site-favicon {
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+    }
+
+    .practice-site-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1a1a1a;
+      text-align: center;
+    }
+
+    .practice-site-desc {
+      font-size: 12px;
+      color: #777;
+      text-align: center;
+      line-height: 1.4;
+      flex: 1;
+    }
+
+    .practice-site-btn {
       width: 100%;
-      padding: 14px 24px;
-      font-size: 18px;
+      padding: 8px 10px;
+      font-size: 13px;
       font-weight: 600;
       color: white;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       border: none;
-      border-radius: 8px;
+      border-radius: 6px;
       cursor: pointer;
-      transition: transform 0.2s ease, filter 0.2s ease;
-      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+      transition: filter 0.15s ease, transform 0.1s ease;
+      margin-top: 4px;
     }
 
-    .empty-state-primary-cta:hover {
-      transform: scale(1.02);
+    .practice-site-btn:hover {
       filter: brightness(1.1);
     }
 
-    .empty-state-primary-cta:active {
-      transform: scale(0.98);
+    .practice-site-btn:active {
+      transform: scale(0.97);
     }
 
-    .empty-state-primary-cta:focus-visible {
-      outline: 3px solid #667eea;
-      outline-offset: 2px;
+    .practice-fallback {
+      font-size: 13px;
+      color: #888;
     }
 
-    /* Responsive: stack columns on mobile */
-    @media (max-width: 900px) {
-      .empty-state-columns {
-        flex-direction: column;
-      }
+    .practice-fallback a {
+      color: #1a73e8;
+      text-decoration: none;
+    }
+
+    .practice-fallback a:hover {
+      text-decoration: underline;
     }
 
     /* Refresh Toast Notification */
@@ -1171,9 +1215,6 @@
         SpotBoard | <span id="board-name" style="cursor: pointer; padding: 2px 6px; border-radius: 4px;" title="Click to edit board name">My Dashboard</span>
       </h1>
       <div style="display: flex; gap: 10px; align-items: center;">
-        <button id="inspire-me-btn" style="padding: 6px 14px; background: rgba(255,255,255,0.18); color: white; border: 1px solid rgba(255,255,255,0.45); border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap; transition: all 0.2s ease;" title="Add starter cards by topic">
-          ✨ Inspire me
-        </button>
         <button id="info-btn" style="padding: 0; background: none; border: none; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center;" title="Show tutorial">
           <img src="info-icon.svg" alt="Info" style="width: 28px; height: 28px; display: block;" />
         </button>

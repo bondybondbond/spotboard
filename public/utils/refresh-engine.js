@@ -3,7 +3,7 @@
  * Handles component refresh logic, tab management, and toast notifications
  *
  * Dependencies:
- * - dom-cleanup.js (applySanitizationPipeline, cleanupDuplicates)
+ * - dom-cleanup.js (applySanitizationPipeline, cleanupDuplicates, tagSentimentData)
  * - fingerprint.js (extractFingerprint)
  */
 
@@ -631,7 +631,13 @@ async function tryBackgroundWithSpoof(url, selector) {
 
         // 💚❤️ SENTIMENT TAGGING (Phase 2: Semantic Coloring)
         // Tag finance deltas (+/-) for color coding on dashboard
-        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+        const SKIP_SELECTOR = 'SCRIPT, STYLE, NOSCRIPT, TEMPLATE, SVG';
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            if (node.parentElement?.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_ACCEPT;
+          }
+        });
         const textNodesToTag = [];
         let node;
 
@@ -865,7 +871,13 @@ async function tryActiveTab(url, selector, fingerprint = null) {
 
         // 💚❤️ SENTIMENT TAGGING (Phase 2: Semantic Coloring)
         // Tag finance deltas (+/-) for color coding on dashboard
-        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+        const SKIP_SELECTOR = 'SCRIPT, STYLE, NOSCRIPT, TEMPLATE, SVG';
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            if (node.parentElement?.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_ACCEPT;
+          }
+        });
         const textNodesToTag = [];
         let node;
 
@@ -1410,49 +1422,7 @@ async function refreshComponent(component) {
     const tempContainer = document.createElement('div');
     tempContainer.innerHTML = extractedHtml;
 
-    const walker = document.createTreeWalker(tempContainer, NodeFilter.SHOW_TEXT, null);
-    const textNodesToTag = [];
-    let textNode;
-
-    while ((textNode = walker.nextNode())) {
-      const text = textNode.textContent?.trim() || '';
-      if (text.length === 0) continue;
-
-      const positivePattern = /^\+|(?<!\±)\+\d+\.?\d*%?/;
-      const negativePattern = /^-\d|(?<!\±)-\d+\.?\d*%?/;
-
-      let sentiment = null;
-      if (positivePattern.test(text)) {
-        sentiment = 'positive';
-      } else if (negativePattern.test(text)) {
-        sentiment = 'negative';
-      }
-
-      if (sentiment) {
-        textNodesToTag.push({ node: textNode, sentiment: sentiment });
-      }
-    }
-
-    let tagged = 0;
-    textNodesToTag.forEach(({ node, sentiment }) => {
-      let parent = node.parentElement;
-      while (parent && parent !== tempContainer) {
-        if (parent.tagName === 'A' || parent.tagName === 'BUTTON' || parent.tagName === 'SPAN') {
-          parent.setAttribute('data-sb-sentiment', sentiment);
-          tagged++;
-          break;
-        }
-        parent = parent.parentElement;
-      }
-      if (node.parentElement && !node.parentElement.hasAttribute('data-sb-sentiment')) {
-        node.parentElement.setAttribute('data-sb-sentiment', sentiment);
-        tagged++;
-      }
-    });
-
-    if (tagged > 0) {
-      console.log(`✅ Tagged ${tagged} element(s) with sentiment data (direct-fetch)`);
-    }
+    tagSentimentData(tempContainer);
 
     // Get the sentiment-tagged HTML
     extractedHtml = tempContainer.innerHTML;

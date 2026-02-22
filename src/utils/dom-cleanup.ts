@@ -556,6 +556,85 @@ export function removeCursorStyles(container: HTMLElement): void {
   });
 }
 
+
+/**
+ * Tags elements with sentiment data for color-coding finance deltas (+/-) on the dashboard.
+ * Detects positive/negative numeric patterns and sets data-sb-sentiment on the nearest
+ * clickable ancestor (A, BUTTON, SPAN) or immediate parent.
+ *
+ * Uses SHOW_TEXT + .closest() for performance: native C++ .closest() on ~500 text nodes
+ * is faster than JS callbacks on 5000+ elements with SHOW_ELEMENT.
+ *
+ * Excludes SCRIPT, STYLE, NOSCRIPT, TEMPLATE, SVG text nodes to prevent false positives
+ * from CSS values, lazy-load fallback HTML, and inline scripts containing `-number` patterns.
+ *
+ * Used in: content.ts (initial capture), refresh-engine.js (all 3 refresh paths)
+ */
+export function tagSentimentData(element: HTMLElement): void {
+  const SKIP_SELECTOR = 'SCRIPT, STYLE, NOSCRIPT, TEMPLATE, SVG';
+
+  const filter = {
+    acceptNode(node: Node): number {
+      if ((node as Text).parentElement?.closest(SKIP_SELECTOR)) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  };
+
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, filter);
+
+  const textNodesToTag: Array<{ node: Text; sentiment: 'positive' | 'negative' }> = [];
+
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const text = node.textContent?.trim() || '';
+    if (text.length === 0) continue;
+
+    // Positive: starts with + or contains +X.XX% (but not ±)
+    // Negative: starts with -digit or contains -X.XX% (but not ±)
+    const positivePattern = /^\+|(?<!\±)\+\d+\.?\d*%?/;
+    const negativePattern = /^-\d|(?<!\±)-\d+\.?\d*%?/;
+
+    let sentiment: 'positive' | 'negative' | null = null;
+    if (positivePattern.test(text)) {
+      sentiment = 'positive';
+    } else if (negativePattern.test(text)) {
+      sentiment = 'negative';
+    }
+
+    if (sentiment) {
+      textNodesToTag.push({ node: node as Text, sentiment });
+    }
+  }
+
+  // Tag the parent elements (usually the clickable element)
+  let tagged = 0;
+  textNodesToTag.forEach(({ node, sentiment }) => {
+    let parent = node.parentElement;
+
+    // Find the clickable ancestor (a, button) or closest span
+    while (parent && parent !== element) {
+      if (parent.tagName === 'A' || parent.tagName === 'BUTTON' || parent.tagName === 'SPAN') {
+        parent.setAttribute('data-sb-sentiment', sentiment);
+        tagged++;
+        break;
+      }
+      parent = parent.parentElement;
+    }
+
+    // Fallback: tag immediate parent if no clickable ancestor found
+    if (node.parentElement && !node.parentElement.hasAttribute('data-sb-sentiment')) {
+      node.parentElement.setAttribute('data-sb-sentiment', sentiment);
+      tagged++;
+    }
+  });
+
+  if (tagged > 0) {
+    console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
+  }
+}
+
 /**
  * 🎯 WHITESPACE CLEANUP: Inject CSS to compress excessive spacing
  * 
