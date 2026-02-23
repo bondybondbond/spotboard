@@ -344,7 +344,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     }
     
     // ATTEMPT 1: Try background tab with visibility spoof
-    const result = await tryBackgroundWithSpoof(url, selector);
+    const result = await tryBackgroundWithSpoof(url, selector, fingerprint);
     if (result) {
       // Check if images are missing (site may still detect background tab)
       const resultImgCount = (result.match(/<img/gi) || []).length;
@@ -493,7 +493,7 @@ async function handleConsentDialog(tabId) {
  * 
  * Used in: tabBasedRefresh() as first attempt before active tab fallback
  */
-async function tryBackgroundWithSpoof(url, selector) {
+async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
   const tab = await chrome.tabs.create({ url, active: false });
   
   try {
@@ -532,11 +532,26 @@ async function tryBackgroundWithSpoof(url, selector) {
     // Try to extract - WITH SANITIZATION AND IMAGE CLASSIFICATION IN THE TAB
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      args: [selector],
-      func: (sel) => {
-        const element = document.querySelector(sel);
+      args: [selector, fingerprint],
+      func: (sel, fp) => {
+        // Find element - use fingerprint for multi-match disambiguation if available
+        let element = null;
+        if (fp) {
+          const allMatches = document.querySelectorAll(sel);
+          if (allMatches.length > 1) {
+            for (const el of allMatches) {
+              if ((el.textContent || '').toLowerCase().includes(fp.toLowerCase())) {
+                element = el;
+                break;
+              }
+            }
+          }
+          if (!element) element = document.querySelector(sel);
+        } else {
+          element = document.querySelector(sel);
+        }
         if (!element) return null;
-        
+
         // Mark hidden elements BEFORE cloning (while CSS is loaded)
         const allElements = [element, ...Array.from(element.querySelectorAll('*'))];
         const marked = [];
@@ -1092,7 +1107,7 @@ async function refreshComponent(component) {
     // Only try to extract if we have a specific selector
     // Generic selectors like "div" or "section" will match wrong elements
     const isGenericSelector = ['div', 'section', 'article', 'main', 'aside', 'header', 'footer', 'nav'].includes(component.selector?.toLowerCase());
-    
+
     if (component.selector && !isGenericSelector) {
       // Get ALL matching elements, not just first one
       const matches = doc.querySelectorAll(component.selector);
@@ -1104,28 +1119,54 @@ async function refreshComponent(component) {
         
         // If multiple matches, use fingerprint to find the right one
         if (matches.length > 1) {
-          // 🎯 BATCH 3: Position-based captures skip fingerprint verification
-          if (component.positionBased) {
+          // 1. headingFingerprint tiebreaker ALWAYS runs first (even for position-based).
+          //    On sites with hidden SEO headings (e.g. cricbuzz), the fingerprint may be
+          //    the card name (e.g. "T20 WORLD CUP, 2026") rather than a heading element.
+          if (component.headingFingerprint) {
+            const norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
+            const fp = norm(component.headingFingerprint);
+            // First pass: exact match in heading-like elements
+            outer: for (const candidate of matches) {
+              for (const h of candidate.querySelectorAll(
+                'h1,h2,h3,h4,caption,[class*="heading"],[class*="title"],[class*="header"]'
+              )) {
+                if (norm(h.textContent || '') === fp) { element = candidate; break outer; }
+              }
+            }
+            // Second pass: check full text content of each candidate (for non-heading fingerprints)
+            if (!element) {
+              for (const candidate of matches) {
+                if (norm(candidate.textContent || '').includes(fp)) {
+                  element = candidate;
+                  break;
+                }
+              }
+            }
+          }
+
+          // 2. Position-based captures: fall back to first match if fingerprint didn't resolve
+          if (!element && component.positionBased) {
             element = matches[0];
-          } else {
+          }
+
+          // 3. html_cache structural fingerprint (non-position-based only)
+          if (!element) {
             const originalFingerprint = extractFingerprint(component.html_cache);
-            
-            // Try to find element whose fingerprint matches
             for (const candidate of matches) {
               const candidateHtml = candidate.outerHTML;
               const candidateFingerprint = extractFingerprint(candidateHtml);
-              
-              if (originalFingerprint && candidateFingerprint && 
+
+              if (originalFingerprint && candidateFingerprint &&
                   candidateFingerprint.toLowerCase().includes(originalFingerprint.toLowerCase())) {
                 element = candidate;
                 break;
               }
             }
-            
-            // If no fingerprint match, fall back to first match (old behavior)
-            if (!element) {
-              element = matches[0];
-            }
+          }
+
+          // 4. True last resort: first match (old behavior)
+          if (!element) {
+            element = matches[0];
           }
         } else {
           // Only one match - use it
@@ -1133,7 +1174,8 @@ async function refreshComponent(component) {
         }
         
         extractedHtml = element.outerHTML;
-        
+
+
                 // HOTUKDEALS/JS-RENDERED IMAGES PATTERN: Check if original had images but extracted has none
         // Sites like HotUKDeals render images via JavaScript - direct fetch gets text but no images
         const originalImgCount = (component.html_cache?.match(/<img/gi) || []).length;
@@ -1203,7 +1245,8 @@ async function refreshComponent(component) {
         }
         
         // Skeleton check triggers: skeleton class, empty container, missing images, wrapper skeleton
-        
+
+
         if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing) {
           // Extract fingerprint FIRST to pass to tab refresh
           const originalFingerprint = extractFingerprint(component.html_cache);
@@ -1242,9 +1285,52 @@ async function refreshComponent(component) {
             keepOriginal: true
           };
         }
+
+        // CONTENT DRIFT GUARD: Direct-fetch returns raw server HTML which may contain
+        // CSS-hidden sections (e.g. Tailwind's wb:hidden) that the live page hides.
+        // DOMParser has no CSS engine, so these sections bloat the extracted HTML.
+        // If the extracted HTML is significantly larger than the original capture,
+        // fall back to tab-based refresh where CSS is active and hidden elements are removed.
+        // Use originalCaptureLength (set on first drift detection) as stable baseline,
+        // since html_cache grows after tab-based refreshes shift the baseline.
+        const driftBaseline = component.originalCaptureLength || (component.html_cache || '').length;
+        if (driftBaseline > 500 && extractedHtml.length > driftBaseline * 1.5) {
+          console.log(`[SB-REFRESH] Content drift detected: extracted=${extractedHtml.length} vs baseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x) → falling back to tab-based refresh`);
+          // Lock in the baseline for future refreshes (in-memory + persisted via caller)
+          if (!component.originalCaptureLength) {
+            component.originalCaptureLength = driftBaseline;
+          }
+          const driftFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
+          const tabHtml = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount);
+          if (tabHtml) {
+            // Skip fingerprint check for position-based captures
+            if (!component.positionBased && driftFingerprint && !tabHtml.toLowerCase().includes(driftFingerprint.toLowerCase())) {
+              console.warn('[Content Drift] Tab refresh fingerprint mismatch - keeping original');
+              return {
+                success: false,
+                error: 'Content drift: tab refresh returned different element',
+                keepOriginal: true
+              };
+            }
+            const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+            return {
+              success: true,
+              html_cache: sanitizedHtml,
+              last_refresh: new Date().toISOString(),
+              status: 'active'
+            };
+          }
+          // Tab fallback failed - keep original rather than using drifted content
+          return {
+            success: false,
+            error: 'Content drift detected but tab refresh failed',
+            keepOriginal: true
+          };
+        }
       } else {
         // Selector not found in fetched HTML
-        
+
+
         // SELF-HEALING: Auto-generate headingFingerprint if missing
         if (!component.headingFingerprint) {
           if (DEBUG) console.log(`🔧 [Self-Healing] No headingFingerprint found, attempting to generate...`);
@@ -1640,12 +1726,14 @@ async function refreshAll() {
           lastErrorAt: comp.lastErrorAt
         };
         
-        updatedLocalData[comp.id] = {
+        const pausedEntry = {
           selector: comp.selector,
           html_cache: comp.html_cache,
           last_refresh: comp.last_refresh,
           excludedSelectors: comp.excludedSelectors || []
         };
+        if (comp.originalCaptureLength) pausedEntry.originalCaptureLength = comp.originalCaptureLength;
+        updatedLocalData[comp.id] = pausedEntry;
       } else {
         // Component was refreshed - update with new data
         const attemptTimestamp = new Date().toISOString();
@@ -1677,28 +1765,34 @@ async function refreshAll() {
           // Validate HTML is not empty before marking as success
           if (!result.html_cache || result.html_cache.length < 50) {
             console.error(`⚠️ Empty HTML detected for ${comp.name} - keeping original`);
-            updatedLocalData[comp.id] = {
+            const emptyEntry = {
               selector: comp.selector,
               html_cache: comp.html_cache,
               last_refresh: comp.last_refresh,
               excludedSelectors: comp.excludedSelectors || []
             };
+            if (comp.originalCaptureLength) emptyEntry.originalCaptureLength = comp.originalCaptureLength;
+            updatedLocalData[comp.id] = emptyEntry;
           } else {
-            updatedLocalData[comp.id] = {
+            const successEntry = {
               selector: comp.selector,
               html_cache: result.html_cache,
               last_refresh: result.last_refresh,
               excludedSelectors: comp.excludedSelectors || []
             };
+            if (comp.originalCaptureLength) successEntry.originalCaptureLength = comp.originalCaptureLength;
+            updatedLocalData[comp.id] = successEntry;
           }
         } else {
           // Keep existing data if refresh failed
-          updatedLocalData[comp.id] = {
+          const failedEntry = {
             selector: comp.selector,
             html_cache: comp.html_cache,
             last_refresh: comp.last_refresh,
             excludedSelectors: comp.excludedSelectors || []
           };
+          if (comp.originalCaptureLength) failedEntry.originalCaptureLength = comp.originalCaptureLength;
+          updatedLocalData[comp.id] = failedEntry;
         }
       }
     });

@@ -1026,12 +1026,14 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
               // Local storage — html_cache stays local (not sync)
               chrome.storage.local.get(['componentsData'], (res) => {
                 const localData = res.componentsData || {};
-                localData[component.id] = {
+                const localEntry = {
                   selector: component.selector,
                   html_cache: result.html_cache,
                   last_refresh: result.last_refresh,
                   excludedSelectors: component.excludedSelectors || []
                 };
+                if (component.originalCaptureLength) localEntry.originalCaptureLength = component.originalCaptureLength;
+                localData[component.id] = localEntry;
                 chrome.storage.local.set({ componentsData: localData }, () => {
                   if (chrome.runtime.lastError) console.warn('Local write error:', chrome.runtime.lastError);
                 });

@@ -997,8 +997,38 @@ function handleClick(event: MouseEvent) {
   }
   
   // Generate smart label using Option 1 strategy
+
+  // Spatial helper: true if child's CENTER POINT falls within parent's rendered rect (10px tolerance).
+  // Center-point check avoids false rejections when headings overflow parent by a few px.
+  const isWithinBounds = (child: Element, parent: Element): boolean => {
+    const p = parent.getBoundingClientRect();
+    const c = child.getBoundingClientRect();
+    if (c.width === 0 || c.height === 0) return false; // not visually rendered
+    const cX = c.left + c.width / 2;
+    const cY = c.top + c.height / 2;
+    return (
+      cX >= p.left - 10 && cX <= p.right + 10 &&
+      cY >= p.top - 10 && cY <= p.bottom + 10
+    );
+  };
+
+  // DOM traversal: walk from the clicked element up to wrapper's direct child.
+  // Narrows name/fingerprint searches to the column branch the user actually interacted with,
+  // preventing sidebar headings (e.g. "Featured Videos") from contaminating the card name.
+  const getClickBranch = (clickTarget: HTMLElement, wrapper: HTMLElement): HTMLElement | null => {
+    if (!clickTarget || clickTarget === wrapper || !wrapper.contains(clickTarget)) return null;
+    let current = clickTarget;
+    while (current.parentElement && current.parentElement !== wrapper) {
+      current = current.parentElement;
+    }
+    return current.parentElement === wrapper ? current : null;
+  };
+
+  const clickBranch = getClickBranch(event.target as HTMLElement, target);
+  const searchRoot = clickBranch || target;
+
   let name = '';
-  
+
   // Strategy 1: Check if element itself is a heading
   if (/^H[1-6]$/i.test(target.tagName)) {
     const text = target.textContent?.trim();
@@ -1008,28 +1038,43 @@ function handleClick(event: MouseEvent) {
     }
   }
   
-  // Strategy 2: Look for first heading inside element
+  // Strategy 2: Look for first heading inside element that is spatially within capture bounds
   if (!name) {
-    const heading = target.querySelector('h1, h2, h3, h4, h5, h6');
+    const headings = Array.from(searchRoot.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+    const heading = headings.find(h => isWithinBounds(h, searchRoot)) ?? null;
     if (heading?.textContent?.trim()) {
       const text = heading.textContent.trim();
       name = text.length > 50 ? text.substring(0, 50) + '...' : text;
-      log('📝 Name from child heading:', name);
     }
   }
   
-  // Strategy 3: Get first meaningful text (skip empty/whitespace-only nodes)
+  // Strategy 3: Get first meaningful text (skip empty/whitespace-only nodes + out-of-bounds subtrees)
   if (!name) {
     const SKIP_ELEMENTS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG']);
     const walker = document.createTreeWalker(
-      target,
+      searchRoot,
       NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
       {
         acceptNode: (node: Node): number => {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            return SKIP_ELEMENTS.has((node as Element).tagName)
-              ? NodeFilter.FILTER_REJECT
-              : NodeFilter.FILTER_SKIP;
+            const el = node as Element;
+            if (SKIP_ELEMENTS.has(el.tagName)) return NodeFilter.FILTER_REJECT;
+            // Prune hidden/invisible elements (0×0 rect = display:none, SEO-only headings, etc.)
+            const c = el.getBoundingClientRect();
+            if (c.width === 0 && c.height === 0) return NodeFilter.FILTER_REJECT;
+            // Prune subtrees that are completely outside capture bounds (sidebars, popups, etc.)
+            const p = searchRoot.getBoundingClientRect();
+            if (c.width > 0 && c.height > 0) {
+              if (
+                c.right  < p.left   - 10 ||
+                c.left   > p.right  + 10 ||
+                c.bottom < p.top    - 10 ||
+                c.top    > p.bottom + 10
+              ) {
+                return NodeFilter.FILTER_REJECT;
+              }
+            }
+            return NodeFilter.FILTER_SKIP;
           }
           const text = (node as Text).textContent?.trim();
           return text && text.length > 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
@@ -1039,9 +1084,8 @@ function handleClick(event: MouseEvent) {
     
     const firstTextNode = walker.nextNode();
     if (firstTextNode?.textContent?.trim()) {
-      const text = firstTextNode.textContent.trim();
+      const text = (firstTextNode as Text).textContent!.trim();
       name = text.length > 50 ? text.substring(0, 50) + '...' : text;
-      log('📝 Name from first text:', name);
     }
   }
   
@@ -1082,18 +1126,24 @@ function handleClick(event: MouseEvent) {
     log('📝 Name fallback:', name);
   }
   
-  log('🏷️ Final name:', name);
-  
   const selector = generateSelector(target);
   log('🎯 Final selector:', selector);
   
   // 🎯 BATCH 2: Pre-extract heading for position-based detection
   // Do this BEFORE modal so we can show auto-selected mode
-  const heading = target.querySelector(`
-    h1, h2, h3, h4, caption,
-    [class*="heading"], [class*="title"], [class*="header"],
-    [data-testid*="heading"], [data-testid*="title"]
-  `);
+  // Skip hidden/SEO headings (0×0 rect = not rendered, e.g. cricbuzz hidden H3s)
+  const headingSels = 'h1, h2, h3, h4, caption, [class*="heading"], [class*="title"], [class*="header"], [data-testid*="heading"], [data-testid*="title"]';
+  let heading: Element | null = null;
+  for (const h of searchRoot.querySelectorAll(headingSels)) {
+    const r = h.getBoundingClientRect();
+    if (r.width > 0 || r.height > 0) { heading = h; break; }
+  }
+  if (!heading && searchRoot !== target) {
+    for (const h of target.querySelectorAll(headingSels)) {
+      const r = h.getBoundingClientRect();
+      if (r.width > 0 || r.height > 0) { heading = h; break; }
+    }
+  }
   const rawHeading = heading?.textContent?.trim() || null;
   const hasStableHeading = !!rawHeading;
   const positionBased = !hasStableHeading;
@@ -1102,7 +1152,7 @@ function handleClick(event: MouseEvent) {
   // Show top-right confirmation modal
   log('📞 About to call showCaptureConfirmation...');
   try {
-    showCaptureConfirmation(target, name, selector, positionBased);
+    showCaptureConfirmation(target, name, selector, positionBased, clickBranch);
     log('✅ showCaptureConfirmation returned');
   } catch (error) {
     console.error('❌ showCaptureConfirmation FAILED:', error);
@@ -1285,7 +1335,7 @@ function updatePreview(): void {
   };
 }
 
-function showCaptureConfirmation(target: HTMLElement, name: string, selector: string, positionBased: boolean) {
+function showCaptureConfirmation(target: HTMLElement, name: string, selector: string, positionBased: boolean, clickBranch: HTMLElement | null = null) {
   log('🚀 showCaptureConfirmation called with:', { name, selector, positionBased });
   
   // Create top-right confirmation modal
@@ -1434,20 +1484,26 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
         
         // 🎯 BATCH 2: Extract first heading for self-healing fallback
-        // 🔧 FIX: Extract from LIVE DOM (target), not sanitized HTML
-        // Amazon and other sites inject text via JS that cloneNode doesn't capture
-        // Live DOM has the rendered text, sanitized clone may have empty spans
-        const heading = target.querySelector(`
-          h1, h2, h3, h4, caption,
-          [class*="heading"], [class*="title"], [class*="header"],
-          [data-testid*="heading"], [data-testid*="title"]
-        `);
+        // 🔧 FIX: Extract from LIVE DOM, not sanitized HTML
+        // Skip hidden/SEO headings (0×0 rect = display:none, not rendered)
+        const fpRoot = clickBranch || target;
+        const fpHeadingSels = 'h1, h2, h3, h4, caption, [class*="heading"], [class*="title"], [class*="header"], [data-testid*="heading"], [data-testid*="title"]';
+        let fpHeading: Element | null = null;
+        for (const h of fpRoot.querySelectorAll(fpHeadingSels)) {
+          const r = h.getBoundingClientRect();
+          if (r.width > 0 || r.height > 0) { fpHeading = h; break; }
+        }
+        if (!fpHeading && fpRoot !== target) {
+          for (const h of target.querySelectorAll(fpHeadingSels)) {
+            const r = h.getBoundingClientRect();
+            if (r.width > 0 || r.height > 0) { fpHeading = h; break; }
+          }
+        }
         // Limit to 100 chars to avoid exceeding sync storage quota (8KB per item)
-        const rawHeading = heading?.textContent?.trim() || null;
-        const headingFingerprint = rawHeading ? rawHeading.substring(0, 100) : null;
-        // Always log for debugging - even if null
-        log('🔖 Extracted heading fingerprint:', headingFingerprint || 'NULL (no h1-h4 found)');
-        
+        const fpText = fpHeading?.textContent?.trim() || null;
+        // Fallback: use the card name as fingerprint when no visible heading exists
+        const fallbackName = name !== `Spot from ${window.location.hostname}` ? name : null;
+        const headingFingerprint = fpText ? fpText.substring(0, 100) : (fallbackName ? fallbackName.substring(0, 100) : null);
         // 🎯 BATCH 2: Use finalPositionBased (user's selection from Advanced panel)
         // Don't recalculate - respect user's choice even if it conflicts with heading presence
         log('📍 Using final capture mode:', finalPositionBased ? 'Position-based' : 'Header-based');
