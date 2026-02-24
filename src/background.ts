@@ -109,9 +109,21 @@ async function cacheToolbarPinStatus(): Promise<void> {
   }
 }
 
+// Auto-mark unpacked dev builds as owner so they're always filtered from GA4.
+// Published CWS extensions always have update_url set; sideloaded dev builds don't.
+// No extra manifest permissions needed — update_url is part of the standard manifest.
+async function autoMarkDevBuild(): Promise<void> {
+  if (!chrome.runtime.getManifest().update_url) {
+    await chrome.storage.sync.set({ isOwner: true });
+    isOwnerCached = true;
+    if (DEBUG) console.log('🔧 Dev build detected — auto-marked as owner');
+  }
+}
+
 // Cache pin status and owner flag on browser startup
 chrome.runtime.onStartup.addListener(async () => {
   if (DEBUG) console.log('🚀 Browser started, checking toolbar pin status');
+  await autoMarkDevBuild(); // Must run before owner flag is read below
   await cacheToolbarPinStatus();
 
   // Load owner flag into memory cache (for GA4 event filtering)
@@ -130,9 +142,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 chrome.runtime.onInstalled.addListener(async (details) => {
+  // Auto-mark dev builds first — must run before any GA4 event fires
+  await autoMarkDevBuild();
   // Cache toolbar pin status on install/update
   await cacheToolbarPinStatus();
-  
+
   if (details.reason === 'install') {
     // Generate anonymous user ID for feedback tracking (privacy-safe UUID)
     const userId = crypto.randomUUID();
