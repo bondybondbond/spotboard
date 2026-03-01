@@ -1,6 +1,5 @@
-// Pre-build step: Compiles src/utils/dom-cleanup.ts → public/utils/dom-cleanup.js
-// Output: IIFE format with all exports assigned to window globals
-// This allows dashboard.html to continue loading dom-cleanup.js via <script> tag
+// Pre-build step: Compiles shared utils → public/utils/*.js
+// Output: IIFE format accessible via window globals in dashboard.html
 //
 // Run: node scripts/build-shared.js (runs before tsc and vite build)
 
@@ -18,3 +17,16 @@ await build({
 });
 
 console.log('✅ Built public/utils/dom-cleanup.js from src/utils/dom-cleanup.ts');
+
+await build({
+  entryPoints: ['src/utils/confetti.ts'],
+  outfile: 'public/utils/confetti.js',
+  bundle: true,
+  format: 'iife',
+  globalName: 'SbConfetti',
+  footer: { js: 'window.sbConfetti = SbConfetti;' },
+  target: 'chrome120',
+  banner: { js: '// AUTO-GENERATED from src/utils/confetti.ts — DO NOT EDIT' },
+});
+
+console.log('✅ Built public/utils/confetti.js from src/utils/confetti.ts');

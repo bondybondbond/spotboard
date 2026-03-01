@@ -272,6 +272,26 @@ setUninstallSurveyURL();
 // MESSAGE HANDLERS
 // ================================
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Onboarding re-trigger pull model: content script asks if it should start onboarding
+  if (request.type === 'CHECK_ONBOARDING') {
+    const tabId = sender.tab?.id;
+    (async () => {
+      try {
+        const result = await chrome.storage.session.get('pendingOnboardingTabId');
+        if (result.pendingOnboardingTabId === tabId) {
+          console.debug('[sb-onboarding] CHECK_ONBOARDING: tab', tabId, 'matches — clearing');
+          await chrome.storage.session.remove('pendingOnboardingTabId');
+          sendResponse(true);
+        } else {
+          sendResponse(false);
+        }
+      } catch {
+        sendResponse(false); // channel closed (redirect mid-flight) — fail silently
+      }
+    })();
+    return true; // keep message channel open for async sendResponse
+  }
+
   // GA4 event handler from content scripts
   if (request.type === 'GA4_EVENT') {
     sendGA4Event(request.eventName, request.params)

@@ -580,14 +580,14 @@
     }
 
     .interactive-directory-title {
-      font-size: 26px;
+      font-size: 28px;
       font-weight: 600;
       color: #1a1a1a;
       margin-bottom: 10px;
     }
 
     .interactive-directory-subtitle {
-      font-size: 15px;
+      font-size: 17px;
       color: #5f6368;
       margin-bottom: 28px;
     }
@@ -626,14 +626,14 @@
     }
 
     .practice-site-name {
-      font-size: 14px;
+      font-size: 16px;
       font-weight: 600;
       color: #1a1a1a;
       text-align: center;
     }
 
     .practice-site-desc {
-      font-size: 12px;
+      font-size: 14px;
       color: #777;
       text-align: center;
       line-height: 1.4;
@@ -643,7 +643,7 @@
     .practice-site-btn {
       width: 100%;
       padding: 8px 10px;
-      font-size: 13px;
+      font-size: 15px;
       font-weight: 600;
       color: white;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -663,7 +663,7 @@
     }
 
     .practice-fallback {
-      font-size: 13px;
+      font-size: 15px;
       color: #888;
     }
 
@@ -674,6 +674,334 @@
 
     .practice-fallback a:hover {
       text-decoration: underline;
+    }
+
+    .practice-skip-row {
+      margin-top: 16px;
+      font-size: 15px;
+      color: #888;
+    }
+
+    .practice-skip-link {
+      color: #888;
+      text-decoration: underline;
+    }
+
+    .practice-skip-link:hover {
+      color: #1a1a1a;
+    }
+
+    .practice-skip-confirm {
+      margin-top: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .practice-skip-yes {
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: white;
+      background: #dc2626;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .practice-skip-cancel {
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #1a1a1a;
+      background: #e0e0e0;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    /* Subsequent Empty State (returning user, board cleared) */
+    .subsequent-empty-state {
+      text-align: center;
+      padding: 60px 20px;
+    }
+
+    .subsequent-empty-heading {
+      font-size: 28px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 10px;
+    }
+
+    .subsequent-empty-subtitle {
+      font-size: 17px;
+      color: #5f6368;
+      margin-bottom: 28px;
+    }
+
+    .category-grid {
+      max-width: 520px;
+      margin: 0 auto 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .category-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .category-row-label {
+      font-size: 17px;
+      font-weight: 600;
+      color: #1a1a1a;
+      min-width: 56px;
+      text-align: right;
+    }
+
+    .favicon-chip img { border-radius: 10px; }
+    .favicon-chip {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      background: #f5f5f5;
+      border: 1px solid #e0e0e0;
+      border-radius: 16px;
+      padding: 12px 8px;
+      width: 80px;
+      font-size: 16px;
+      color: #444;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .chip-label {
+      font-size: 13px;
+      color: #444;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+      line-height: 1.2;
+      word-break: break-word;
+      white-space: normal;
+      text-align: center;
+    }
+
+    .subsequent-empty-footer {
+      font-size: 17px;
+      color: #888;
+      margin-top: 8px;
+    }
+
+    /* Dashboard Tour (post-onboarding, top-right floating card) */
+    .dashboard-tour-card {
+      position: fixed;
+      bottom: auto;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      top: 50%;
+      right: auto;
+      min-width: 340px;
+      max-width: 440px;
+      width: auto;
+      z-index: 9999;
+      background: #1c1c1e;
+      border: none;
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.35), 0 0 0 2px #fff;
+      font-family: inherit;
+    }
+    .icon-circle-wrapper {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      vertical-align: middle;
+      margin: 0 2px;
+    }
+    .dashboard-tour-completion {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(50, 50, 60, 0.85);
+      backdrop-filter: blur(3px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    }
+    .dashboard-tour-completion-card {
+      background: #1c1c1e;
+      border: none;
+      border-radius: 14px;
+      padding: 32px 28px;
+      max-width: 380px;
+      width: 90%;
+      text-align: center;
+      color: #f5f5f7;
+      box-shadow: 0 8px 32px rgba(0,0,0,.35), 0 0 0 2px #fff;
+    }
+    .dashboard-tour-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 0 0 8px;
+      color: #f5f5f7;
+    }
+    .dashboard-tour-body {
+      font-size: 16px;
+      line-height: 1.5;
+      color: #d1d1d6;
+      margin: 0 0 16px;
+    }
+    .dashboard-tour-btn {
+      display: inline-block;
+      padding: 10px 22px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .dashboard-tour-btn:hover { opacity: 0.9; }
+
+    @keyframes tour-pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(102,126,234,.6); }
+      50%      { box-shadow: 0 0 0 6px rgba(102,126,234,0); }
+    }
+    .tour-highlight-btn { animation: tour-pulse 1.5s ease-in-out infinite; }
+
+    /* First-Run Modal (new user, no cards) */
+    #first-run-modal {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10001;
+    }
+
+    .first-run-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(50, 50, 60, 0.85);
+      backdrop-filter: blur(3px);
+    }
+
+    .first-run-content {
+      position: relative;
+      background: white;
+      border-radius: 16px;
+      padding: 40px 36px;
+      max-width: 420px;
+      width: calc(100% - 40px);
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);
+      text-align: center;
+      z-index: 1;
+    }
+
+    .first-run-logo {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 16px;
+    }
+
+    .first-run-heading {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin: 0 0 10px;
+    }
+
+    .first-run-tagline {
+      font-size: 15px;
+      color: #5f6368;
+      margin: 0 0 28px;
+      line-height: 1.5;
+    }
+
+    .first-run-primary-btn {
+      display: block;
+      width: 100%;
+      padding: 13px;
+      font-size: 16px;
+      font-weight: 600;
+      color: white;
+      background: #1a1a1a;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-bottom: 16px;
+      transition: background 0.15s ease;
+    }
+
+    .first-run-primary-btn:hover {
+      background: #333;
+    }
+
+    .first-run-skip-link {
+      font-size: 13px;
+      color: #5f6368;
+      text-decoration: none;
+      display: block;
+    }
+
+    .first-run-skip-link:hover {
+      color: #1a1a1a;
+      text-decoration: underline;
+    }
+
+    .first-run-skip-confirm {
+      margin-top: 14px;
+      padding: 14px;
+      background: #f8f8f8;
+      border-radius: 10px;
+      border: 1px solid #e0e0e0;
+    }
+
+    .first-run-skip-confirm p {
+      margin: 0 0 12px;
+      font-size: 14px;
+      color: #1a1a1a;
+    }
+
+    .first-run-skip-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .first-run-skip-yes {
+      padding: 8px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      color: white;
+      background: #dc2626;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+    }
+
+    .first-run-skip-cancel {
+      padding: 8px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #1a1a1a;
+      background: #e0e0e0;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
     }
 
     /* Refresh Toast Notification */
@@ -886,6 +1214,24 @@
       transform: translateY(0);
       background: #f0f1f3 !important;
     }
+
+    .practice-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #f5f5f5;
+      border: 1px solid #e0e0e0;
+      border-radius: 20px;
+      padding: 5px 12px;
+      font-size: 13px;
+      color: #667eea;
+      text-decoration: none;
+      font-weight: 500;
+      transition: background 0.15s ease;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .practice-pill:hover { background: #ece9f7; }
 
     /* Welcome Modal Styles */
     #welcome-modal {
@@ -1215,9 +1561,7 @@
         SpotBoard | <span id="board-name" style="cursor: pointer; padding: 2px 6px; border-radius: 4px;" title="Click to edit board name">My Dashboard</span>
       </h1>
       <div style="display: flex; gap: 10px; align-items: center;">
-        <button id="info-btn" style="padding: 0; background: none; border: none; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center;" title="Show tutorial">
-          <img src="info-icon.svg" alt="Info" style="width: 28px; height: 28px; display: block;" />
-        </button>
+        <button id="info-btn" style="padding: 4px 8px; background: none; border: none; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #667eea; line-height: 1;" title="Show tutorial"><img src="info-icon.svg" width="33" height="33" alt="info" style="display:block;"></button>
         <button id="refresh-all-btn" style="padding: 8px 16px; background: white; color: #1B2344; border: 1px solid rgba(27,35,68,0.15); border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 6px; transition: all 0.2s ease;">
           <svg width="18" height="18" viewBox="0 0 1200 1200" fill="#2BB5AD" xmlns="http://www.w3.org/2000/svg"><path d="M600,0C308.74,0,66.009,207.555,11.499,482.812h166.553 C229.37,297.756,398.603,161.719,600,161.719c121.069,0,230.474,49.195,309.668,128.613l-192.48,192.48h304.762H1200V0 l-175.781,175.781C915.653,67.181,765.698,0,600,0z M0,717.188V1200l175.781-175.781C284.346,1132.819,434.302,1200,600,1200 c291.26,0,533.991-207.555,588.501-482.812h-166.553C970.631,902.243,801.396,1038.281,600,1038.281 c-121.069,0-230.474-49.195-309.668-128.613l192.48-192.48H0z"/></svg>
           Refresh All
@@ -1238,6 +1582,25 @@
     </div>
   </div>
 
+  <!-- First-Run Modal (shown to new users before any capture) -->
+  <div id="first-run-modal" style="display: none;">
+    <div class="first-run-backdrop"></div>
+    <div class="first-run-content">
+      <img src="logo.png" alt="SpotBoard" class="first-run-logo">
+      <h1 class="first-run-heading">Welcome to SpotBoard!</h1>
+      <p class="first-run-tagline">Save any section from any website — check it whenever you want, all in one place.</p>
+      <button id="first-run-lets-go" class="first-run-primary-btn">Let's go →</button>
+      <a href="#" id="first-run-skip" class="first-run-skip-link">I already know how it works</a>
+      <div id="first-run-skip-confirm" class="first-run-skip-confirm" style="display: none;">
+        <p>Skip the guided first capture?</p>
+        <div class="first-run-skip-buttons">
+          <button id="first-run-yes-skip" class="first-run-skip-yes">Yes, skip</button>
+          <button id="first-run-cancel-skip" class="first-run-skip-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Welcome Tutorial Modal -->
   <div id="welcome-modal" style="display: none;">
     <div class="welcome-modal-backdrop"></div>
@@ -1252,8 +1615,7 @@
       <div class="welcome-modal-body">
         <!-- Pin Instruction Box -->
         <div class="pin-instruction-box">
-          <h2 style="color: #667eea; font-size: 18px; font-weight: 700; margin-bottom: 6px;">We recommend you to pin SpotBoard to your toolbar</h2>
-          <div style="font-size: 13px; color: #5f6368; margin-bottom: 12px;">...so it's <strong>easier</strong> to capture your spots!</div>
+          <p style="color: #667eea; font-size: 14px; font-weight: 600; margin: 0 0 10px;">Remember to pin so it's easier to capture your spots!</p>
           
           <div class="toolbar-mockup-inline">
             <span class="arrow-inline">←</span>
@@ -1267,7 +1629,7 @@
         </div>
 
         <!-- Tutorial Steps -->
-        <h2 style="text-align: center; font-size: 19px; color: #1a1a1a; font-weight: 600; margin: 24px 0 20px;">How to get started with your first capture in 3 steps:</h2>
+        <h2 style="text-align: center; font-size: 19px; color: #1a1a1a; font-weight: 600; margin: 24px 0 20px;">How to capture a spot to your SpotBoard:</h2>
         
         <div class="steps-grid-inline">
           <!-- Step 1 -->
@@ -1295,11 +1657,27 @@
           </div>
         </div>
 
-        <!-- Playground link -->
-        <div style="text-align: center; margin: 20px 0 8px;">
-          <a href="https://bondybondbond.github.io/spotboard/sandbox.html" target="_blank" rel="noopener noreferrer" style="font-size: 13px; color: #667eea; text-decoration: none;">
-            Want to practice first? Try the interactive playground →
-          </a>
+        <!-- Practice pills -->
+        <div style="margin: 20px 0 8px; text-align: center;">
+          <p style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin: 0 0 10px;">Need practice?</p>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
+            <a href="https://bondybondbond.github.io/spotboard/sandbox.html" target="_blank" rel="noopener noreferrer" class="practice-pill">
+              <img src="https://www.google.com/s2/favicons?sz=32&domain=bondybondbond.github.io" width="16" height="16" alt="Sandbox" style="border-radius:2px;" />
+              Interactive Sandbox
+            </a>
+            <button class="practice-pill" data-onboarding-url="https://www.npr.org">
+              <img src="https://www.google.com/s2/favicons?sz=32&domain=npr.org" width="16" height="16" alt="NPR" style="border-radius:2px;" />
+              NPR
+            </button>
+            <button class="practice-pill" data-onboarding-url="https://www.bbc.co.uk/news">
+              <img src="https://www.google.com/s2/favicons?sz=32&domain=bbc.co.uk" width="16" height="16" alt="BBC" style="border-radius:2px;" />
+              BBC News
+            </button>
+            <button class="practice-pill" data-onboarding-url="https://en.wikipedia.org/wiki/Main_Page">
+              <img src="https://www.google.com/s2/favicons?sz=32&domain=wikipedia.org" width="16" height="16" alt="Wikipedia" style="border-radius:2px;" />
+              Wikipedia
+            </button>
+          </div>
         </div>
 
         <!-- CTA -->
@@ -1359,6 +1737,7 @@
   <script src="utils/constants.js"></script>
   <!-- Utility functions -->
   <script src="utils/dom-cleanup.js"></script>
+  <script src="utils/confetti.js"></script>
   <script src="utils/fingerprint.js"></script>
   <script src="utils/refresh-engine.js"></script>
   <!-- Feedback data calculator -->

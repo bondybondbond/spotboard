@@ -356,13 +356,21 @@ function renderEmptyState(container) {
     <div class="empty-state" style="display: block;">
       <div class="interactive-directory">
         <h2 class="interactive-directory-title">Capture your first card</h2>
-        <p class="interactive-directory-subtitle">Click a site below — SpotBoard opens it and activates the capture tool automatically.</p>
+        <p class="interactive-directory-subtitle">Pick a site below to try your first capture — SpotBoard opens it and guides you through.</p>
         <div class="practice-sites">${sitesHtml}</div>
         <div class="practice-fallback">
           Not sure what to click?
           <a href="https://bondybondbond.github.io/spotboard/sandbox.html" target="_blank" rel="noopener noreferrer">Try the practice page first →</a>
           &nbsp;·&nbsp;
           <a href="https://bondybondbond.github.io/spotboard/demo.html" target="_blank" rel="noopener noreferrer">Watch 30s demo →</a>
+        </div>
+        <div class="practice-skip-row">
+          <a href="#" id="empty-state-skip" class="practice-skip-link">I already know how it works</a>
+          <div id="empty-state-skip-confirm" class="practice-skip-confirm" style="display:none;">
+            Skip the guided first capture?
+            <button id="empty-skip-yes" class="practice-skip-yes">Yes, skip</button>
+            <button id="empty-skip-cancel" class="practice-skip-cancel">Cancel</button>
+          </div>
         </div>
       </div>
     </div>
@@ -380,9 +388,230 @@ function renderEmptyState(container) {
       if (typeof gtag !== 'undefined') {
         gtag('event', 'interactive_directory_site_clicked', { site_url: url });
       }
-      chrome.tabs.create({ url: url + '?spotboard_capture=1' });
+      chrome.tabs.create({ url: url + '?spotboard_onboarding=1' });
     });
   });
+
+  // Skip link handlers
+  const skipLink = container.querySelector('#empty-state-skip');
+  if (skipLink) {
+    skipLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      container.querySelector('#empty-state-skip-confirm').style.display = 'inline';
+    });
+  }
+  const skipYes = container.querySelector('#empty-skip-yes');
+  if (skipYes) {
+    skipYes.addEventListener('click', () => {
+      chrome.storage.local.set({ onboardingCompleted: true });
+      localStorage.setItem('hasSeenWelcome', 'true');
+      location.reload();
+    });
+  }
+  const skipCancel = container.querySelector('#empty-skip-cancel');
+  if (skipCancel) {
+    skipCancel.addEventListener('click', () => {
+      container.querySelector('#empty-state-skip-confirm').style.display = 'none';
+    });
+  }
+}
+
+// ===== SUBSEQUENT EMPTY STATE (returned user, board cleared after first capture) =====
+
+const SUBSEQUENT_EMPTY_CATEGORIES = [
+  { label: 'News',    domains: ['bbc.co.uk', 'nbcnews.com', 'npr.org'] },
+  { label: 'Sports',  domains: ['espn.com', 'as.com', 'sportskeeda.com'] },
+  { label: 'Tech',    domains: ['wired.com', 'producthunt.com', 'theverge.com'] },
+  { label: 'Deals',   domains: ['amazon.com', 'hotukdeals.com', 'slickdeals.net'] }
+];
+
+function renderSubsequentEmptyState(container) {
+  const wrap = document.createElement('div');
+  wrap.className = 'empty-state subsequent-empty-state';
+  wrap.style.display = 'block';
+
+  const h2 = document.createElement('h2');
+  h2.className = 'subsequent-empty-heading';
+  h2.textContent = 'Your board is empty';
+  wrap.appendChild(h2);
+
+  const sub = document.createElement('p');
+  sub.className = 'subsequent-empty-subtitle';
+  sub.textContent = "Out of ideas? Here's what others track:";
+  wrap.appendChild(sub);
+
+  const grid = document.createElement('div');
+  grid.className = 'category-grid';
+
+  SUBSEQUENT_EMPTY_CATEGORIES.forEach(cat => {
+    const row = document.createElement('div');
+    row.className = 'category-row';
+
+    const catLabel = document.createElement('span');
+    catLabel.className = 'category-row-label';
+    catLabel.textContent = cat.label;
+    row.appendChild(catLabel);
+
+    cat.domains.forEach(domain => {
+      const chip = document.createElement('a');
+      chip.href = 'https://' + domain;
+      chip.target = '_blank';
+      chip.rel = 'noopener noreferrer';
+      chip.className = 'favicon-chip';
+
+      const img = document.createElement('img');
+      img.src = 'https://www.google.com/s2/favicons?domain=' + domain + '&sz=48';
+      img.width = 48;
+      img.height = 48;
+      img.alt = domain.replace(/\..*$/, '');
+      img.addEventListener('error', function() { this.style.display = 'none'; });
+      chip.appendChild(img);
+
+      const domainLabel = document.createElement('span');
+      domainLabel.className = 'chip-label';
+      domainLabel.textContent = domain.replace(/\..*$/, '');
+      chip.title = domain;
+      chip.appendChild(domainLabel);
+
+      row.appendChild(chip);
+    });
+
+    grid.appendChild(row);
+  });
+
+  wrap.appendChild(grid);
+
+  const footer = document.createElement('p');
+  footer.className = 'subsequent-empty-footer';
+  footer.appendChild(document.createTextNode('Need help? Click the '));
+  const infoImg = document.createElement('img');
+  infoImg.src = 'info-icon.svg';
+  infoImg.width = 16;
+  infoImg.height = 16;
+  infoImg.alt = 'info';
+  infoImg.style.cssText = 'vertical-align:middle; margin:0 2px;';
+  footer.appendChild(infoImg);
+  footer.appendChild(document.createTextNode(' button in the top bar anytime.'));
+  wrap.appendChild(footer);
+
+  container.textContent = '';
+  container.appendChild(wrap);
+}
+
+// ===== DASHBOARD TOUR (post-onboarding) =====
+
+function renderDashboardTour() {
+  if (document.getElementById('sb-dashboard-tour')) return;
+  const tourCard = document.createElement('div');
+  tourCard.id = 'sb-dashboard-tour';
+  tourCard.className = 'dashboard-tour-card';
+
+  function buildStep1() {
+    tourCard.textContent = '';
+    tourCard.dataset.step = '1';
+    const title = document.createElement('p');
+    title.className = 'dashboard-tour-title';
+    title.textContent = '💡 Refreshing your spots';
+    tourCard.appendChild(title);
+    const body = document.createElement('p');
+    body.className = 'dashboard-tour-body';
+    // Inline refresh SVG between text nodes (createElementNS, no innerHTML)
+    body.appendChild(document.createTextNode('Press '));
+    const refreshWrapper = document.createElement('span');
+    refreshWrapper.className = 'icon-circle-wrapper';
+    const refreshSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    refreshSvg.setAttribute('width', '18');
+    refreshSvg.setAttribute('height', '18');
+    refreshSvg.setAttribute('viewBox', '0 0 1920 1920');
+    refreshSvg.setAttribute('fill', '#f5f5f7');
+    const rPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    rPath.setAttribute('d', 'M960 0v213.333c411.627 0 746.667 334.934 746.667 746.667S1371.627 1706.667 960 1706.667 213.333 1371.733 213.333 960c0-197.013 78.4-382.507 213.334-520.747v254.08H640V106.667H53.333V320h191.04C88.64 494.08 0 720.96 0 960c0 529.28 430.613 960 960 960s960-430.72 960-960S1489.387 0 960 0');
+    rPath.setAttribute('fill-rule', 'evenodd');
+    refreshSvg.appendChild(rPath);
+    refreshWrapper.appendChild(refreshSvg);
+    body.appendChild(refreshWrapper);
+    body.appendChild(document.createTextNode(' on any card to refresh just that one, or use '));
+    const refreshAllSpan = document.createElement('span');
+    refreshAllSpan.className = 'icon-circle-wrapper';
+    refreshAllSpan.insertAdjacentHTML('beforeend', '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 1200 1200" fill="#2BB5AD"><path d="M600,0C308.74,0,66.009,207.555,11.499,482.812h166.553C229.37,297.756,398.603,161.719,600,161.719c121.069,0,230.474,49.195,309.668,128.613l-192.48,192.48h304.762H1200V0l-175.781,175.781C915.653,67.181,765.698,0,600,0z M0,717.188V1200l175.781-175.781C284.346,1132.819,434.302,1200,600,1200c291.26,0,533.991-207.555,588.501-482.812h-166.553C970.631,902.243,801.396,1038.281,600,1038.281c-121.069,0-230.474-49.195-309.668-128.613l192.48-192.48H0z"/></svg>');
+    body.appendChild(refreshAllSpan);
+    body.appendChild(document.createTextNode('Refresh All in the top bar to update everything at once.'));
+    tourCard.appendChild(body);
+    const btn = document.createElement('button');
+    btn.className = 'dashboard-tour-btn';
+    btn.textContent = 'Got it →';
+    btn.addEventListener('click', () => buildStep2());
+    tourCard.appendChild(btn);
+    // Pulse highlight on refresh buttons
+    document.querySelectorAll('.refresh-single-btn, #refresh-all-btn').forEach(el => el.classList.add('tour-highlight-btn'));
+  }
+
+  function buildStep2() {
+    // Move pulse highlight from refresh to delete buttons
+    document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
+    tourCard.textContent = '';
+    tourCard.dataset.step = '2';
+    const title = document.createElement('p');
+    title.className = 'dashboard-tour-title';
+    title.textContent = 'Changed your mind?';
+    tourCard.appendChild(title);
+    const body = document.createElement('p');
+    body.className = 'dashboard-tour-body';
+    // Inline delete SVG between text nodes (createElementNS, no innerHTML)
+    body.appendChild(document.createTextNode('Simply delete the card by pressing the '));
+    const deleteWrapper = document.createElement('span');
+    deleteWrapper.className = 'icon-circle-wrapper';
+    const deleteSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    deleteSvg.setAttribute('width', '16');
+    deleteSvg.setAttribute('height', '16');
+    deleteSvg.setAttribute('viewBox', '0 0 24 24');
+    deleteSvg.setAttribute('fill', 'none');
+    const dPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    dPath.setAttribute('d', 'M7 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2h4a1 1 0 1 1 0 2h-1.069l-.867 12.142A2 2 0 0 1 17.069 22H6.93a2 2 0 0 1-1.995-1.858L4.07 8H3a1 1 0 0 1 0-2h4V4zm2 2h6V4H9v2zM6.074 8l.857 12H17.07l.857-12H6.074zM10 10a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1z');
+    dPath.setAttribute('fill', '#f5f5f7');
+    deleteSvg.appendChild(dPath);
+    deleteWrapper.appendChild(deleteSvg);
+    body.appendChild(deleteWrapper);
+    body.appendChild(document.createTextNode(' button.'));
+    body.appendChild(document.createElement('br'));
+    body.appendChild(document.createTextNode('Try that now to continue.'));
+    tourCard.appendChild(body);
+    document.querySelectorAll('.delete-btn').forEach(el => el.classList.add('tour-highlight-btn'));
+  }
+
+  buildStep1();
+  document.body.appendChild(tourCard);
+}
+
+function showDashboardTourCompletion(container) {
+  // Remove all pulse highlights before clearing the tour card
+  document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
+  const tourCard = document.getElementById('sb-dashboard-tour');
+  if (tourCard) tourCard.remove();
+  if (window.sbConfetti && window.sbConfetti.fireConfetti) {
+    window.sbConfetti.fireConfetti(200);
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'dashboard-tour-completion';
+  const card = document.createElement('div');
+  card.className = 'dashboard-tour-completion-card';
+  const title = document.createElement('p');
+  title.className = 'dashboard-tour-title';
+  title.textContent = "🎉 You're all set!";
+  card.appendChild(title);
+  const body = document.createElement('p');
+  body.className = 'dashboard-tour-body';
+  body.textContent = 'Now go explore the web and track what matters to you.';
+  card.appendChild(body);
+  const btn = document.createElement('button');
+  btn.className = 'dashboard-tour-btn';
+  btn.textContent = "Let's go →";
+  btn.addEventListener('click', () => {
+    location.reload(); // dashboardTourShown already written at delete time
+  });
+  card.appendChild(btn);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
 }
 
 // ===== ONBOARDING: Category Picker + Pre-populated Cards =====
@@ -390,8 +619,8 @@ function renderEmptyState(container) {
 // Curated practice sites for the Interactive Directory (shown when dashboard has no cards)
 const ONBOARDING_PRACTICE_SITES = [
   { name: 'BBC News', url: 'https://www.bbc.co.uk/news', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=bbc.co.uk', desc: 'Headlines & top stories' },
-  { name: 'ESPN', url: 'https://www.espn.com/', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=espn.com', desc: 'Scores & headlines' },
-  { name: 'Amazon Deals', url: 'https://www.amazon.com/gp/goldbox', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=amazon.com', desc: "Today's deals" }
+  { name: 'NPR', url: 'https://www.npr.org', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=npr.org', desc: 'Public radio & news' },
+  { name: 'Wikipedia', url: 'https://en.wikipedia.org/wiki/Main_Page', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=wikipedia.org', desc: 'Free encyclopedia' }
 ];
 
 function showCategoryPickerOverlay(container, { clearContainer = true, showCancel = false } = {}) {
@@ -649,7 +878,9 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       return;
     }
     // Fallback: onboarding completed but no cards yet (user navigated away before capturing)
-    if (allLocalData.onboardingCompleted && metadata.length === 0) {
+    // Guard: do NOT reload when dashboardTourShown=true — that's a valid empty state after tour completion.
+    // Without this guard, the reload fires forever (onboardingCompleted=true + 0 sync cards = reload loop).
+    if (allLocalData.onboardingCompleted && metadata.length === 0 && !allLocalData.dashboardTourShown) {
       location.reload();
       return;
     }
@@ -724,8 +955,11 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
     }
 
     if (components.length === 0) {
-      // Show empty state with click-to-load demo
-      renderEmptyState(container);
+      // Show empty state — first-time vs. returning user
+      chrome.storage.local.get(['onboardingCompleted'], ({ onboardingCompleted }) => {
+        if (onboardingCompleted) renderSubsequentEmptyState(container);
+        else renderEmptyState(container);
+      });
       return;
     }
   
@@ -1185,7 +1419,9 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       // Delete functionality
       const deleteBtn = card.querySelector('.delete-btn');
       deleteBtn.addEventListener('click', () => {
-        if (confirm(`Delete "${component.customLabel || component.name}"? This cannot be undone.`)) {
+        const onStep2 = document.getElementById('sb-dashboard-tour')?.dataset.step === '2';
+        const shouldDelete = onStep2 || confirm(`Delete "${component.customLabel || component.name}"? This cannot be undone.`);
+        if (shouldDelete) {
           // GA4: Track component deletion
           const cardAgeDays = Math.floor((Date.now() - new Date(component.created_at || component.last_refresh || Date.now()).getTime()) / (1000 * 60 * 60 * 24));
           sendEvent('component_deleted', {
@@ -1214,9 +1450,22 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           // Remove card from DOM
           card.remove();
           
-          // Show empty state with click-to-load demo
+          // Show empty state — check tour completion first
           if (updated.length === 0) {
-            renderEmptyState(container);
+            chrome.storage.local.get(['onboardingCompleted', 'dashboardTourShown'], ({ onboardingCompleted, dashboardTourShown }) => {
+              if (onboardingCompleted && !dashboardTourShown) {
+                // Write dashboardTourShown BEFORE showing completion — prevents reload race
+                // where a spurious reload between delete and "Let's go →" finds
+                // dashboardTourShown=false and restarts the tour at step 1.
+                chrome.storage.local.set({ dashboardTourShown: true }, () => {
+                  showDashboardTourCompletion(container);
+                });
+              } else if (onboardingCompleted) {
+                renderSubsequentEmptyState(container);
+              } else {
+                renderEmptyState(container);
+              }
+            });
           }
         }
       });
@@ -1463,6 +1712,12 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       grid.appendChild(card);
     });
 
+    // Dashboard tour: show after onboarding if not yet seen
+    chrome.storage.local.get(['onboardingCompleted', 'dashboardTourShown'], ({ onboardingCompleted, dashboardTourShown }) => {
+      if (onboardingCompleted && !dashboardTourShown && components.length > 0) {
+        renderDashboardTour();
+      }
+    });
 
   } catch (error) {
     console.error('❌ Error loading components:', error);
@@ -1655,36 +1910,51 @@ if (boardNameElement) {
 }
 
 // ===== WELCOME MODAL LOGIC =====
-// Show tutorial modal on first visit or when (?) info button clicked
+// #welcome-modal is now the info modal only (opened via (?) button).
+// #first-run-modal handles first-time users before any capture.
 
 const welcomeModal = document.getElementById('welcome-modal');
 const gotItBtn = document.getElementById('got-it-btn');
 const infoBtn = document.getElementById('info-btn');
+const firstRunModal = document.getElementById('first-run-modal');
 
-// Check if this is first visit — skip for onboarding completers (playground flow)
+// Show first-run modal for completely new users (no cards, onboarding not complete)
 const hasSeenWelcome = localStorage.getItem('hasSeenWelcome');
-
 if (!hasSeenWelcome) {
-  chrome.storage.local.get(['onboardingCompleted'], (result) => {
-    if (result.onboardingCompleted) {
-      // First card captured — show welcome tips
-      welcomeModal.style.display = 'flex';
-    } else {
-      // Closed-tab failsafe: if cards exist but onboardingCompleted was never set
-      // (user captured a card while the dashboard tab was closed)
+  chrome.storage.local.get(['onboardingCompleted'], ({ onboardingCompleted }) => {
+    if (!onboardingCompleted) {
       chrome.storage.sync.get(null, (syncData) => {
         const hasCards = Object.keys(syncData).some(k => k.startsWith('comp-'));
-        if (hasCards) {
-          chrome.storage.local.set({ onboardingCompleted: true });
-          welcomeModal.style.display = 'flex';
+        if (!hasCards) {
+          firstRunModal.style.display = 'flex';
         }
-        // Otherwise: Interactive Directory is showing — leave modal hidden
       });
     }
   });
 }
 
-// "Got it" button - dismiss modal and mark as seen
+// First-run modal handlers
+document.getElementById('first-run-lets-go').addEventListener('click', () => {
+  localStorage.setItem('hasSeenWelcome', 'true');
+  location.reload();
+});
+
+document.getElementById('first-run-skip').addEventListener('click', (e) => {
+  e.preventDefault();
+  document.getElementById('first-run-skip-confirm').style.display = 'block';
+});
+
+document.getElementById('first-run-yes-skip').addEventListener('click', () => {
+  chrome.storage.local.set({ onboardingCompleted: true });
+  localStorage.setItem('hasSeenWelcome', 'true');
+  location.reload();
+});
+
+document.getElementById('first-run-cancel-skip').addEventListener('click', () => {
+  document.getElementById('first-run-skip-confirm').style.display = 'none';
+});
+
+// "Got it" button - dismiss welcome/info modal
 if (gotItBtn) {
   gotItBtn.addEventListener('click', () => {
     welcomeModal.style.display = 'none';
@@ -1692,12 +1962,24 @@ if (gotItBtn) {
   });
 }
 
-// (?) Info button - reopen modal
+// (?) Info button - open welcome/info modal
 if (infoBtn) {
   infoBtn.addEventListener('click', () => {
     welcomeModal.style.display = 'flex';
   });
 }
+
+// Practice pills: re-trigger onboarding coach on target site via tabId pull model
+document.querySelectorAll('.practice-pill[data-onboarding-url]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    btn.disabled = true; // prevent spam-click overwriting pendingOnboardingTabId
+    const url = btn.dataset.onboardingUrl;
+    chrome.tabs.create({ url }, (tab) => {
+      console.debug('[sb-onboarding] tab created:', tab.id, 'url:', url);
+      chrome.storage.session.set({ pendingOnboardingTabId: tab.id });
+    });
+  });
+});
 
 
 // ===== ROLLING WINDOW TRACKING HELPER =====
