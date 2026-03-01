@@ -356,12 +356,9 @@ function renderEmptyState(container) {
     <div class="empty-state" style="display: block;">
       <div class="interactive-directory">
         <h2 class="interactive-directory-title">Capture your first card</h2>
-        <p class="interactive-directory-subtitle">Pick a site below to try your first capture — SpotBoard opens it and guides you through.</p>
+        <p class="interactive-directory-subtitle">Pick an example site below for a quick guided tour on how SpotBoard works.</p>
         <div class="practice-sites">${sitesHtml}</div>
         <div class="practice-fallback">
-          Not sure what to click?
-          <a href="https://bondybondbond.github.io/spotboard/sandbox.html" target="_blank" rel="noopener noreferrer">Try the practice page first →</a>
-          &nbsp;·&nbsp;
           <a href="https://bondybondbond.github.io/spotboard/demo.html" target="_blank" rel="noopener noreferrer">Watch 30s demo →</a>
         </div>
         <div class="practice-skip-row">
@@ -1113,7 +1110,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             </a>
           </div>
         ` : ''}
-        <div class="component-content" style="margin-top: 0; padding: 12px; background: #ffffff; border-radius: 0 0 6px 6px; max-height: 100%; overflow: auto;">
+        <div class="component-content" style="margin-top: 0; padding: 12px; background: #ffffff; border-radius: 0 0 6px 6px; flex: 1; min-height: 0; overflow: auto;">
           ${cleanupDuplicates(component.html_cache) || '<div style="color: #6c757d; text-align: center; padding: 20px;"><div style="font-size: 18px; margin-bottom: 8px;">📭</div><div style="font-weight: 600; margin-bottom: 4px;">No content yet</div><div style="font-size: 13px;">Click "Refresh All" to fetch latest content</div></div>'}
         </div>
       `;

@@ -15,6 +15,9 @@ dist-ssr
 # Auto-generated from src/utils/dom-cleanup.ts (esbuild pre-build)
 public/utils/dom-cleanup.js
 
+# Auto-generated from src/utils/confetti.ts (esbuild pre-build)
+public/utils/confetti.js
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
