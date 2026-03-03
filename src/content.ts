@@ -771,7 +771,16 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       const isDisplayNone = computed.display === 'none';
       const isVisibilityHidden = computed.visibility === 'hidden';
       const isOpacityZero = computed.opacity === '0';
-      const isAriaHidden = el.getAttribute('aria-hidden') === 'true';
+
+      // Method 1b: aria-hidden — but only strip EMPTY decorative elements (icon fonts, spacers).
+      // Do NOT strip non-empty aria-hidden elements: sites like BBC Sport mark all visual content
+      // (team names, scores, badge images) as aria-hidden alongside a visually-hidden a11y span.
+      // Blanket removal = blank captures. aria-hidden = hidden from screen readers, NOT from display.
+      const ARIA_VISUAL_TAGS = new Set(['IMG', 'PICTURE', 'VIDEO', 'CANVAS', 'SVG']);
+      const isAriaHiddenDecorative = el.getAttribute('aria-hidden') === 'true' &&
+        !ARIA_VISUAL_TAGS.has(el.tagName) &&
+        (el.textContent?.trim().length ?? 0) === 0 &&
+        !el.querySelector('img, picture, video, canvas, svg');
       
       // Method 2: Off-screen positioning (carousel slides)
       // Use the nearest clipping ancestor (overflow:hidden) for bounds check
@@ -781,7 +790,7 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       const isOffScreenRight = rect.left > clipRect.right;  // Fully right of clip container
       const isOffScreen = isOffScreenLeft || isOffScreenRight;
       
-      const isHidden = isDisplayNone || isVisibilityHidden || isOpacityZero || isAriaHidden || isOffScreen;
+      const isHidden = isDisplayNone || isVisibilityHidden || isOpacityZero || isAriaHiddenDecorative || isOffScreen;
       
       if (isHidden) {
         el.setAttribute('data-spotboard-hidden', 'true');
