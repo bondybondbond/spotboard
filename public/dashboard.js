@@ -571,8 +571,26 @@ function renderDashboardTour() {
     body.appendChild(deleteWrapper);
     body.appendChild(document.createTextNode(' button.'));
     body.appendChild(document.createElement('br'));
-    body.appendChild(document.createTextNode('Try that now to continue.'));
+    body.appendChild(document.createTextNode('Try that now. Continue when you are ready.'));
     tourCard.appendChild(body);
+    const skipBtn = document.createElement('button');
+    skipBtn.className = 'dashboard-tour-btn';
+    skipBtn.textContent = 'Continue →';
+    skipBtn.addEventListener('click', () => {
+      document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
+      const firstDeleteBtn = document.querySelector('.delete-btn');
+      if (firstDeleteBtn) {
+        // Auto-delete so the user always sees the empty board state
+        firstDeleteBtn.click();
+      } else {
+        // No cards left (already deleted manually) — just complete
+        const cont = document.getElementById('components-container');
+        chrome.storage.local.set({ dashboardTourShown: true }, () => {
+          showDashboardTourCompletion(cont);
+        });
+      }
+    });
+    tourCard.appendChild(skipBtn);
     document.querySelectorAll('.delete-btn').forEach(el => el.classList.add('tour-highlight-btn'));
   }
 
@@ -1790,9 +1808,14 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     // Check if a new comp-* key was added (new component captured)
     for (const key in changes) {
       if (key.startsWith('comp-') && !changes[key].oldValue && changes[key].newValue) {
-        chrome.storage.local.set({ onboardingCompleted: true }); // Mark first capture done
-        location.reload();
-        return; // Only reload once
+        // If user already had other cards, they're an upgrading/existing user —
+        // mark tour as shown so the dashboard tour doesn't fire incorrectly.
+        chrome.storage.local.get(['hasExistingCards'], ({ hasExistingCards }) => {
+          const update = { onboardingCompleted: true };
+          if (hasExistingCards) update.dashboardTourShown = true;
+          chrome.storage.local.set(update, () => location.reload());
+        });
+        return; // Only handle once
       }
     }
   }

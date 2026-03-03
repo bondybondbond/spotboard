@@ -189,6 +189,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     if (Object.keys(backfill).length > 0) {
       await chrome.storage.local.set(backfill);
     }
+    // Mark existing users so dashboard tour doesn't fire after upgrade
+    await chrome.storage.local.set({ hasExistingCards: true });
   }
 
   // Set uninstall survey URL (runs on both install and update)

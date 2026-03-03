@@ -1288,18 +1288,18 @@ async function refreshComponent(component) {
 
         // CONTENT DRIFT GUARD: Direct-fetch returns raw server HTML which may contain
         // CSS-hidden sections (e.g. Tailwind's wb:hidden) that the live page hides.
-        // DOMParser has no CSS engine, so these sections bloat the extracted HTML.
-        // If the extracted HTML is significantly larger than the original capture,
+        // DOMParser has no CSS engine, so hidden sections bloat the extracted HTML.
+        // If the raw extracted HTML is significantly larger than the raw capture baseline,
         // fall back to tab-based refresh where CSS is active and hidden elements are removed.
-        // Use originalCaptureLength (set on first drift detection) as stable baseline,
-        // since html_cache grows after tab-based refreshes shift the baseline.
-        const driftBaseline = component.originalCaptureLength || (component.html_cache || '').length;
-        if (driftBaseline > 500 && extractedHtml.length > driftBaseline * 1.5) {
-          console.log(`[SB-REFRESH] Content drift detected: extracted=${extractedHtml.length} vs baseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x) → falling back to tab-based refresh`);
-          // Lock in the baseline for future refreshes (in-memory + persisted via caller)
-          if (!component.originalCaptureLength) {
-            component.originalCaptureLength = driftBaseline;
-          }
+        // rawCaptureLength is stored at capture time (pre-cleanupDuplicates) for a true raw-to-raw
+        // comparison — avoids false-positives on sites like Guardian, yr.no, Zoopla where
+        // cleanupDuplicates shrinks stored HTML 2-4x vs the raw fetch.
+        const driftBaseline = component.rawCaptureLength || null;
+        if (!driftBaseline) {
+          // No baseline yet (old capture) — record raw length for future refreshes, skip detection this time
+          component.rawCaptureLength = extractedHtml.length;
+        } else if (driftBaseline > 500 && extractedHtml.length > driftBaseline * 1.5) {
+          console.log(`[SB-REFRESH] Content drift detected: raw=${extractedHtml.length} vs rawBaseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x) → falling back to tab-based refresh`);
           const driftFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
           const tabHtml = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount);
           if (tabHtml) {
@@ -1732,7 +1732,7 @@ async function refreshAll() {
           last_refresh: comp.last_refresh,
           excludedSelectors: comp.excludedSelectors || []
         };
-        if (comp.originalCaptureLength) pausedEntry.originalCaptureLength = comp.originalCaptureLength;
+        if (comp.rawCaptureLength) pausedEntry.rawCaptureLength = comp.rawCaptureLength;
         updatedLocalData[comp.id] = pausedEntry;
       } else {
         // Component was refreshed - update with new data
@@ -1771,7 +1771,7 @@ async function refreshAll() {
               last_refresh: comp.last_refresh,
               excludedSelectors: comp.excludedSelectors || []
             };
-            if (comp.originalCaptureLength) emptyEntry.originalCaptureLength = comp.originalCaptureLength;
+            if (comp.rawCaptureLength) emptyEntry.rawCaptureLength = comp.rawCaptureLength;
             updatedLocalData[comp.id] = emptyEntry;
           } else {
             const successEntry = {
@@ -1780,7 +1780,7 @@ async function refreshAll() {
               last_refresh: result.last_refresh,
               excludedSelectors: comp.excludedSelectors || []
             };
-            if (comp.originalCaptureLength) successEntry.originalCaptureLength = comp.originalCaptureLength;
+            if (comp.rawCaptureLength) successEntry.rawCaptureLength = comp.rawCaptureLength;
             updatedLocalData[comp.id] = successEntry;
           }
         } else {
@@ -1791,7 +1791,7 @@ async function refreshAll() {
             last_refresh: comp.last_refresh,
             excludedSelectors: comp.excludedSelectors || []
           };
-          if (comp.originalCaptureLength) failedEntry.originalCaptureLength = comp.originalCaptureLength;
+          if (comp.rawCaptureLength) failedEntry.rawCaptureLength = comp.rawCaptureLength;
           updatedLocalData[comp.id] = failedEntry;
         }
       }

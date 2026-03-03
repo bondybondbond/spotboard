@@ -799,22 +799,33 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   // Preview (150px): Large product hero images
   element.querySelectorAll('img').forEach(img => {
     try {
-      // Get nearest structural container (article, section, or direct parent)
-      let container = img.closest('article, section') || img.parentElement;
+      // Calculate RENDERED image dimensions first (needed for container walk)
+      const imgRect = img.getBoundingClientRect();
+      const imageArea = imgRect.width * imgRect.height;
+      const imgHeight = imgRect.height;
+
+      // Walk up to find a card-level container: first ancestor meaningfully taller than the image.
+      // Avoids over-broad containers like full-page <section> wrappers that inflate the denominator
+      // and cause article thumbnails to be mis-classified as 'small'.
+      let container: Element | null = img.parentElement;
+      let walkEl = img.parentElement;
+      while (walkEl && walkEl !== element) {
+        const r = walkEl.getBoundingClientRect();
+        if (r.height > imgRect.height * 1.3) {
+          container = walkEl;
+          break;
+        }
+        walkEl = walkEl.parentElement;
+      }
       if (!container) {
         console.log('  ⚠️ Image has no container, defaulting to icon');
         img.setAttribute('data-scale-context', 'icon');
         return;
       }
-      
+
       // Calculate container dimensions (works because element is in DOM)
       const containerRect = container.getBoundingClientRect();
       const containerArea = containerRect.width * containerRect.height;
-      
-      // Calculate RENDERED image dimensions
-      const imgRect = img.getBoundingClientRect();
-      const imageArea = imgRect.width * imgRect.height;
-      const imgHeight = imgRect.height;
       
       // Calculate area ratio
       const areaRatio = containerArea > 0 ? imageArea / containerArea : 0;
@@ -859,6 +870,12 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
         context = 'preview';
       }
       
+      if (context === 'icon') {
+        const iconReason = (imgHeight < 40 || imageArea < 1600)
+          ? `rule1-tiny (${Math.round(imgHeight)}px h / ${Math.round(imageArea)} area)`
+          : `rule2/3 (small height or small ratio)`;
+        console.log(`  [img-icon-reason] ${iconReason} | lazy=${!img.complete}`);
+      }
       img.setAttribute('data-scale-context', context);
       console.log(`  ✅ Classified as: ${context.toUpperCase()}`);
       
@@ -1751,6 +1768,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         
         // ✨ SANITIZE HTML BEFORE STORING (after JS renders)
         // Pass excluded elements so they can be removed from saved HTML
+        const rawCaptureLength = target.innerHTML.length; // pristine baseline for drift guard (raw-to-raw)
         const cleanedHTML = sanitizeHTML(target, excludedElements);
         log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
         
@@ -1791,7 +1809,8 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           html_cache: cleanedHTML,
           last_refresh: new Date().toISOString(),
           created_at: new Date().toISOString(), // Track creation time separately from refresh
-          favicon: faviconUrl
+          favicon: faviconUrl,
+          rawCaptureLength: rawCaptureLength
         };
         
         log('📦 Component object created:', component.id);
@@ -1925,7 +1944,8 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                 selector: component.selector,
                 html_cache: component.html_cache,
                 last_refresh: component.last_refresh,
-                excludedSelectors: excludedSelectors
+                excludedSelectors: excludedSelectors,
+                rawCaptureLength: component.rawCaptureLength
               };
 
               localData[component.id] = dataToSave;
