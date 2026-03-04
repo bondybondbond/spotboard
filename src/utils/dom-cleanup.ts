@@ -76,8 +76,13 @@ export function cleanupDuplicates(html: string): string {
   
   const temp = document.createElement('div');
   temp.innerHTML = html;
-  
-    
+
+  // 🎯 STRIP CSS INJECTION: Remove <style> and stylesheet <link> tags
+  // Sites like Sportskeeda inline CSS in <style> tags within page sections.
+  // When captured HTML is injected into the dashboard, those styles apply
+  // globally (not scoped to the card), causing layout bleed and dark overlays.
+  temp.querySelectorAll('style, link[rel="stylesheet"]').forEach(el => el.remove());
+
   // Remove known duplicate/hidden elements
   // Note: BBC uses CSS-in-JS class names like "ssrcss-xxx-MobileValue"
   const duplicateSelectors = [
@@ -1002,9 +1007,18 @@ export function classifyImagesForRefresh(html: string): string {
       }
     }
     
+    const srcset = img.getAttribute('srcset');
+    if (srcset) {
+      console.log('[SpotBoard] classifyFallback:', {
+        context,
+        src: img.getAttribute('src'),
+        srcset,
+        classes: allClasses.trim(),
+      });
+    }
     img.setAttribute('data-scale-context', context);
   });
-  
+
   return temp.innerHTML;
 }
 
