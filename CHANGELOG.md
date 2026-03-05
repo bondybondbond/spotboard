@@ -1,5 +1,26 @@
 # SpotBoard Changelog
 
+## [1.3.4] - 2026-03-05
+
+### Fixed
+
+- **Blank capture on BBC Sport / yr.no**: `isAriaHiddenDecorative` guard in `sanitizeHTML` — only strips `aria-hidden` elements with no visible content (no text, no media children); never strips by aria-hidden alone
+- **Sportskeeda dark overlay**: Strip inline `<style>` and `<link rel="stylesheet">` tags at top of `cleanupDuplicates` — prevents site CSS injected via captured HTML from applying globally to the dashboard
+- **HotUKDeals "Site layout changed"**: `getDominantTag` feed fallback — falls back to most-common tag when no single tag exceeds threshold, fixing sites with mixed list structures
+- **Groupon images not loading**: `crossOrigin` attribute now set only for SVG images (was incorrectly applied to all `<img>` elements, breaking CORS on raster images)
+
+### Changed
+
+- **Manifest description**: Scoped "stays local" claim to captured content only — removes absolute "data never leaves your browser" phrasing that contradicted GA4 analytics
+
+---
+
+## [1.3.3] - 2026-03-05
+
+CWS compliance update — description-only change (no code changes from v1.3.1). Updated store listing to document card resizing, Smart Exclusion Mode, and Sentiment Coloring. Updated GA4 analytics disclosure.
+
+---
+
 ## [1.3.1] - 2026-02-12
 
 ### Added
