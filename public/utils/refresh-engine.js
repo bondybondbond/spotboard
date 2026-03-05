@@ -1923,10 +1923,21 @@ async function refreshAll() {
     try {
       if (typeof window.GA4 !== 'undefined') {
         const failCount = results.filter(r => !r.success).length;
+        // Build domain string with GA4's 100-char hard limit.
+        // Loop ensures no domain is ever chopped mid-string — only full domains included.
+        const uniqueDomains = [...new Set(activeComponents.map(c => {
+          try { return new URL(c.url).hostname; } catch { return 'unknown'; }
+        }))].sort();
+        let _domains = '';
+        for (const d of uniqueDomains) {
+          if (_domains.length + d.length + 1 > 100) break;
+          _domains += (_domains ? ',' : '') + d;
+        }
         await window.GA4.sendEvent('refresh_completed', {
           success_count: successCount,
           fail_count: failCount,
-          duration_ms: Date.now() - refreshStartTime
+          duration_ms: Date.now() - refreshStartTime,
+          domains: _domains
         });
       }
     } catch (e) {
