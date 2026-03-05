@@ -42,6 +42,69 @@ function getErrorLabel(errorCode) {
 }
 
 /**
+ * Logs generic DOM tree topology for fingerprint mismatch diagnostics.
+ * Outputs tag names + child counts only — no content. Skips invisible tags
+ * (<script>, <style>, <noscript>) when counting children so analytics/tracking
+ * injections don't break single-child wrapper detection.
+ *
+ * Runs in dashboard page context (full DOM API available).
+ * Uses DOMParser to avoid triggering subresource fetches during parse.
+ */
+function logStructureFingerprint(label, html) {
+  try {
+    const doc = new DOMParser().parseFromString(html || '', 'text/html');
+    const root = doc.body.firstElementChild || doc.body;
+    const INVISIBLE = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT']);
+    const MAX_DEPTH = 5;
+    const MAX_SIBLINGS = 8;
+
+    function visibleChildren(el) {
+      return Array.from(el.children).filter(c => !INVISIBLE.has(c.tagName));
+    }
+
+    function describe(el, depth) {
+      const kids = visibleChildren(el);
+      if (depth >= MAX_DEPTH || kids.length === 0) {
+        return el.tagName.toLowerCase();
+      }
+      // Skip pure single-child wrappers (React/Vue layout shells) — don't count as a depth level
+      if (kids.length === 1) {
+        return describe(kids[0], depth);
+      }
+      const shown = kids.slice(0, MAX_SIBLINGS).map(c => describe(c, depth + 1));
+      const suffix = kids.length > MAX_SIBLINGS ? `, +${kids.length - MAX_SIBLINGS}more` : '';
+      return `${el.tagName.toLowerCase()}(${kids.length})[${shown.join(', ')}${suffix}]`;
+    }
+
+    const kids = visibleChildren(root);
+    console.log(`[SB-STRUCTURE] ${label}:`, describe(root, 0));
+    console.log(`[SB-STRUCTURE] ${label} top-children (${kids.length}):`, kids.slice(0, 8).map(c => c.tagName.toLowerCase()).join(', '));
+  } catch (e) {
+    console.debug('[SB-STRUCTURE] Error logging structure for', label, ':', e.message);
+  }
+}
+
+/**
+ * Detect the dominant repeating semantic tag in a feed-style capture.
+ * Checks article, li, tr only — avoids matching generic div/span noise.
+ * Returns { tag, count } if a semantic feed tag appears >= 3 times, else null.
+ */
+function getDominantTag(html) {
+  try {
+    const FEED_TAGS = ['article', 'li', 'tr'];
+    const doc = new DOMParser().parseFromString(html || '', 'text/html');
+    let best = null, bestCount = 0;
+    for (const tag of FEED_TAGS) {
+      const count = doc.querySelectorAll(tag).length;
+      if (count > bestCount) { bestCount = count; best = tag; }
+    }
+    return bestCount >= 3 ? { tag: best, count: bestCount } : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * Toast notification manager for refresh feedback
  * Single toast with progress summary + current action
  */
@@ -1259,6 +1322,26 @@ async function refreshComponent(component) {
             // 🎯 BATCH 3: Skip fingerprint check for position-based captures
             if (!component.positionBased && originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
               console.warn('[Skeleton Fallback] Fingerprint mismatch - rejecting update');
+              logStructureFingerprint('skeleton-cached-original', component.html_cache);
+              logStructureFingerprint('skeleton-tab-refresh-result', tabHtml);
+              // Feed fallback: fingerprint mismatch on a feed just means content rotated
+              const dominantTag = getDominantTag(component.html_cache);
+              if (dominantTag) {
+                const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
+                const newCount = tabDoc.querySelectorAll(dominantTag.tag).length;
+                if (newCount >= 3) {
+                  console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
+                  const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+                  const newFingerprint = extractFingerprint(sanitizedHtml);
+                  if (newFingerprint) component.headingFingerprint = newFingerprint;
+                  return {
+                    success: true,
+                    html_cache: sanitizedHtml,
+                    last_refresh: new Date().toISOString(),
+                    status: 'active'
+                  };
+                }
+              }
               return {
                 success: false,
                 error: 'Tab refresh returned different element',
@@ -1306,6 +1389,26 @@ async function refreshComponent(component) {
             // Skip fingerprint check for position-based captures
             if (!component.positionBased && driftFingerprint && !tabHtml.toLowerCase().includes(driftFingerprint.toLowerCase())) {
               console.warn('[Content Drift] Tab refresh fingerprint mismatch - keeping original');
+              logStructureFingerprint('drift-cached-original', component.html_cache);
+              logStructureFingerprint('drift-tab-refresh-result', tabHtml);
+              // Feed fallback: fingerprint mismatch on a feed just means content rotated
+              const dominantTag = getDominantTag(component.html_cache);
+              if (dominantTag) {
+                const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
+                const newCount = tabDoc.querySelectorAll(dominantTag.tag).length;
+                if (newCount >= 3) {
+                  console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
+                  const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+                  const newFingerprint = extractFingerprint(sanitizedHtml);
+                  if (newFingerprint) component.headingFingerprint = newFingerprint;
+                  return {
+                    success: true,
+                    html_cache: sanitizedHtml,
+                    last_refresh: new Date().toISOString(),
+                    status: 'active'
+                  };
+                }
+              }
               return {
                 success: false,
                 error: 'Content drift: tab refresh returned different element',

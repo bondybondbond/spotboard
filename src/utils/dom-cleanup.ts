@@ -427,11 +427,18 @@ export function fixRelativeUrls(container: HTMLElement, sourceUrl: string): void
     });
     
     // 🎯 FIX IMAGE SRC ATTRIBUTES
-    // Also add crossorigin="anonymous" to help SVG images load from cross-origin sources
     container.querySelectorAll('img[src]').forEach(img => {
-      // Add crossorigin for SVG compatibility (yr.no weather icons, etc.)
-      (img as HTMLImageElement).crossOrigin = 'anonymous';
       const src = img.getAttribute('src');
+      // Only SVG images need crossOrigin (canvas rendering compatibility for weather icons etc.)
+      // Setting crossOrigin on JPEG/PNG blocks images from CDNs without CORS headers (e.g. HotUKDeals)
+      try {
+        const pathname = new URL(src || '', 'https://dummy.base').pathname.toLowerCase();
+        if (pathname.endsWith('.svg') || (src || '').startsWith('data:image/svg+xml')) {
+          (img as HTMLImageElement).crossOrigin = 'anonymous';
+        }
+      } catch (_) {
+        console.debug('[SB-CORS] Invalid URL — skipping crossOrigin:', src?.substring(0, 80));
+      }
       
       // 🔧 Handle protocol-relative URLs (//upload.wikimedia.org/...)
       if (src && src.startsWith('//')) {
