@@ -43,5 +43,8 @@ test-*.js
 _do not upload/
 .do_not_upload/
 
+# CWS distribution packages (upload manually, don't commit)
+*.zip
+
 # Windows reserved filename artifact
 nul
