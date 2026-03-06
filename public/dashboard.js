@@ -400,7 +400,7 @@ function renderEmptyState(container) {
   const skipYes = container.querySelector('#empty-skip-yes');
   if (skipYes) {
     skipYes.addEventListener('click', () => {
-      chrome.storage.local.set({ onboardingCompleted: true });
+      chrome.storage.local.set({ onboardingCompleted: true, dashboardTourShown: true });
       localStorage.setItem('hasSeenWelcome', 'true');
       location.reload();
     });
@@ -1728,7 +1728,12 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
     });
 
     // Dashboard tour: show after onboarding if not yet seen
-    chrome.storage.local.get(['onboardingCompleted', 'dashboardTourShown'], ({ onboardingCompleted, dashboardTourShown }) => {
+    chrome.storage.local.get(['onboardingCompleted', 'dashboardTourShown', 'hasExistingCards'], ({ onboardingCompleted, dashboardTourShown, hasExistingCards }) => {
+      if (hasExistingCards && !dashboardTourShown) {
+        // Legacy state fallback: v1.3.4 upgraders have hasExistingCards but no dashboardTourShown
+        chrome.storage.local.set({ dashboardTourShown: true });
+        return;
+      }
       if (onboardingCompleted && !dashboardTourShown && components.length > 0) {
         renderDashboardTour();
       }
@@ -1965,7 +1970,7 @@ document.getElementById('first-run-skip').addEventListener('click', (e) => {
 });
 
 document.getElementById('first-run-yes-skip').addEventListener('click', () => {
-  chrome.storage.local.set({ onboardingCompleted: true });
+  chrome.storage.local.set({ onboardingCompleted: true, dashboardTourShown: true });
   localStorage.setItem('hasSeenWelcome', 'true');
   location.reload();
 });
