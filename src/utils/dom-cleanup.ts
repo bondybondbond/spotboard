@@ -212,6 +212,46 @@ export function cleanupDuplicates(html: string): string {
   
   
   
+  // 🎯 EMPTY LIST ITEM REMOVAL: Remove unloaded carousel slides with no visible content
+  // Hotfix for Zoopla highlighted listings — their carousel bypasses off-screen detection,
+  // producing 14 empty <li> items that render as "1. 2. … 14." via decimal list-style.
+  // Root cause (off-screen detection miss) is a separate investigation.
+  let emptyListItemsRemoved = 0;
+  temp.querySelectorAll('li').forEach(li => {
+    const hasText  = li.textContent!.trim().length > 0;
+    const hasLink  = li.querySelector('a');
+    const hasSvg   = li.querySelector('svg');
+    const hasVideo = li.querySelector('video, source[src]');
+
+    // Treat <li> as having loaded media if any img has a real src/srcset/currentSrc,
+    // or if any <picture><source srcset=...> exists — guards against false-positives on
+    // srcset-only or <picture>-based slides that look empty at clone time.
+    const hasLoadedMedia = (() => {
+      for (const img of Array.from(li.querySelectorAll('img'))) {
+        const src    = (img as HTMLImageElement).currentSrc || img.getAttribute('src') || '';
+        const srcset = img.getAttribute('srcset') || '';
+        if ((src && !src.startsWith('data:image')) || srcset) return true;
+      }
+      for (const source of Array.from(li.querySelectorAll('picture source[srcset]'))) {
+        if (source.getAttribute('srcset')) return true;
+      }
+      return false;
+    })();
+
+    if (!hasText && !hasLoadedMedia && !hasLink && !hasSvg && !hasVideo) {
+      // Log parent carousel info to help diagnose off-screen detection miss
+      const parent = li.parentElement;
+      const parentClasses = (parent?.className as string | undefined)?.split(' ').slice(0, 2).join('.') ?? '';
+      const parentInfo = parent ? `${parent.tagName.toLowerCase()}${parentClasses ? '.' + parentClasses : ''}` : 'none';
+      console.log(`  🗑️ Removing empty <li> (carousel placeholder) — parent: ${parentInfo}`);
+      emptyListItemsRemoved++;
+      li.remove();
+    }
+  });
+  if (emptyListItemsRemoved > 0) {
+    console.log(`  🗑️ Removed ${emptyListItemsRemoved} empty list items total`);
+  }
+
   // Remove broken SVG sprite references (prevents console errors)
   let svgSpritesRemoved = 0;
   temp.querySelectorAll('svg use[href*=".svg#"]').forEach(use => {
@@ -953,7 +993,7 @@ export function classifyImagesForRefresh(html: string): string {
       img.removeAttribute('width');
       img.removeAttribute('height');
       // Fall through to class-based heuristics below
-    } else if (!inPicture && (height > 0 || width > 0)) {
+    } else if (height > 0 || width > 0) {
       // Trust the dimensions for classification (they're real pixel values)
       const effectiveHeight = height > 0 ? height : width;
       

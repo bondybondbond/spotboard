@@ -12,6 +12,8 @@
 - Icons/logos consistently 25px ✅
 - Preservation system correctly maintains capture-time classification ✅
 - Content refresh, click-through, exclusions all functional ✅
+- `<picture>`-only images (Zoopla, Next.js responsive) correctly classified via class heuristics after refresh ✅ (v1.3.5)
+- BBC `<picture>` images (real dims 240×135) correctly classified as `medium` after refresh ✅ (v1.3.5) — removed `!inPicture` guard; sites with no dims still fall through to class heuristics
 
 ## Known Limitation
 Capture-time classification depends on page state (browser window size, responsive breakpoint, container dimensions). Same element captured at different times may get different size tiers. This is cosmetic, not functional.
