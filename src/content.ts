@@ -631,11 +631,24 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   // Tag finance deltas (+/-) for color coding on dashboard
   tagSentimentData(element);
 
+  // 🎯 MARK CSS-HIDDEN-BUT-LOADED IMAGES (Rightmove fallback pattern)
+  // Rightmove SSR has primary <img src=""> slots + fallback <img> with real CDN URLs hidden
+  // via external CSS (width:0;height:0). Hidden check only catches display:none, so these
+  // survive cloning — but are invisible in dashboard without the external stylesheet.
+  // Fix: attribute-only marking (no style mutation = no live-page flicker), un-hide on clone.
+  element.querySelectorAll('img').forEach(img => {
+    if (img.naturalWidth > 0 && img.offsetWidth === 0 && img.offsetHeight === 0) {
+      img.setAttribute('data-spotboard-force-visible', 'true');
+    }
+  });
+
   // Clone (classification attributes will be copied)
   const clone = cloneWithShadow(element) as HTMLElement;
-  
+
   // Clean up markers from original DOM (restore page to pristine state)
   markedElements.forEach(el => el.removeAttribute('data-spotboard-hidden'));
+  element.querySelectorAll('[data-spotboard-force-visible]').forEach(el =>
+    el.removeAttribute('data-spotboard-force-visible'));
   
   // 🎯 REMOVE USER-EXCLUDED ELEMENTS
   // User marked these elements for exclusion before confirming capture
@@ -668,6 +681,12 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   // Strategy: Mark hidden elements in ORIGINAL DOM before cloning, then remove from clone
   const hiddenInClone = clone.querySelectorAll('[data-spotboard-hidden="true"]');
   hiddenInClone.forEach(el => el.remove());
+
+  // PASS 2: Un-hide CSS-constrained images that are actually loaded (safe — on clone, not live DOM)
+  clone.querySelectorAll('[data-spotboard-force-visible]').forEach(el => {
+    (el as HTMLElement).style.cssText += ';display:block!important;width:auto!important;height:auto!important;max-width:100%!important';
+    el.removeAttribute('data-spotboard-force-visible');
+  });
 
   // Remove capture-related inline styles from clone
   const cloneElements = [clone, ...Array.from(clone.querySelectorAll('*'))];
@@ -728,11 +747,19 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     const width = parseInt(img.getAttribute('width') || '0');
     const height = parseInt(img.getAttribute('height') || '0');
     
-    // Detect placeholder dimensions (< 10px = aspect ratio markers)
-    if ((height > 0 && height < 10) || (width > 0 && width < 10)) {
+    // Detect placeholder dimensions (< 10px = aspect ratio markers, not pixels)
+    // Also strip explicit 0 attrs — Rightmove SSR fallback slots have width="0" height="0"
+    const isZeroDim = img.getAttribute('width') === '0' || img.getAttribute('height') === '0';
+    if (isZeroDim || (height > 0 && height < 10) || (width > 0 && width < 10)) {
       img.removeAttribute('width');
       img.removeAttribute('height');
     }
+  });
+
+  // 🎯 STRIP EMPTY-SRC IMAGES: Remove SSR placeholder <img src=""> slots before URL fixing.
+  // Without this, new URL('', pageUrl) converts them to the captured page URL → broken image icon.
+  clone.querySelectorAll('img').forEach(img => {
+    if ((img.getAttribute('src') ?? '').trim() === '' && !img.closest('picture')) img.remove();
   });
 
   // 🎯 FIX RELATIVE URLS: Convert ALL relative URLs to absolute

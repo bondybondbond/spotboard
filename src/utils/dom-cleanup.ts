@@ -147,6 +147,29 @@ export function cleanupDuplicates(html: string): string {
     matches.forEach(el => el.remove());
   });
 
+  // 🎯 CAROUSEL SLIDE COLLAPSE: Keep only first slide for [class*="slider"] containers.
+  // Rightmove uses div.PropertyCardImage_slider__* — a horizontal flex row of photo slides.
+  // Without this, all slides spread horizontally causing blank white space in the dashboard.
+  // Guard: all direct children must contain an img (confirms photo carousel, not navigation).
+  temp.querySelectorAll('[class*="slider"]').forEach(el => {
+    const children = Array.from(el.children);
+    if (children.length < 2) return;
+    const allHaveImages = children.every(c => c.querySelector('img'));
+    if (!allHaveImages) return;
+    children.slice(1).forEach(child => child.remove());
+  });
+
+  // 🔍 CAROUSEL INSTRUMENTATION: Log multi-image horizontal containers.
+  // Updated to include [class*="slider"] now that we've confirmed Rightmove's pattern.
+  temp.querySelectorAll('ul, ol, [class*="slider"], [class*="track"], [class*="wrapper"], [class*="slides"]').forEach(el => {
+    const children = Array.from(el.children);
+    if (children.length < 2) return;
+    const allHaveImages = children.every(c => c.querySelector('img'));
+    if (!allHaveImages) return;
+    const classes = (el.className as string).split(' ').slice(0, 4).join('.');
+    console.log(`[SpotBoard] carousel-candidate: ${el.tagName.toLowerCase()}.${classes} — ${children.length} slides`);
+  });
+
   // 🎯 STRIP UI CHROME BUTTONS: Remove icon-only buttons with no visible text
   // Targets: heart/wishlist buttons, close buttons, share buttons — not text CTAs
   // Uses clone+strip approach (not innerText) because detached DOM has no CSS layout
@@ -969,6 +992,21 @@ export function classifyImagesForRefresh(html: string): string {
   temp.querySelectorAll('img').forEach(img => {
     const inPicture = !!img.closest('picture');
 
+    // 🔧 ALWAYS strip zero/placeholder dimension attrs regardless of classification state.
+    // Must run BEFORE the early-return so already-classified images also get cleaned.
+    // Rightmove SSR fallback slots: width="0" height="0" — collapses them to 0×0 in dashboard.
+    // AS.com aspect ratio markers: width="4" height="3" — not pixels, confuses sizing.
+    {
+      const wAttr = img.getAttribute('width');
+      const hAttr = img.getAttribute('height');
+      const w = parseInt(wAttr!) || 0;
+      const h = parseInt(hAttr!) || 0;
+      if (wAttr === '0' || hAttr === '0' || (h > 0 && h < 10) || (w > 0 && w < 10)) {
+        img.removeAttribute('width');
+        img.removeAttribute('height');
+      }
+    }
+
     // Skip if already classified (from capture or tab-based refresh)
     // Exception: <picture> images must be reclassified — preserveImageClassifications
     // may have stamped a stale 'small' (matched by alt text) from old placeholder dims.
@@ -983,12 +1021,13 @@ export function classifyImagesForRefresh(html: string): string {
     // HEURISTIC 1: Check width/height attributes (HEIGHT-BASED for card layout)
     const width = parseInt(img.getAttribute('width')!) || 0;
     const height = parseInt(img.getAttribute('height')!) || 0;
-    
-        // 🔧 FIX: Detect placeholder dimensions (< 10px = aspect ratio markers, not actual sizes)
-    // Sites like AS.com use width="4" height="3" as 4:3 aspect ratio, not 4x3 pixels
+
+    // 🔧 FIX: Detect placeholder dimensions (< 10px = aspect ratio markers, not actual sizes)
+    // (Zero-dimension attrs already stripped above; this handles 1-9 range for classification)
+    const isZeroDimension = false; // already handled above
     const isPlaceholderDimension = (height > 0 && height < 10) || (width > 0 && width < 10);
-    
-    if (isPlaceholderDimension) {
+
+    if (isPlaceholderDimension || isZeroDimension) {
       // Remove placeholder attributes so CSS can properly size the image
       img.removeAttribute('width');
       img.removeAttribute('height');

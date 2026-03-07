@@ -14,11 +14,21 @@ if ((height > 0 && height < 10) || (width > 0 && width < 10)) {
 }
 ```
 
+## Extended: Zero-Dimension Attrs (v1.3.5)
+Rightmove SSR fallback `<img>` elements have `width="0" height="0"` (exact zero, not < 10). The `h > 0 && h < 10` check missed these. Extended guard:
+```javascript
+if (wAttr === '0' || hAttr === '0' || (h > 0 && h < 10) || (w > 0 && w < 10)) {
+  img.removeAttribute('width'); img.removeAttribute('height');
+}
+```
+
+## Critical Order: Must Run BEFORE Early-Return
+In `classifyImagesForRefresh`, there is an early-return for already-classified images (`if hasAttribute('data-scale-context') return`). Attr cleanup MUST be placed before this return — already-classified images from capture hit the early-return and skip cleanup. Stale `width="0"` attrs persist → 0×0 invisible images on refresh.
+
 ## Implementation Locations
-Applied in THREE places for full coverage:
-1. **Capture** - `src/content.ts` lines 655-666
-2. **Refresh URL fixing** - `public/utils/dom-cleanup.js` lines 343-355 (in `fixRelativeUrls`)
-3. **Refresh classification** - `public/utils/dom-cleanup.js` lines 786-792 (in `classifyImagesForRefresh`)
+Applied in TWO places (URL fixing location removed — redundant):
+1. **Capture** - `src/content.ts` sanitizeHTML clone step
+2. **Refresh classification** - `src/utils/dom-cleanup.ts` `classifyImagesForRefresh` — BEFORE the `data-scale-context` early-return
 
 ## Affected Sites
 - AS.com (Spanish sports news)

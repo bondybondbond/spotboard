@@ -641,7 +641,21 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
             }
           }
         });
-        
+
+        // 🎯 MARK CSS-HIDDEN-BUT-LOADED IMAGES (Rightmove fallback pattern)
+        // Attribute-only marking — no live-page style mutation, no flicker.
+        element.querySelectorAll('img').forEach(img => {
+          if (img.naturalWidth > 0 && img.offsetWidth === 0 && img.offsetHeight === 0) {
+            img.setAttribute('data-spotboard-force-visible', 'true');
+          }
+          // Mark empty-src SSR placeholders as hidden (prevents page-URL broken images)
+          // Skip <picture> children -- their <img> has no src by design; URL is in <source srcset>
+          if ((img.getAttribute('src') ?? '').trim() === '' && !img.closest('picture')) {
+            img.setAttribute('data-spotboard-hidden', 'true');
+            marked.push(img);
+          }
+        });
+
         // 🎯 5-TIER IMAGE CLASSIFICATION USING LIVE CSS
         // Icon (25px): Tiny images like logos, voting buttons
         // Small (48px): Avatars, badges
@@ -789,6 +803,15 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
         // Remove marked elements from clone
         const hiddenInClone = clone.querySelectorAll('[data-spotboard-hidden="true"]');
         hiddenInClone.forEach(el => el.remove());
+
+        // PASS 2: Un-hide CSS-constrained images that are actually loaded (safe on clone)
+        clone.querySelectorAll('[data-spotboard-force-visible]').forEach(el => {
+          el.style.cssText += ';display:block!important;width:auto!important;height:auto!important;max-width:100%!important';
+          el.removeAttribute('data-spotboard-force-visible');
+        });
+        // Clean up force-visible markers from original DOM
+        element.querySelectorAll('[data-spotboard-force-visible]')
+               .forEach(el => el.removeAttribute('data-spotboard-force-visible'));
 
         return clone.outerHTML;
       }
@@ -902,7 +925,21 @@ async function tryActiveTab(url, selector, fingerprint = null) {
             }
           }
         });
-        
+
+        // 🎯 MARK CSS-HIDDEN-BUT-LOADED IMAGES (Rightmove fallback pattern)
+        // Attribute-only marking — no live-page style mutation, no flicker.
+        element.querySelectorAll('img').forEach(img => {
+          if (img.naturalWidth > 0 && img.offsetWidth === 0 && img.offsetHeight === 0) {
+            img.setAttribute('data-spotboard-force-visible', 'true');
+          }
+          // Mark empty-src SSR placeholders as hidden (prevents page-URL broken images)
+          // Skip <picture> children -- their <img> has no src by design; URL is in <source srcset>
+          if ((img.getAttribute('src') ?? '').trim() === '' && !img.closest('picture')) {
+            img.setAttribute('data-spotboard-hidden', 'true');
+            marked.push(img);
+          }
+        });
+
         // 🎯 5-TIER IMAGE CLASSIFICATION USING LIVE CSS
         // Icon (25px): Tiny images like logos, voting buttons
         // Small (48px): Avatars, badges
@@ -1050,6 +1087,15 @@ async function tryActiveTab(url, selector, fingerprint = null) {
         // Remove marked elements from clone
         const hiddenInClone = clone.querySelectorAll('[data-spotboard-hidden="true"]');
         hiddenInClone.forEach(el => el.remove());
+
+        // PASS 2: Un-hide CSS-constrained images that are actually loaded (safe on clone)
+        clone.querySelectorAll('[data-spotboard-force-visible]').forEach(el => {
+          el.style.cssText += ';display:block!important;width:auto!important;height:auto!important;max-width:100%!important';
+          el.removeAttribute('data-spotboard-force-visible');
+        });
+        // Clean up force-visible markers from original DOM
+        element.querySelectorAll('[data-spotboard-force-visible]')
+               .forEach(el => el.removeAttribute('data-spotboard-force-visible'));
 
         return clone.outerHTML;
       }
