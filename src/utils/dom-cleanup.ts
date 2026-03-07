@@ -927,13 +927,19 @@ export function classifyImagesForRefresh(html: string): string {
   temp.innerHTML = html;
   
   temp.querySelectorAll('img').forEach(img => {
+    const inPicture = !!img.closest('picture');
+
     // Skip if already classified (from capture or tab-based refresh)
-    if (img.hasAttribute('data-scale-context')) {
+    // Exception: <picture> images must be reclassified — preserveImageClassifications
+    // may have stamped a stale 'small' (matched by alt text) from old placeholder dims.
+    if (img.hasAttribute('data-scale-context') && !inPicture) {
       return;
     }
-    
+    // Clear any stale classification on <picture> images before reclassifying
+    if (inPicture) img.removeAttribute('data-scale-context');
+
     let context = 'thumbnail'; // Safe default (80px)
-    
+
     // HEURISTIC 1: Check width/height attributes (HEIGHT-BASED for card layout)
     const width = parseInt(img.getAttribute('width')!) || 0;
     const height = parseInt(img.getAttribute('height')!) || 0;
@@ -947,7 +953,7 @@ export function classifyImagesForRefresh(html: string): string {
       img.removeAttribute('width');
       img.removeAttribute('height');
       // Fall through to class-based heuristics below
-    } else if (height > 0 || width > 0) {
+    } else if (!inPicture && (height > 0 || width > 0)) {
       // Trust the dimensions for classification (they're real pixel values)
       const effectiveHeight = height > 0 ? height : width;
       
@@ -1021,6 +1027,15 @@ export function classifyImagesForRefresh(html: string): string {
         src: img.getAttribute('src'),
         srcset,
         classes: allClasses.trim(),
+      });
+    }
+    if (inPicture) {
+      console.log('[SpotBoard] classifyPicture:', {
+        widthAttr: img.getAttribute('width'),
+        heightAttr: img.getAttribute('height'),
+        currentSrc: img.currentSrc || null,
+        context,
+        classes: img.className.substring(0, 60),
       });
     }
     img.setAttribute('data-scale-context', context);
