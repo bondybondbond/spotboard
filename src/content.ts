@@ -433,6 +433,30 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
   });
 }
 
+// Flattens open shadow DOM into light DOM for static capture.
+// Not suitable for re-hydrating components — snapshot semantics only.
+// Nested shadow roots are intentionally serialised as plain HTML (desired for sanitiser pipeline).
+// Closed shadow roots (el.shadowRoot === null) fall through gracefully — same behaviour as before.
+function cloneWithShadow(el: Element): Element {
+  const clone = el.cloneNode(false) as Element;
+  const host = el as HTMLElement;
+  if (host.shadowRoot) {
+    // Shadow content is trusted (same-origin browser DOM, sanitised downstream by cleanupDuplicates)
+    const temp = document.createElement('div');
+    temp.innerHTML = host.shadowRoot.innerHTML;
+    while (temp.firstChild) clone.appendChild(temp.firstChild);
+  } else {
+    for (const child of el.childNodes) {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        clone.appendChild(cloneWithShadow(child as Element));
+      } else {
+        clone.appendChild(child.cloneNode(true));
+      }
+    }
+  }
+  return clone;
+}
+
 function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []): string {
   console.log('🧹 sanitizeHTML called with', excludedElements.length, 'excluded elements');
   
@@ -608,7 +632,7 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   tagSentimentData(element);
 
   // Clone (classification attributes will be copied)
-  const clone = element.cloneNode(true) as HTMLElement;
+  const clone = cloneWithShadow(element) as HTMLElement;
   
   // Clean up markers from original DOM (restore page to pristine state)
   markedElements.forEach(el => el.removeAttribute('data-spotboard-hidden'));
@@ -1485,7 +1509,9 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         
         // ✨ SANITIZE HTML BEFORE STORING (after JS renders)
         // Pass excluded elements so they can be removed from saved HTML
-        const rawCaptureLength = target.innerHTML.length; // pristine baseline for drift guard (raw-to-raw)
+        const rawCaptureLength = (target as HTMLElement).shadowRoot
+          ? (target as HTMLElement).shadowRoot!.innerHTML.length
+          : target.innerHTML.length; // pristine baseline for drift guard (raw-to-raw)
         const cleanedHTML = sanitizeHTML(target, excludedElements);
         log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
         

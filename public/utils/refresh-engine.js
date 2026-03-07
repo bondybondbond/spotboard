@@ -759,8 +759,29 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
           console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
         }
 
-        // Clone with markers
-        const clone = element.cloneNode(true);
+        // Flattens open shadow DOM into light DOM for static capture.
+        // Not suitable for re-hydrating components — snapshot semantics only.
+        // Keep in sync with cloneWithShadow in src/content.ts.
+        function cloneWithShadow(el) {
+          const shadowClone = el.cloneNode(false);
+          if (el.shadowRoot) {
+            const temp = document.createElement('div');
+            temp.innerHTML = el.shadowRoot.innerHTML;
+            while (temp.firstChild) shadowClone.appendChild(temp.firstChild);
+          } else {
+            for (const child of el.childNodes) {
+              if (child.nodeType === Node.ELEMENT_NODE) {
+                shadowClone.appendChild(cloneWithShadow(child));
+              } else {
+                shadowClone.appendChild(child.cloneNode(true));
+              }
+            }
+          }
+          return shadowClone;
+        }
+
+        // Clone with markers (shadow-aware)
+        const clone = cloneWithShadow(element);
 
         // Clean up original DOM
         marked.forEach(el => el.removeAttribute('data-spotboard-hidden'));
@@ -999,8 +1020,29 @@ async function tryActiveTab(url, selector, fingerprint = null) {
           console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
         }
 
-        // Clone with markers
-        const clone = element.cloneNode(true);
+        // Flattens open shadow DOM into light DOM for static capture.
+        // Not suitable for re-hydrating components — snapshot semantics only.
+        // Keep in sync with cloneWithShadow in src/content.ts.
+        function cloneWithShadow(el) {
+          const shadowClone = el.cloneNode(false);
+          if (el.shadowRoot) {
+            const temp = document.createElement('div');
+            temp.innerHTML = el.shadowRoot.innerHTML;
+            while (temp.firstChild) shadowClone.appendChild(temp.firstChild);
+          } else {
+            for (const child of el.childNodes) {
+              if (child.nodeType === Node.ELEMENT_NODE) {
+                shadowClone.appendChild(cloneWithShadow(child));
+              } else {
+                shadowClone.appendChild(child.cloneNode(true));
+              }
+            }
+          }
+          return shadowClone;
+        }
+
+        // Clone with markers (shadow-aware)
+        const clone = cloneWithShadow(element);
 
         // Clean up original DOM
         marked.forEach(el => el.removeAttribute('data-spotboard-hidden'));
