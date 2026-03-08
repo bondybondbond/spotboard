@@ -26,9 +26,10 @@ Visit [bondybondbond.github.io/spotboard](https://bondybondbond.github.io/spotbo
 
 ## 🔒 Privacy First
 - No accounts, no backend
-- HTML content stays local
-- Metadata syncs via Chrome sync only
-- Zero tracking of browsing history
+- Captured HTML stays in your browser — never uploaded
+- Component metadata syncs via Chrome sync
+- Anonymous usage analytics via Google Analytics (no browsing history, no content)
+- Zero tracking of which sites you visit outside SpotBoard
 
 [Read full privacy policy](https://bondybondbond.github.io/spotboard/privacy)
 

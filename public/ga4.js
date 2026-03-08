@@ -265,10 +265,9 @@ async function sendEvent(eventName, customParams = {}, engagementTimeMs = 100) {
       }]
     };
 
-    // Add user_id field if owner flag is set (for analytics exclusion)
-    if (isOwnerCached) {
-      payload.user_id = 'owner';
-    }
+    // Set user_id: 'owner' for dev builds (analytics exclusion), or local install UUID for real users
+    const { user_id: localUserId } = await chrome.storage.local.get('user_id');
+    payload.user_id = isOwnerCached ? 'owner' : localUserId;
 
     // Send to GA4
     const response = await fetch(GA4_ENDPOINT, {

@@ -79,7 +79,7 @@ SpotBoard collects only the information necessary to provide its core functional
 
 ### What Analytics We Collect
 **Anonymous device identifiers:**
-- Random UUID (generated locally, not tied to your identity)
+- Random installation UUID (sent to Google Analytics to enable aggregate product analysis; not derived from personal identity, not linked to any name, email, IP address, or device identifier; the same UUID is used to correlate uninstall survey responses with usage patterns)
 - Session ID (resets after 30 minutes of inactivity)
 - Extension version number
 - Browser language setting
@@ -119,7 +119,7 @@ SpotBoard collects only the information necessary to provide its core functional
 - ✅ NEVER sell or share analytics data with third parties
 - ✅ NEVER use analytics for advertising or profiling
 - ✅ NEVER track specific websites you visit
-- ✅ Keep analytics anonymous (no way to identify individual users)
+- ✅ Keep analytics pseudonymous (UUID is a random identifier, not linked to personal identity)
 
 
 

@@ -12,18 +12,18 @@ Chrome extension that captures live website sections (news, deals, scores) into 
 
 **Key files**:
 
-| File                          | Role                                              |
-| ----------------------------- | ------------------------------------------------- |
-| `src/background.ts`           | Service worker → compiles to `dist/assets/`       |
-| `src/content.ts`              | Content script (capture, DOM cleanup, preview)    |
-| `src/App.tsx`                 | Popup UI (React)                                  |
-| `src/utils/dom-cleanup.ts`    | Shared cleanup functions (source of truth)        |
-| `public/dashboard.js`         | Dashboard logic — loaded directly, NOT compiled   |
-| `public/dashboard.html`       | Dashboard page — loads ga4.js, dashboard.js, refresh-engine.js |
-| `public/utils/refresh-engine.js` | 3-tier refresh fallback — loaded directly      |
-| `public/ga4.js`               | GA4 analytics                                     |
-| `public/utils/constants.js`   | Shared constants (GA4 credentials, SESSION_TIMEOUT_MS) |
-| `scripts/build-shared.js`     | esbuild pre-build for dom-cleanup.ts → IIFE       |
+| File                             | Role                                                           |
+| -------------------------------- | -------------------------------------------------------------- |
+| `src/background.ts`              | Service worker → compiles to `dist/assets/`                    |
+| `src/content.ts`                 | Content script (capture, DOM cleanup, preview)                 |
+| `src/App.tsx`                    | Popup UI (React)                                               |
+| `src/utils/dom-cleanup.ts`       | Shared cleanup functions (source of truth)                     |
+| `public/dashboard.js`            | Dashboard logic — loaded directly, NOT compiled                |
+| `public/dashboard.html`          | Dashboard page — loads ga4.js, dashboard.js, refresh-engine.js |
+| `public/utils/refresh-engine.js` | 3-tier refresh fallback — loaded directly                      |
+| `public/ga4.js`                  | GA4 analytics                                                  |
+| `public/utils/constants.js`      | Shared constants (GA4 credentials, SESSION_TIMEOUT_MS)         |
+| `scripts/build-shared.js`        | esbuild pre-build for dom-cleanup.ts → IIFE                    |
 
 **NEVER edit** `dist/` — build output only.
 
