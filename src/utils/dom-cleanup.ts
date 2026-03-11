@@ -983,6 +983,19 @@ export function preserveImageClassifications(newHtml: string, oldHtml: string): 
  * 
  * Used in: Direct fetch refresh path (refresh-engine.js)
  */
+/** Returns the largest `w` descriptor from an img's srcset, or 0 if none/density-only. */
+function getMaxSrcsetWidth(img: HTMLImageElement): number {
+  const srcsetVal = img.getAttribute('srcset') || '';
+  if (!srcsetVal) return 0;
+  return Math.max(
+    0,
+    ...srcsetVal.split(',').map(entry => {
+      const match = entry.trim().match(/(\d+)w\s*$/); // `w` descriptor only; density (2x) → 0
+      return match ? parseInt(match[1], 10) : 0;
+    })
+  );
+}
+
 export function classifyImagesForRefresh(html: string): string {
   if (!html) return html;
   
@@ -1099,6 +1112,19 @@ export function classifyImagesForRefresh(html: string): string {
       }
     }
     
+    // HEURISTIC 4: srcset max-width upgrade (thumbnail → preview only)
+    // Large editorial images on news sites carry high `w` srcset descriptors but no class names
+    // or dimension attrs — they fall to thumbnail by default. A max-width ≥ 400w signals a
+    // full editorial image. 400w is safe: AS.com observed floor = 488w across 5 sessions.
+    // Never overrides icon/small/medium — those are set by upstream heuristics before this point.
+    // No <picture> source lookup in v1 — img srcset only, to keep scope narrow and safe.
+    if (context === 'thumbnail') {
+      const maxW = getMaxSrcsetWidth(img);
+      if (maxW >= 400) {
+        context = 'preview';
+      }
+    }
+
     const srcset = img.getAttribute('srcset');
     if (srcset) {
       console.log('[SpotBoard] classifyFallback:', {

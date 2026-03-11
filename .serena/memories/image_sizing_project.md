@@ -17,6 +17,10 @@
 - `<picture>`-only images (Zoopla, Next.js responsive) correctly classified via class heuristics after refresh ✅ (v1.3.5)
 - BBC `<picture>` images (real dims 240×135) correctly classified as `medium` after refresh ✅ (v1.3.5) — removed `!inPicture` guard; sites with no dims still fall through to class heuristics
 
+## HEURISTIC 4 — srcset upgrade (v1.3.6)
+
+`getMaxSrcsetWidth(img)` helper parses srcset for highest `w` descriptor (returns 0 for density-only or missing). Added after heuristic 3 in `classifyImagesForRefresh()`: if `context === 'thumbnail'` and max-w ≥ 400w → upgrade to `preview`. Threshold safe: AS.com floor 488w, Vox/Verge/SBNation 2400w. False-positive guard: `context === 'thumbnail'` means icon/small/medium never overridden; avatar images already classified by upstream src heuristic. Validated 20 sessions, 0 false positives.
+
 ## Known Limitation
 
 Capture-time classification depends on page state (browser window size, responsive breakpoint, container dimensions). Same element captured at different times may get different size tiers. This is cosmetic, not functional.
