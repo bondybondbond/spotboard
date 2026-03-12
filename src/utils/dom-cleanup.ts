@@ -49,6 +49,98 @@ export function applyExclusions(html: string, excludedSelectors?: string[]): str
   return tempDiv.innerHTML;
 }
 
+// ─── Responsive Card Dedup Helpers ───────────────────────────────────────────
+
+/** Resolve the lead image URL from a DOM subtree.
+ *  Checks lazy-load attrs → src → first srcset/data-srcset entry.
+ *  Returns a normalized URL (query params stripped, lowercase) or '' if none found. */
+function getLeadImageUrl(el: Element): string {
+  const img = el.querySelector('img');
+  if (!img) return '';
+
+  // Priority: lazy-load attrs first, then src, then first srcset entry
+  // srcset parsing: split on ',' → take [0] → split on whitespace → take [0]
+  const srcsetFirst = (raw: string) => raw.split(',')[0]?.trim().split(/\s+/)[0] ?? '';
+
+  const candidates = [
+    img.getAttribute('data-src'),
+    img.getAttribute('data-lazy-src'),
+    img.getAttribute('data-image'),
+    img.getAttribute('src'),
+    srcsetFirst(img.getAttribute('srcset') || ''),
+    srcsetFirst(img.getAttribute('data-srcset') || ''),
+  ];
+
+  for (const c of candidates) {
+    if (c && !c.startsWith('data:') && c.length > 20) {
+      // For CDN transform URLs (e.g. Brightspot dims3, Cloudinary, Imgix), extract the
+      // original source URL from the ?url= query param so that different crops of the
+      // same photo compare as equal (e.g. NPR square vs wide crop variants).
+      const urlParam = c.match(/[?&]url=([^&]+)/)?.[1];
+      if (urlParam) {
+        try {
+          const original = decodeURIComponent(urlParam).toLowerCase().replace(/\/$/, '');
+          if (original.length > 20 && !original.startsWith('data:')) return original;
+        } catch { /* malformed encoding, fall through */ }
+      }
+      return c.split('?')[0].toLowerCase().replace(/\/$/, '');
+    }
+  }
+  return '';
+}
+
+/** Extract an opening-text fingerprint from an element for fallback matching.
+ *  Tries headline, then first link text, then raw textContent prefix.
+ *  Returns '' if the result is under 10 chars (blocks boilerplate like "Listen", "Read more"). */
+function getOpeningText(el: Element): string {
+  const headline = el.querySelector('h1,h2,h3,h4,h5,h6');
+  if (headline?.textContent?.trim()) {
+    const t = headline.textContent.trim().toLowerCase().replace(/\s+/g, ' ');
+    return t.length >= 10 ? t : '';
+  }
+  const link = el.querySelector('a[href]');
+  if (link?.textContent?.trim()) {
+    const t = link.textContent.trim().toLowerCase().replace(/\s+/g, ' ').substring(0, 80);
+    return t.length >= 10 ? t : '';
+  }
+  const t = (el.textContent || '').toLowerCase().replace(/\s+/g, ' ').trim().substring(0, 60);
+  return t.length >= 10 ? t : '';
+}
+
+/** Check whether two sibling elements are responsive-layout duplicates of the same article.
+ *  Returns a confidence-tagged result rather than a boolean so callers can tier their response.
+ *
+ *  High / img+link : same lead image AND both have links AND links match (definitive responsive pair)
+ *  Low  / img+text : same lead image AND no usable links AND opening text strictly matches
+ *  No match        : images match but links differ (different articles sharing stock photo) */
+function isResponsiveDuplicate(
+  a: Element,
+  b: Element,
+): { match: boolean; confidence: 'high' | 'low'; reason: string } {
+  const NO_MATCH = { match: false, confidence: 'high' as const, reason: '' };
+
+  const imgA = getLeadImageUrl(a);
+  const imgB = getLeadImageUrl(b);
+  if (!imgA || imgA !== imgB) return NO_MATCH;
+
+  const linkA = (a.querySelector('a[href]') as HTMLAnchorElement | null)?.href || '';
+  const linkB = (b.querySelector('a[href]') as HTMLAnchorElement | null)?.href || '';
+
+  if (linkA && linkB) {
+    // Same article href = definitive responsive pair
+    if (linkA === linkB) return { match: true, confidence: 'high', reason: 'img+link' };
+    // Different href = different articles sharing a stock photo — do NOT dedup
+    return NO_MATCH;
+  }
+
+  // Fallback for no-link image cards: strict opening-text equality
+  const tA = getOpeningText(a);
+  const tB = getOpeningText(b);
+  if (tA && tA === tB) return { match: true, confidence: 'low', reason: 'img+text' };
+
+  return NO_MATCH;
+}
+
 /**
  * Remove duplicate and hidden elements from HTML
  * Fixes modern responsive design pattern where sites include both mobile/desktop content
@@ -136,7 +228,15 @@ export function cleanupDuplicates(html: string): string {
     'button[aria-label*="arrow"]',    // Arrow buttons by aria-label
     '[class*="ImageControls"]',   // Rightmove variant
     '[class*="image-controls"]',  // Generic image controls
-    '[class*="Controls_"]'        // CSS module controls pattern
+    '[class*="Controls_"]',       // CSS module controls pattern
+
+    // 🎯 NPR BRIGHTSPOT CAPTION UI (CSS-hidden elements that appear in direct-fetch)
+    // NPR renders each article image with a hidden expandable caption (div.caption)
+    // and toggle UI. Without CSS, div.caption (long desc + duplicate credit) + toggle
+    // buttons all become visible. span.credit (always-visible short credit) is kept.
+    'div.caption[aria-label="Image caption"]', // Hidden expanded caption with long description
+    'b.toggle-caption',                        // "toggle caption" button text
+    'b.hide-caption',                          // "hide caption" button text
   ];
   
   let removedCount = 0;
@@ -168,6 +268,47 @@ export function cleanupDuplicates(html: string): string {
     if (!allHaveImages) return;
     const classes = (el.className as string).split(' ').slice(0, 4).join('.');
     console.log(`[SpotBoard] carousel-candidate: ${el.tagName.toLowerCase()}.${classes} — ${children.length} slides`);
+  });
+
+  // 🎯 RESPONSIVE CARD DEDUP: detect mobile/desktop duplicate siblings.
+  // Chorus CMS (Vox, The Verge, SBNation) + NPR Brightspot render the same article in 2+ sibling
+  // variants using hashed CSS module classes that are invisible to selector-based dedup.
+  // Without CSS, all variants are visible → articles appear twice.
+  // v1: log only. Remove the TODO gate once console logs confirm correct matches.
+  temp.querySelectorAll('*').forEach(parent => {
+    const children = Array.from(parent.children);
+    if (children.length < 2) return;
+
+    const seenByImg = new Map<string, Element>();
+
+    children.forEach(child => {
+      const imgUrl = getLeadImageUrl(child);
+      if (!imgUrl) return;
+
+      if (seenByImg.has(imgUrl)) {
+        const first = seenByImg.get(imgUrl)!;
+        const result = isResponsiveDuplicate(first, child);
+        if (result.match) {
+          const hasLinksA = !!first.querySelector('a[href]');
+          const hasLinksB = !!child.querySelector('a[href]');
+          const textA = getOpeningText(first);
+          const tag = result.confidence === 'high' ? 'dedupCandidate' : 'possibleResponsiveDuplicate';
+          console.log(`[SpotBoard] ${tag}:`, {
+            reason: result.reason,
+            img: imgUrl.substring(imgUrl.lastIndexOf('/') + 1),
+            firstLink: (first.querySelector('a[href]') as HTMLAnchorElement | null)?.href?.substring(0, 80),
+            hasLinksA,
+            hasLinksB,
+            textLength: textA.length,
+            parentTag: parent.tagName,
+            parentClass: (parent.className as string).substring(0, 60),
+          });
+          if (result.confidence === 'high') child.remove();
+        }
+      } else {
+        seenByImg.set(imgUrl, child);
+      }
+    });
   });
 
   // 🎯 STRIP UI CHROME BUTTONS: Remove icon-only buttons with no visible text

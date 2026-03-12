@@ -1441,7 +1441,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           const cardAgeDays = Math.floor((Date.now() - new Date(component.created_at || component.last_refresh || Date.now()).getTime()) / (1000 * 60 * 60 * 24));
           sendEvent('component_deleted', {
             url_domain: new URL(component.url).hostname,
-            card_age_days: cardAgeDays
+            card_age_days: cardAgeDays,
+            source: onStep2 ? 'tour' : 'user'
           }, getEngagementTime());
           
           // Remove from in-memory array FIRST so subsequent deletes work correctly

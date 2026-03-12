@@ -1154,7 +1154,8 @@ async function refreshComponent(component) {
         // Check if this site requires tab-based refresh (session-dependent content)
     // Count images in original for fallback detection
     const originalImgCount = (component.html_cache?.match(/<img/gi) || []).length;
-        if (willNeedActiveTab(component.url)) {
+    const captureMode = willNeedActiveTab(component.url) ? 'tab-based' : 'direct-fetch';
+    if (captureMode === 'tab-based') {
       const tabHtml = await tabBasedRefresh(component.url, component.selector, null, originalImgCount);
       
       if (tabHtml) {
