@@ -55,7 +55,8 @@ export function applyExclusions(html: string, excludedSelectors?: string[]): str
  *  Checks lazy-load attrs → src → first srcset/data-srcset entry.
  *  Returns a normalized URL (query params stripped, lowercase) or '' if none found. */
 function getLeadImageUrl(el: Element): string {
-  const img = el.querySelector('img');
+  // Support img-level candidates (el IS the img) and card-level (img is a descendant)
+  const img = el.matches('img') ? (el as HTMLImageElement) : el.querySelector('img');
   if (!img) return '';
 
   // Priority: lazy-load attrs first, then src, then first srcset entry
@@ -123,8 +124,25 @@ function isResponsiveDuplicate(
   const imgB = getLeadImageUrl(b);
   if (!imgA || imgA !== imgB) return NO_MATCH;
 
-  const linkA = (a.querySelector('a[href]') as HTMLAnchorElement | null)?.href || '';
-  const linkB = (b.querySelector('a[href]') as HTMLAnchorElement | null)?.href || '';
+  // Three-path link resolution (all required for Chorus CMS variants):
+  // ↓ querySelector: link inside candidate (card-level, e.g. The Verge)
+  // ↑ closest: candidate inside an <a> (SBNation img-in-link structure)
+  // ↑↑ parent walk: link is a sibling in a shared card ancestor (Vox img-sibling structure)
+  const linkHref = (el: Element): string => {
+    const desc = (el.querySelector('a[href]') as HTMLAnchorElement | null)?.href;
+    if (desc) return desc;
+    const anc = (el.closest('a[href]') as HTMLAnchorElement | null)?.href;
+    if (anc) return anc;
+    // Walk up max 3 levels: stops at image-container → card → grid
+    let p = el.parentElement;
+    for (let i = 0; i < 3 && p; i++, p = p.parentElement) {
+      const sibLink = (p.querySelector('a[href]') as HTMLAnchorElement | null)?.href;
+      if (sibLink) return sibLink;
+    }
+    return '';
+  };
+  const linkA = linkHref(a);
+  const linkB = linkHref(b);
 
   if (linkA && linkB) {
     // Same article href = definitive responsive pair
