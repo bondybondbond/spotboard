@@ -456,10 +456,19 @@
       vertical-align: middle;
     }
     
-    /* Preview/Large (Amazon products) - 150px MAX */
+    /* 🎯 NEXT.JS FILL LAYOUT: Strip aspect-ratio padding-top from image containers.
+     These create blank whitespace when the fill-layout img is un-filled.
+     Targets Next.js ContentImageContainer pattern (NYT/Athletic use "content-image-container").
+     CSS fix covers already-stored cards; new captures/refreshes fix it at the HTML level. */
+    .component-content .content-image-container,
+    .component-content [class*="ImageContainer"] {
+      padding-top: 0 !important;
+    }
+
+    /* Preview/Large (article heroes, Amazon products) - 280px wide, 200px tall */
     .component-content img[data-scale-context="preview"] {
-      max-width: 150px !important;
-      max-height: 150px !important;
+      max-width: 280px !important;
+      max-height: 200px !important;
       object-fit: contain;
       display: inline-block;
       vertical-align: middle;

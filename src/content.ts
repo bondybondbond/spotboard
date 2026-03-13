@@ -814,6 +814,69 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     }
   });
   
+  // 🎯 DATA-URI BLUR PLACEHOLDER: Next.js / LQIP pattern
+  // When src is a blur placeholder (data: URI), promote the LAST real srcset candidate.
+  // Next.js puts smallest variants first; last non-data entry is the largest/best candidate.
+  let blurPromotions = 0;
+  clone.querySelectorAll('img').forEach(img => {
+    const src = img.getAttribute('src') ?? '';
+    if (!src.startsWith('data:')) return;
+    const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset') || '';
+    const candidates = srcset.split(',')
+      .map((s: string) => s.trim().split(/\s+/)[0])
+      .filter((u: string) => u && !u.startsWith('data:') && u.length > 10);
+    const bestUrl = candidates[candidates.length - 1];
+    if (bestUrl) { img.setAttribute('src', bestUrl); blurPromotions++; }
+  });
+
+  // 🎯 NEXT.JS IMAGE OPTIMIZER: Extract original CDN URL from /_next/image?url=
+  // Uses URL.searchParams — more robust than regex if query param order varies.
+  let proxyUnwraps = 0;
+  clone.querySelectorAll('img[src*="/_next/image"]').forEach(img => {
+    try {
+      const parsed = new URL(img.getAttribute('src') ?? '', window.location.href);
+      const original = parsed.searchParams.get('url');
+      if (original && original.startsWith('http')) { img.setAttribute('src', original); proxyUnwraps++; }
+    } catch { /* malformed URL */ }
+  });
+
+  if (blurPromotions > 0 || proxyUnwraps > 0) {
+    console.log(`🖼️ [SpotBoard] Next.js image fix: ${blurPromotions} blur promotions, ${proxyUnwraps} proxy unwraps`);
+  }
+
+  // 🎯 NEXT.JS FILL LAYOUT: Strip position:absolute fill styles that collapse to 0
+  // Detected by: position:absolute + width:0 in inline style (Next.js Image fill/layout="fill")
+  // These need a containing block with explicit height — which is lost in the dashboard.
+  // Fix: strip img style + parent SPAN style + ancestor padding-top (aspect-ratio container whitespace).
+  let fillFixes = 0;
+  clone.querySelectorAll('img').forEach(img => {
+    const style = img.getAttribute('style') ?? '';
+    if (/position\s*:\s*absolute/.test(style) && /width\s*:\s*0/.test(style)) {
+      img.removeAttribute('style');
+      const parent = img.parentElement;
+      if (parent?.tagName === 'SPAN' && /position\s*:\s*absolute/.test(parent.getAttribute('style') ?? '')) {
+        parent.removeAttribute('style');
+      }
+      // Strip padding-top from the aspect-ratio wrapper container (creates blank whitespace
+      // when the absolutely-positioned img is un-filled). Walk up to find it.
+      let ancestor: Element | null = img.parentElement;
+      for (let i = 0; i < 6 && ancestor; i++) {
+        const aStyle = ancestor.getAttribute('style') ?? '';
+        if (/padding-top\s*:\s*(calc\(|[\d.]+%)/.test(aStyle)) {
+          const cleaned = aStyle.replace(/padding-top\s*:[^;]+;?\s*/g, '').trim().replace(/;+$/, '');
+          if (cleaned) ancestor.setAttribute('style', cleaned);
+          else (ancestor as HTMLElement).removeAttribute('style');
+          break;
+        }
+        ancestor = ancestor.parentElement;
+      }
+      fillFixes++;
+    }
+  });
+  if (fillFixes > 0) {
+    console.log(`🖼️ [SpotBoard] Next.js fill layout fix: ${fillFixes} images un-collapsed`);
+  }
+
   // Fix link hrefs (so they stay clickable)
   clone.querySelectorAll('a[href]').forEach(link => {
     const href = link.getAttribute('href');

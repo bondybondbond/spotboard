@@ -17,6 +17,10 @@
 - `<picture>`-only images (Zoopla, Next.js responsive) correctly classified via class heuristics after refresh ✅ (v1.3.5)
 - BBC `<picture>` images (real dims 240×135) correctly classified as `medium` after refresh ✅ (v1.3.5) — removed `!inPicture` guard; sites with no dims still fall through to class heuristics
 
+## Next.js Fill-Layout Padding-Top Fix (v1.3.6)
+
+`padding-top: calc(X%)` aspect-ratio container (wraps fill-layout `<img>`) must be stripped alongside the img fill styles — otherwise image renders 200px+ below card scroll origin (invisible). Fix: in fill-layout detection block, walk up ≤6 ancestors looking for `padding-top: calc(` or `padding-top: X%` in inline style and strip it. Applied in content.ts (capture) and both refresh paths in refresh-engine.js. CSS safety-net in dashboard.html: `.content-image-container, [class*="ImageContainer"] { padding-top: 0 }` covers already-stored cards. Preview cap also raised 150×150px → 280×200px. See LEARNINGS.md §57.
+
 ## HEURISTIC 4 — srcset upgrade (v1.3.6)
 
 `getMaxSrcsetWidth(img)` helper parses srcset for highest `w` descriptor (returns 0 for density-only or missing). Added after heuristic 3 in `classifyImagesForRefresh()`: if `context === 'thumbnail'` and max-w ≥ 400w → upgrade to `preview`. Threshold safe: AS.com floor 488w, Vox/Verge/SBNation 2400w. False-positive guard: `context === 'thumbnail'` means icon/small/medium never overridden; avatar images already classified by upstream src heuristic. Validated 20 sessions, 0 false positives.
