@@ -594,8 +594,167 @@ function renderDashboardTour() {
     document.querySelectorAll('.delete-btn').forEach(el => el.classList.add('tour-highlight-btn'));
   }
 
-  buildStep1();
+  function buildStep0() {
+    tourCard.textContent = '';
+    tourCard.dataset.step = '0';
+    const title = document.createElement('p');
+    title.className = 'dashboard-tour-title';
+    title.textContent = 'Nice one!';
+    tourCard.appendChild(title);
+    const body = document.createElement('p');
+    body.className = 'dashboard-tour-body';
+    body.textContent = 'The more sites you track, the more valuable SpotBoard becomes — keep adding.';
+    tourCard.appendChild(body);
+    const btn = document.createElement('button');
+    btn.className = 'dashboard-tour-btn';
+    btn.textContent = 'Got it →';
+    btn.addEventListener('click', () => buildStep1());
+    tourCard.appendChild(btn);
+  }
+
+  buildStep0();
   document.body.appendChild(tourCard);
+}
+
+// ===== POST-FIRST-CAPTURE NUDGE: Ghost cards + site picker modal =====
+
+function showAddCardModal(cardCount = 0) {
+  if (document.getElementById('sb-add-card-modal')) return; // prevent double-open
+
+  const overlay = document.createElement('div');
+  overlay.id = 'sb-add-card-modal';
+  overlay.style.cssText = `
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.55);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999; animation: fadeIn 0.2s ease;
+  `;
+
+  const sheet = document.createElement('div');
+  sheet.style.cssText = `
+    background: white; border-radius: 16px; padding: 32px;
+    max-width: 520px; width: 90%; max-height: 85vh; overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25); position: relative;
+  `;
+
+  // Close button
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '×';
+  closeBtn.style.cssText = `
+    position: absolute; top: 14px; right: 18px;
+    background: none; border: none; font-size: 22px; line-height: 1;
+    color: #888; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+  `;
+  closeBtn.addEventListener('click', () => {
+    overlay.remove();
+    if (window.GA4 && window.GA4.sendEvent) {
+      window.GA4.sendEvent('add_card_modal_dismissed', { card_count: cardCount });
+    }
+  });
+  sheet.appendChild(closeBtn);
+
+  // Title
+  const title = document.createElement('h2');
+  title.textContent = 'What will you track next?';
+  title.style.cssText = 'font-size: 20px; font-weight: 700; color: #1a1a1a; margin: 0 0 6px 0; text-align: center;';
+  sheet.appendChild(title);
+
+  // Subtitle
+  const sub = document.createElement('p');
+  sub.textContent = 'Here are some popular sites you could try next.';
+  sub.style.cssText = 'font-size: 18px; color: #666; margin: 0 0 24px 0; text-align: center;';
+  sheet.appendChild(sub);
+
+  // Category rows with favicon chips
+  SUBSEQUENT_EMPTY_CATEGORIES.forEach(cat => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 14px;';
+
+    const catLabel = document.createElement('span');
+    catLabel.textContent = cat.label;
+    catLabel.style.cssText = 'font-size: 16px; font-weight: 600; color: #999; width: 56px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em;';
+    row.appendChild(catLabel);
+
+    const chips = document.createElement('div');
+    chips.style.cssText = 'display: flex; gap: 10px; flex-wrap: wrap;';
+
+    cat.domains.forEach(domain => {
+      const chip = document.createElement('button');
+      chip.title = domain;
+      chip.style.cssText = `
+        display: flex; flex-direction: column; align-items: center; gap: 4px;
+        width: 84px; box-sizing: border-box; padding: 10px 8px;
+        border: 1.5px solid #e5e7eb; border-radius: 10px;
+        background: white; cursor: pointer; transition: border-color 0.12s, background 0.12s;
+        font-family: inherit;
+      `;
+      chip.addEventListener('mouseenter', () => { chip.style.borderColor = '#667eea'; chip.style.background = 'rgba(102,126,234,0.05)'; });
+      chip.addEventListener('mouseleave', () => { chip.style.borderColor = '#e5e7eb'; chip.style.background = 'white'; });
+
+      const img = document.createElement('img');
+      img.src = 'https://www.google.com/s2/favicons?domain=' + domain + '&sz=48';
+      img.width = 32; img.height = 32;
+      img.alt = domain.replace(/\..*$/, '');
+      img.addEventListener('error', function() { this.style.display = 'none'; });
+      chip.appendChild(img);
+
+      const chipLabel = document.createElement('span');
+      chipLabel.textContent = domain.replace(/\..*$/, '');
+      chipLabel.style.cssText = 'font-size: 15px; color: #555;';
+      chip.appendChild(chipLabel);
+
+      chip.addEventListener('click', () => {
+        overlay.remove();
+        if (window.GA4 && window.GA4.sendEvent) {
+          window.GA4.sendEvent('add_card_modal_site_selected', { domain, card_count: cardCount });
+        }
+        chrome.tabs.create({ url: 'https://' + domain }, (tab) => {
+          chrome.storage.session.set({ pendingOnboardingTabId: tab.id });
+        });
+      });
+
+      chips.appendChild(chip);
+    });
+
+    row.appendChild(chips);
+    sheet.appendChild(row);
+  });
+
+  overlay.appendChild(sheet);
+  document.body.appendChild(overlay);
+}
+
+function renderGhostCards(grid, components) {
+  if (components.length >= 3) return;
+  const count = Math.min(2, 3 - components.length); // 1 card → 2 ghosts; 2 cards → 1 ghost
+  for (let i = 0; i < count; i++) {
+    const ghost = document.createElement('div');
+    ghost.className = 'component-card ghost-card size-1x1';
+
+    const inner = document.createElement('div');
+    inner.className = 'ghost-card-inner';
+
+    const plus = document.createElement('span');
+    plus.className = 'ghost-plus';
+    plus.textContent = '+';
+
+    const label = document.createElement('span');
+    label.className = 'ghost-label';
+    label.textContent = 'Capture a site';
+
+    inner.appendChild(plus);
+    inner.appendChild(label);
+    ghost.appendChild(inner);
+
+    ghost.addEventListener('click', () => {
+      if (window.GA4 && window.GA4.sendEvent) {
+        window.GA4.sendEvent('ghost_card_clicked', { card_count: components.length });
+      }
+      showAddCardModal(components.length);
+    });
+
+    grid.appendChild(ghost);
+  }
 }
 
 function showDashboardTourCompletion(container) {
@@ -1727,6 +1886,9 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       
       grid.appendChild(card);
     });
+
+    // Post-first-capture nudge: ghost cards fill empty grid slots up to 3 total
+    renderGhostCards(grid, components);
 
     // Dashboard tour: show after onboarding if not yet seen
     chrome.storage.local.get(['onboardingCompleted', 'dashboardTourShown', 'hasExistingCards'], ({ onboardingCompleted, dashboardTourShown, hasExistingCards }) => {
