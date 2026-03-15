@@ -2733,12 +2733,11 @@ async function initFeedbackBubble() {
   const refreshClicks = countEventsInWindow('refresh_click_timestamps', 7);
   const openedDifferentDays = checkDifferentDays('board_open_timestamps', 2, 7);
   
-  // Criteria: 3+ opens AND 2+ clicks AND 3+ days install AND 2+ cards AND opened on 2+ different days
-  const meetsFirstTimeCriteria = 
-    daysSinceInstall >= 3 && 
-    totalCards >= 2 && 
-    boardOpens >= 3 && 
-    refreshClicks >= 2 && 
+  // Criteria: 2+ days install AND 1+ cards AND 2+ opens AND opened on 2+ different days
+  const meetsFirstTimeCriteria =
+    daysSinceInstall >= 2 &&
+    totalCards >= 1 &&
+    boardOpens >= 2 &&
     openedDifferentDays;
   
   if (meetsFirstTimeCriteria) {
