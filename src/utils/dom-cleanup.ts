@@ -647,6 +647,19 @@ export function fixRelativeUrls(container: HTMLElement, sourceUrl: string): void
       }
     });
     
+    // 🎯 FIX LAZY-LOADED PICTURE SOURCES: Copy data-srcset → srcset on <source> elements
+    // ESPN and many news sites use <source data-srcset="..."> with JS (lazyload.js) copying to
+    // srcset when in-view. At direct-fetch time JS hasn't run, so srcset is empty and the
+    // <picture> displays nothing. Copying data-srcset → srcset activates the image in dashboard.
+    container.querySelectorAll('source[data-srcset]').forEach(source => {
+      if (!source.getAttribute('srcset')) {
+        const dataSrcset = source.getAttribute('data-srcset') || '';
+        if (dataSrcset.trim()) {
+          source.setAttribute('srcset', dataSrcset);
+        }
+      }
+    });
+
     // 🎯 FIX PLACEHOLDER DIMENSIONS: Remove aspect ratio markers (AS.com uses width="4" height="3")
     // These are NOT actual pixel dimensions - they're 4:3 aspect ratio markers
     // Without this fix, images render at 4x3 pixels instead of proper sizes
@@ -1170,9 +1183,9 @@ export function preserveImageClassifications(newHtml: string, oldHtml: string): 
  * 
  * Used in: Direct fetch refresh path (refresh-engine.js)
  */
-/** Returns the largest `w` descriptor from an img's srcset, or 0 if none/density-only. */
-function getMaxSrcsetWidth(img: HTMLImageElement): number {
-  const srcsetVal = img.getAttribute('srcset') || '';
+/** Returns the largest `w` descriptor from an element's srcset, or 0 if none/density-only. */
+function getMaxSrcsetWidth(el: Element): number {
+  const srcsetVal = el.getAttribute('srcset') || '';
   if (!srcsetVal) return 0;
   return Math.max(
     0,
@@ -1181,6 +1194,30 @@ function getMaxSrcsetWidth(img: HTMLImageElement): number {
       return match ? parseInt(match[1], 10) : 0;
     })
   );
+}
+
+/**
+ * Returns the largest image width signal from an img and, for <picture> images,
+ * its <source> siblings. Checks both standard `w` descriptors and CDN `&w=N` query
+ * params (e.g. ESPN combiner: `?img=...&w=660&h=26`).
+ */
+function getMaxSourceWidth(img: HTMLImageElement): number {
+  let maxW = getMaxSrcsetWidth(img);
+  // CDN w= query param on img srcset (future-proofing for CDN-style img srcset)
+  const mImg = (img.getAttribute('srcset') || '').match(/[?&]w=(\d+)/i);
+  if (mImg) maxW = Math.max(maxW, parseInt(mImg[1], 10));
+
+  const picture = img.closest('picture');
+  if (picture) {
+    picture.querySelectorAll('source').forEach(source => {
+      // Standard w-descriptor: "url 660w"
+      maxW = Math.max(maxW, getMaxSrcsetWidth(source));
+      // CDN width query param: "?img=...&w=660&h=26" (ESPN combiner, many CDN patterns)
+      const m = (source.getAttribute('srcset') || '').match(/[?&]w=(\d+)/i);
+      if (m) maxW = Math.max(maxW, parseInt(m[1], 10));
+    });
+  }
+  return maxW;
 }
 
 export function classifyImagesForRefresh(html: string): string {
@@ -1207,14 +1244,16 @@ export function classifyImagesForRefresh(html: string): string {
       }
     }
 
-    // Skip if already classified (from capture or tab-based refresh)
-    // Exception: <picture> images must be reclassified — preserveImageClassifications
-    // may have stamped a stale 'small' (matched by alt text) from old placeholder dims.
-    if (img.hasAttribute('data-scale-context') && !inPicture) {
-      return;
+    // Skip if already classified (from capture or tab-based refresh).
+    // For <picture> images: trust 'thumbnail', 'medium', 'preview' — these were stamped by
+    // the preservation system via reliable URL matching and should not be discarded.
+    // Only reclassify 'small'/'icon' on picture images — the BBC alt-text bug specifically
+    // produces these by matching old placeholder dim classifications via alt text.
+    if (img.hasAttribute('data-scale-context')) {
+      const ctx = img.getAttribute('data-scale-context');
+      if (!inPicture || (ctx !== 'small' && ctx !== 'icon')) return;
+      img.removeAttribute('data-scale-context'); // reclassify suspect small/icon on picture
     }
-    // Clear any stale classification on <picture> images before reclassifying
-    if (inPicture) img.removeAttribute('data-scale-context');
 
     let context = 'thumbnail'; // Safe default (80px)
 
@@ -1304,12 +1343,9 @@ export function classifyImagesForRefresh(html: string): string {
     // or dimension attrs — they fall to thumbnail by default. A max-width ≥ 400w signals a
     // full editorial image. 400w is safe: AS.com observed floor = 488w across 5 sessions.
     // Never overrides icon/small/medium — those are set by upstream heuristics before this point.
-    // No <picture> source lookup in v1 — img srcset only, to keep scope narrow and safe.
+    // Uses getMaxSourceWidth to also check <source> srcset and CDN &w= params (ESPN pattern).
     if (context === 'thumbnail') {
-      const maxW = getMaxSrcsetWidth(img);
-      if (maxW >= 400) {
-        context = 'preview';
-      }
+      if (getMaxSourceWidth(img) >= 400) context = 'preview';
     }
 
     // HEURISTIC 5: No-signal content image upgrade (thumbnail → medium)
