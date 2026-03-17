@@ -732,27 +732,24 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
           acceptNode(node) {
             if (node.parentElement?.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+            if (node.parentElement?.closest('[data-sb-sentiment]')) return NodeFilter.FILTER_REJECT;
             return NodeFilter.FILTER_ACCEPT;
           }
         });
         const textNodesToTag = [];
         let node;
 
+        // (?<!\w) blocks "3-0", "10-year" etc; (?<!\±) excludes ± prefix
+        const tokenPattern = /(?<!\w)(?<!\±)([+-])(\d[\d.,]*)(%?)/g;
+
         while ((node = walker.nextNode())) {
           const text = node.textContent?.trim() || '';
           if (text.length === 0) continue;
 
-          const positivePattern = /^\+|(?<!\±)\+\d+\.?\d*%?/;
-          const negativePattern = /^-\d|(?<!\±)-\d+\.?\d*%?/;
-
-          let sentiment = null;
-          if (positivePattern.test(text)) {
-            sentiment = 'positive';
-          } else if (negativePattern.test(text)) {
-            sentiment = 'negative';
-          }
-
-          if (sentiment) {
+          tokenPattern.lastIndex = 0;
+          const m = tokenPattern.exec(text);
+          if (m) {
+            const sentiment = m[1] === '+' ? 'positive' : 'negative';
             textNodesToTag.push({ node: node, sentiment: sentiment });
           }
         }
@@ -1083,27 +1080,24 @@ async function tryActiveTab(url, selector, fingerprint = null) {
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
           acceptNode(node) {
             if (node.parentElement?.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+            if (node.parentElement?.closest('[data-sb-sentiment]')) return NodeFilter.FILTER_REJECT;
             return NodeFilter.FILTER_ACCEPT;
           }
         });
         const textNodesToTag = [];
         let node;
 
+        // (?<!\w) blocks "3-0", "10-year" etc; (?<!\±) excludes ± prefix
+        const tokenPattern = /(?<!\w)(?<!\±)([+-])(\d[\d.,]*)(%?)/g;
+
         while ((node = walker.nextNode())) {
           const text = node.textContent?.trim() || '';
           if (text.length === 0) continue;
 
-          const positivePattern = /^\+|(?<!\±)\+\d+\.?\d*%?/;
-          const negativePattern = /^-\d|(?<!\±)-\d+\.?\d*%?/;
-
-          let sentiment = null;
-          if (positivePattern.test(text)) {
-            sentiment = 'positive';
-          } else if (negativePattern.test(text)) {
-            sentiment = 'negative';
-          }
-
-          if (sentiment) {
+          tokenPattern.lastIndex = 0;
+          const m = tokenPattern.exec(text);
+          if (m) {
+            const sentiment = m[1] === '+' ? 'positive' : 'negative';
             textNodesToTag.push({ node: node, sentiment: sentiment });
           }
         }

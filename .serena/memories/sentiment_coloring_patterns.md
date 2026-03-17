@@ -28,6 +28,26 @@ const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
 - SHOW_TEXT + native C++ `.closest()` on ~500 text nodes is faster
 - NOSCRIPT has ~1 text node — subtree pruning saves almost nothing
 
+## Pattern: Unified Token Regex (v1.3.7)
+
+Old two-pattern approach caused false positives on scores ("3-0"), dates ("2025-26"), hyphenated text ("10-year").
+
+**New unified regex** (all 3 locations):
+```javascript
+const tokenPattern = /(?<!\w)(?<!\±)([+-])(\d[\d.,]*)(%?)/g;
+```
+- `(?<!\w)` — sign must not be preceded by a word character (digit/letter/_). Blocks "3-0", "2025-26", "USD+1.50". Still matches "(+0.47%)" since `(` is non-word.
+- `(?<!\±)` — keeps existing ±-exclusion guard
+- `g` flag — finds all tokens per text node
+
+**Scope fix**: `tagSentimentData` now wraps only the matched token in `<span data-sb-sentiment>` (inline, not ancestor element). Multiple matches per text node handled via DocumentFragment.
+
+**Self-healing**: Strip all existing `data-sb-sentiment` attrs + `element.normalize()` at top of `tagSentimentData` — heals old ancestor-tagged cards on next refresh without re-capture.
+
+**Important**: Collect ALL text nodes first via walker, THEN mutate DOM — modifying DOM during TreeWalker traversal is undefined behaviour.
+
+---
+
 ### Architecture: Where to Define the Filter
 
 | Path | Context | Approach |

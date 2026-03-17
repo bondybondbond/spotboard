@@ -818,6 +818,13 @@ export function removeCursorStyles(container: HTMLElement): void {
  * Used in: content.ts (initial capture), refresh-engine.js (all 3 refresh paths)
  */
 export function tagSentimentData(element: HTMLElement): void {
+  // Strip any previously applied sentiment tags and normalize text nodes.
+  // Handles old-style ancestor-tagged elements (pre-v1.3.7) and makes retag idempotent.
+  element.querySelectorAll('[data-sb-sentiment]').forEach(el => {
+    el.removeAttribute('data-sb-sentiment');
+  });
+  element.normalize();
+
   const SKIP_SELECTOR = 'SCRIPT, STYLE, NOSCRIPT, TEMPLATE, SVG';
 
   const filter = {
@@ -831,54 +838,62 @@ export function tagSentimentData(element: HTMLElement): void {
 
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, filter);
 
-  const textNodesToTag: Array<{ node: Text; sentiment: 'positive' | 'negative' }> = [];
-
+  // Collect all text nodes first — modifying DOM during walker traversal is undefined behaviour
+  const textNodes: Text[] = [];
   let node: Node | null;
   while ((node = walker.nextNode())) {
     const text = node.textContent?.trim() || '';
     if (text.length === 0) continue;
-
-    // Positive: starts with + or contains +X.XX% (but not ±)
-    // Negative: starts with -digit or contains -X.XX% (but not ±)
-    const positivePattern = /^\+|(?<!\±)\+\d+\.?\d*%?/;
-    const negativePattern = /^-\d|(?<!\±)-\d+\.?\d*%?/;
-
-    let sentiment: 'positive' | 'negative' | null = null;
-    if (positivePattern.test(text)) {
-      sentiment = 'positive';
-    } else if (negativePattern.test(text)) {
-      sentiment = 'negative';
-    }
-
-    if (sentiment) {
-      textNodesToTag.push({ node: node as Text, sentiment });
-    }
+    textNodes.push(node as Text);
   }
 
-  // Tag the parent elements (usually the clickable element)
+  // Unified token pattern: +/- followed by digits (with optional decimal/comma and %)
+  // (?<!\w) — sign must not be preceded by a word char (blocks "3-0", "10-year", "USD+1.50")
+  // (?<!\±) — exclude ± prefix
+  const tokenPattern = /(?<!\w)(?<!\±)([+-])(\d[\d.,]*)(%?)/g;
+
   let tagged = 0;
-  textNodesToTag.forEach(({ node, sentiment }) => {
-    let parent = node.parentElement;
+  for (const textNode of textNodes) {
+    const text = textNode.textContent || '';
+    const matches: Array<{ index: number; match: string; sentiment: 'positive' | 'negative' }> = [];
 
-    // Find the clickable ancestor (a, button) or closest span
-    while (parent && parent !== element) {
-      if (parent.tagName === 'A' || parent.tagName === 'BUTTON' || parent.tagName === 'SPAN') {
-        parent.setAttribute('data-sb-sentiment', sentiment);
-        tagged++;
-        break;
+    tokenPattern.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = tokenPattern.exec(text))) {
+      const sentiment = m[1] === '+' ? 'positive' : 'negative';
+      matches.push({ index: m.index, match: m[0], sentiment });
+    }
+
+    if (matches.length === 0) continue;
+
+    // Wrap each matching token in an inline span — only the token is coloured, not surrounding text
+    const parent = textNode.parentNode;
+    if (!parent) continue;
+
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+
+    for (const { index, match, sentiment } of matches) {
+      if (index > lastIndex) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIndex, index)));
       }
-      parent = parent.parentElement;
+      const span = document.createElement('span');
+      span.setAttribute('data-sb-sentiment', sentiment);
+      span.textContent = match;
+      fragment.appendChild(span);
+      lastIndex = index + match.length;
     }
 
-    // Fallback: tag immediate parent if no clickable ancestor found
-    if (node.parentElement && !node.parentElement.hasAttribute('data-sb-sentiment')) {
-      node.parentElement.setAttribute('data-sb-sentiment', sentiment);
-      tagged++;
+    if (lastIndex < text.length) {
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
     }
-  });
+
+    parent.replaceChild(fragment, textNode);
+    tagged += matches.length;
+  }
 
   if (tagged > 0) {
-    console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
+    console.log(`✅ Tagged ${tagged} sentiment token(s)`);
   }
 }
 
