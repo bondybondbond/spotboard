@@ -517,6 +517,14 @@ export function cleanupDuplicates(html: string): string {
       
       // CRITICAL: Reset text color to prevent white-on-white (Reddit/Facebook use white text on dark backgrounds)
       newStyle = newStyle.replace(/color\s*:\s*[^;]*;?/gi, '');
+
+      // Strip display:none from images.
+      // Carousel libraries (Owl, Swiper, Slick) hide inactive slides with inline display:none
+      // and restore via external CSS (.active img { display:block !important }).
+      // Without the external CSS in the dashboard, display:none wins → image invisible.
+      if (el.tagName === 'IMG') {
+        newStyle = newStyle.replace(/\bdisplay\s*:\s*none\s*;?/gi, '');
+      }
       
       // Clean trailing semicolons and whitespace
       newStyle = newStyle.trim().replace(/;+$/, '');
@@ -626,10 +634,15 @@ export function fixRelativeUrls(container: HTMLElement, sourceUrl: string): void
       
       for (const attr of lazyAttrs) {
         const lazyUrl = img.getAttribute(attr);
-        if (lazyUrl && lazyUrl.startsWith('http')) {
-          // Found a real URL in lazy attribute - use it as src
-          img.setAttribute('src', lazyUrl);
-          break; // Stop after first match
+        if (lazyUrl && lazyUrl.trim()) {
+          // Resolve relative URLs (e.g. resized_xxx.JPG) against the source page URL
+          try {
+            const resolvedUrl = new URL(lazyUrl, sourceUrl).href;
+            img.setAttribute('src', resolvedUrl);
+            break; // Stop after first match
+          } catch (e) {
+            // Invalid URL - skip
+          }
         }
       }
     });
@@ -1281,6 +1294,25 @@ export function classifyImagesForRefresh(html: string): string {
       const maxW = getMaxSrcsetWidth(img);
       if (maxW >= 400) {
         context = 'preview';
+      }
+    }
+
+    // HEURISTIC 5: No-signal content image upgrade (thumbnail → medium)
+    // When all prior heuristics leave context as 'thumbnail' and the image has no size attrs,
+    // no small-icon class signals, and a URL that looks like an actual image file or CDN path
+    // → upgrade to 'medium'. Avoids over-promoting spacers/trackers while improving product
+    // images that lack classification signals (e.g. Owl Carousel product images with class="lazy").
+    if (context === 'thumbnail') {
+      const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
+      const hasNoSizeAttrs = !img.getAttribute('width') && !img.getAttribute('height');
+      const hasRealSrc = src.length > 20 && !src.startsWith('data:') && !src.startsWith('blob:');
+      const hasNoSmallClassSignal = !/(icon|logo|badge|avatar|sprite|thumb(?:nail)?|flag)/i.test(allClasses);
+      const hasImageLikePath = /\.(jpe?g|png|webp|gif|avif)/i.test(src) ||
+                               /\/images?\//i.test(src) ||
+                               /\/products?\//i.test(src) ||
+                               /\/resized\//i.test(src);
+      if (hasNoSizeAttrs && hasRealSrc && hasNoSmallClassSignal && hasImageLikePath) {
+        context = 'medium';
       }
     }
 

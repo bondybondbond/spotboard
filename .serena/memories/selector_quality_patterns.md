@@ -71,6 +71,18 @@ When a component fails to refresh properly:
 
 **Learning:** 90% of "site requires tab refresh" issues are actually "bad selector" issues
 
+## `:nth-of-type` Index Gotcha (generateSelector)
+
+**Rule**: `:nth-of-type(N)` counts by **tag type only** — NOT by tag+class.
+
+`section.brand:nth-of-type(3)` = "a `section` with class `brand` that is the **3rd `section`** child" — NOT "the 3rd `section.brand` child".
+
+**Bug pattern**: When computing the nth-of-type index in `generateSelector`, counting siblings that match `tag.class` (e.g. `section.brand`) gives a wrong index whenever non-matching-class siblings exist between the matching ones. The stored selector then resolves to the wrong element silently.
+
+**Fix applied (v1.3.7)**: Count `child.tagName === element.tagName` (tag only) to get the index — the class filter on the selector itself still narrows the match correctly.
+
+**Diagnosis**: If refresh fetches the wrong sibling section, check `document.querySelectorAll(storedSelector)` and count all `section` (or relevant tag) siblings vs. class-matching siblings. If the counts diverge, this is the issue. Re-capture after the fix.
+
 ## Implementation Status
 
 **Currently Checking:**

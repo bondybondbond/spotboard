@@ -635,9 +635,14 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
           const lazyAttrs = ['data-image', 'data-src', 'data-lazy-src', 'data-original', 'data-lazy'];
           for (const attr of lazyAttrs) {
             const lazyUrl = img.getAttribute(attr);
-            if (lazyUrl && lazyUrl.startsWith('http')) {
-              img.setAttribute('src', lazyUrl);
-              break;
+            if (lazyUrl && lazyUrl.trim()) {
+              try {
+                const resolvedUrl = new URL(lazyUrl, window.location.href).href;
+                img.setAttribute('src', resolvedUrl);
+                break;
+              } catch (e) {
+                // Invalid URL - skip
+              }
             }
           }
         });
@@ -981,9 +986,14 @@ async function tryActiveTab(url, selector, fingerprint = null) {
           const lazyAttrs = ['data-image', 'data-src', 'data-lazy-src', 'data-original', 'data-lazy'];
           for (const attr of lazyAttrs) {
             const lazyUrl = img.getAttribute(attr);
-            if (lazyUrl && lazyUrl.startsWith('http')) {
-              img.setAttribute('src', lazyUrl);
-              break;
+            if (lazyUrl && lazyUrl.trim()) {
+              try {
+                const resolvedUrl = new URL(lazyUrl, window.location.href).href;
+                img.setAttribute('src', resolvedUrl);
+                break;
+              } catch (e) {
+                // Invalid URL - skip
+              }
             }
           }
         });

@@ -113,10 +113,14 @@ function generateSelector(element: HTMLElement): string {
   }
   
   // Not unique - try adding nth-of-type
+  // IMPORTANT: :nth-of-type counts by TAG TYPE only (not tag+class), so we must
+  // count siblings by tag to get the correct index. Counting by tag.class would give
+  // wrong indices (e.g. 3rd .brand section ≠ 3rd section — they diverge when non-.brand
+  // sections exist between .brand ones).
   const parent = element.parentElement;
   if (parent) {
     const siblings = Array.from(parent.children).filter(
-      child => child.matches(baseSelector.split('[')[0]) // Match by tag.class without attrs
+      child => child.tagName === element.tagName // :nth-of-type counts by tag only
     );
     const index = siblings.indexOf(element) + 1;
     
@@ -196,7 +200,17 @@ function buildBaseSelector(element: HTMLElement): string {
   // Add classes (max 3 to avoid overly specific selectors)
   if (element.classList.length > 0) {
     const classes = Array.from(element.classList)
-      .filter(c => !c.includes('hover') && !c.includes('active')) // Skip state classes
+      .filter(c => {
+        // Skip transient state classes added by JS at runtime — absent in server/fetched HTML
+        if (c.includes('hover') || c.includes('active')) return false;
+        // Owl Carousel runtime state (owl-loaded, owl-drag added after init)
+        if (c === 'owl-loaded' || c === 'owl-drag' || c === 'owl-grabbing' || c === 'owl-grab') return false;
+        // Swiper runtime state
+        if (c === 'swiper-initialized' || c.startsWith('swiper-pointer') || c === 'swiper-backface-hidden') return false;
+        // Generic JS-injected state patterns
+        if (/^is-(initialized|loaded|ready|dragging|draggable)$/.test(c)) return false;
+        return true;
+      })
       .slice(0, 3)
       .map(c => escapeCSSClass(c)); // ✨ ESCAPE SPECIAL CHARACTERS
     if (classes.length > 0) {
@@ -248,19 +262,37 @@ function buildPathFromUniqueAncestor(element: HTMLElement, baseSelector: string)
     
     // Add parent to path and continue up
     const parentSelector = buildBaseSelector(current);
+
+    // First try: ancestor with :nth-of-type to distinguish identical sibling sections
+    // e.g. section.brand:nth-of-type(3) uniquely identifies "TRENDING NOW" among 3 section.brand siblings
+    const grandparent = current.parentElement;
+    if (grandparent) {
+      const tagSiblings = Array.from(grandparent.children).filter(c => c.tagName === (current as HTMLElement).tagName);
+      const tagIndex = tagSiblings.indexOf(current) + 1;
+      if (tagIndex > 0 && tagSiblings.length > 1) {
+        const nthAncestorSel = `${parentSelector}:nth-of-type(${tagIndex})`;
+        pathParts.unshift(nthAncestorSel);
+        const nthPath = pathParts.join(' > ');
+        if (document.querySelectorAll(nthPath).length === 1) {
+          return nthPath;
+        }
+        pathParts.shift(); // nth version didn't help, remove it
+      }
+    }
+
     pathParts.unshift(parentSelector);
-    
+
     // Check if path is now unique
     const fullPath = pathParts.join(' > ');
     if (document.querySelectorAll(fullPath).length === 1) {
       return fullPath;
     }
-    
+
     // Limit depth to avoid overly long selectors
     if (pathParts.length > 4) {
       break;
     }
-    
+
     current = current.parentElement;
   }
   
@@ -494,6 +526,22 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   };
   
   
+  // 🎯 STRIP CAROUSEL TRANSFORMS FROM LIVE DOM (before off-screen check)
+  // JS carousels (Owl, Swiper, Slick, Flickity) apply translate3d/translateX as inline styles
+  // to scroll slides. getBoundingClientRect() respects the live transform → off-screen slides
+  // appear outside the clip rect → removed before cloning → no images in capture.
+  // Strip before the visibility check; restore after cloning.
+  const strippedTransforms: Array<{ el: HTMLElement; transform: string; willChange: string }> = [];
+  element.querySelectorAll<HTMLElement>('*').forEach(el => {
+    const t = el.style.transform;
+    if (t && (t.includes('translate3d') || t.includes('translateX'))) {
+      strippedTransforms.push({ el, transform: t, willChange: el.style.willChange });
+      el.style.removeProperty('transform');
+      el.style.removeProperty('will-change');
+    }
+  });
+
+
   allOriginalElements.forEach(el => {
     if (el instanceof HTMLElement && el !== element) {
       const computed = window.getComputedStyle(el);
@@ -522,8 +570,14 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       const isOffScreenRight = rect.left > clipRect.right;  // Fully right of clip container
       const isOffScreen = isOffScreenLeft || isOffScreenRight;
       
-      const isHidden = isDisplayNone || isVisibilityHidden || isOpacityZero || isAriaHiddenDecorative || isOffScreen;
-      
+      // Exception: loaded images (naturalWidth > 0) should never be hidden by display:none alone.
+      // Carousels (Owl, Swiper, etc.) hide inactive slides with inline style="display:none" and
+      // restore them via external CSS (.active img { display:block !important }). The external CSS
+      // wins on the live page but is absent in the dashboard → inline display:none makes the img
+      // invisible. Capture it regardless; we strip the inline display:none from the clone below.
+      const isLoadedImg = el.tagName === 'IMG' && (el as HTMLImageElement).naturalWidth > 0;
+      const isHidden = (isDisplayNone && !isLoadedImg) || isVisibilityHidden || isOpacityZero || isAriaHiddenDecorative || isOffScreen;
+
       if (isHidden) {
         el.setAttribute('data-spotboard-hidden', 'true');
         markedElements.push(el);
@@ -649,6 +703,11 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   markedElements.forEach(el => el.removeAttribute('data-spotboard-hidden'));
   element.querySelectorAll('[data-spotboard-force-visible]').forEach(el =>
     el.removeAttribute('data-spotboard-force-visible'));
+  // Restore carousel transforms stripped before visibility check
+  strippedTransforms.forEach(({ el, transform, willChange }) => {
+    el.style.transform = transform;
+    if (willChange) el.style.willChange = willChange;
+  });
   
   // 🎯 REMOVE USER-EXCLUDED ELEMENTS
   // User marked these elements for exclusion before confirming capture
@@ -694,6 +753,23 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     if (el instanceof HTMLElement) {
       el.style.removeProperty('cursor');
       el.style.removeProperty('outline');
+      // Strip inline display:none from images.
+      // Carousels set display:none on inactive slides via inline style; external CSS overrides
+      // to display:block on the live page but is absent in the dashboard → image invisible.
+      if (el.tagName === 'IMG' && el.style.display === 'none') {
+        el.style.removeProperty('display');
+      }
+      // Strip carousel/slider stage position transforms.
+      // JS carousels (Owl Carousel, Swiper, Slick, Flickity) apply translate3d/translateX
+      // as inline styles to scroll slides. In the dashboard iframe the coordinate origin
+      // differs from the live page, so the transform displaces all slides off-screen and
+      // overflow:hidden on the stage-outer clips them → no images visible.
+      // Only strip translate-based transforms; leave rotate/scale/matrix (decorative).
+      const t = el.style.transform;
+      if (t && (t.includes('translate3d') || t.includes('translateX'))) {
+        el.style.removeProperty('transform');
+        el.style.removeProperty('will-change');
+      }
       if (el.style.length === 0) {
         el.removeAttribute('style');
       }
@@ -704,7 +780,7 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   // Handles: duplicate selectors, empty wrappers, broken SVGs, decorative images,
   // progressive loading artifacts, and dangerous positioning
   clone.innerHTML = cleanupDuplicates(clone.innerHTML);
-  
+
   // 🎯 FIX PROGRESSIVE LOADING IMAGES: Remove loading artifacts
   // Sites use progressive loading: blur filters, skeleton loaders, lazy loading
   // These break in dashboard because JavaScript that removes them doesn't run
@@ -732,10 +808,15 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     
     for (const attr of lazyAttrs) {
       const lazyUrl = img.getAttribute(attr);
-      if (lazyUrl && lazyUrl.startsWith('http')) {
-        // Found a real URL in lazy attribute - use it as src
-        img.setAttribute('src', lazyUrl);
-        break; // Stop after first match
+      if (lazyUrl && lazyUrl.trim()) {
+        // Resolve relative URLs (e.g. resized_xxx.JPG) against the current page URL
+        try {
+          const resolvedUrl = new URL(lazyUrl, window.location.href).href;
+          img.setAttribute('src', resolvedUrl);
+          break; // Stop after first match
+        } catch (e) {
+          // Invalid URL - skip
+        }
       }
     }
   });
