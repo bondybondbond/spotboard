@@ -209,6 +209,8 @@ function buildBaseSelector(element: HTMLElement): string {
         if (c === 'swiper-initialized' || c.startsWith('swiper-pointer') || c === 'swiper-backface-hidden') return false;
         // Generic JS-injected state patterns
         if (/^is-(initialized|loaded|ready|dragging|draggable)$/.test(c)) return false;
+        // Numbered IntersectionObserver classes — JS-injected, absent in server HTML (e.g. CNN zone-2-observer)
+        if (/^\d+[-_]observer$/.test(c)) return false;
         return true;
       })
       .slice(0, 3)

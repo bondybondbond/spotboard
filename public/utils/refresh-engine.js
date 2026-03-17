@@ -1396,9 +1396,24 @@ async function refreshComponent(component) {
 
     if (component.selector && !isGenericSelector) {
       // Get ALL matching elements, not just first one
-      const matches = doc.querySelectorAll(component.selector);
+      let effectiveSelector = component.selector;
+      let matches = doc.querySelectorAll(effectiveSelector);
       if (matches.length === 0) {
-        console.warn(`[SpotBoard] Dead selector: "${component.selector}" on ${component.url}`);
+        // Try stripping runtime-only observer class tokens absent in server HTML (e.g. CNN zone-2-observer)
+        const normalized = effectiveSelector
+          .replace(/\.[a-z][\w-]*\d+[-_]observer\b/gi, '')
+          .replace(/\.\d+[-_]observer\b/gi, '')
+          .trim();
+        if (normalized !== effectiveSelector && normalized.length > 3) {
+          const normalizedMatches = doc.querySelectorAll(normalized);
+          if (normalizedMatches.length > 0) {
+            effectiveSelector = normalized;
+            matches = normalizedMatches;
+          }
+        }
+        if (matches.length === 0) {
+          console.warn(`[SpotBoard] Dead selector: "${component.selector}" on ${component.url}`);
+        }
       }
       if (matches.length > 0) {
         let element = null;
