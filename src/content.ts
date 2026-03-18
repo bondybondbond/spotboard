@@ -492,8 +492,6 @@ function cloneWithShadow(el: Element): Element {
 }
 
 function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []): string {
-  console.log('🧹 sanitizeHTML called with', excludedElements.length, 'excluded elements');
-  
   // 🎯 STEP 1: Mark hidden elements in ORIGINAL DOM (before cloning)
   // Check computed styles on live DOM elements, then mark them for removal
   const allOriginalElements = [element, ...Array.from(element.querySelectorAll('*'))];
@@ -620,8 +618,28 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
         return;
       }
 
-      // Calculate container dimensions (works because element is in DOM)
-      const containerRect = container.getBoundingClientRect();
+      // Zero-height container fallback.
+      // <picture> is display:inline so its BoundingClientRect height is always 0
+      // (inline box; the <img> child is absolutely positioned inside the grid stack).
+      // Also triggers for CSS padding-top aspect-ratio containers (height:0 + padding-top:%).
+      // Walk up to find the nearest ancestor with positive rendered height.
+      // If none found before the captured root, classify directly by image height.
+      let containerRect = container.getBoundingClientRect();
+      if (containerRect.height === 0) {
+        let fallbackEl = container.parentElement;
+        while (fallbackEl && fallbackEl !== element) {
+          const r = fallbackEl.getBoundingClientRect();
+          if (r.height > 0) { container = fallbackEl; containerRect = r; break; }
+          fallbackEl = fallbackEl.parentElement;
+        }
+        if (containerRect.height === 0) {
+          // No qualifying ancestor — classify by rendered image height directly.
+          const ctx = imgHeight >= 200 ? 'preview' : imgHeight >= 100 ? 'medium' : imgHeight >= 70 ? 'thumbnail' : imgHeight >= 40 ? 'small' : 'icon';
+          img.setAttribute('data-scale-context', ctx);
+          console.log(`[SpotBoard] zero-container fallback → ${ctx} (h=${Math.round(imgHeight)}px)`);
+          return;
+        }
+      }
       const containerArea = containerRect.width * containerRect.height;
       
       // Calculate area ratio
@@ -698,11 +716,27 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     }
   });
 
+  // 🎯 MARK BG-IMAGE RENDERED DIMENSIONS before cloning.
+  // The bg-image promotion code runs on the detached clone where getBoundingClientRect()
+  // returns {0,0}. Store rendered size as data attributes so post-clone code can assign
+  // the correct data-scale-context without needing live-DOM access.
+  element.querySelectorAll<HTMLElement>('[style*="background-image"]').forEach(el => {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) {
+      el.setAttribute('data-bg-w', String(Math.round(r.width)));
+      el.setAttribute('data-bg-h', String(Math.round(r.height)));
+    }
+  });
+
   // Clone (classification attributes will be copied)
   const clone = cloneWithShadow(element) as HTMLElement;
 
   // Clean up markers from original DOM (restore page to pristine state)
   markedElements.forEach(el => el.removeAttribute('data-spotboard-hidden'));
+  element.querySelectorAll('[data-bg-w]').forEach(el => {
+    el.removeAttribute('data-bg-w');
+    el.removeAttribute('data-bg-h');
+  });
   element.querySelectorAll('[data-spotboard-force-visible]').forEach(el =>
     el.removeAttribute('data-spotboard-force-visible'));
   // Restore carousel transforms stripped before visibility check
@@ -823,6 +857,90 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     }
   });
   
+  // 🎯 CSS BACKGROUND-IMAGE: Promote inline bg-image to <img> for image capture
+  // Covers: JW Player .jw-preview thumbnails, NBC sidebar [data-testid="background-image"],
+  // and any element using background-image as a visual image container.
+  // Guard: single-layer http/https URLs only; skips multi-layer, gradients, data URIs.
+  // Runs on the detached clone — safe to removeProperty with no live repaint.
+  clone.querySelectorAll<HTMLElement>('[style*="background-image"]').forEach(el => {
+    if (el.querySelector('img')) return; // already has img child
+    const bgVal = el.style.backgroundImage;
+    // Skip multi-layer backgrounds (multiple url() calls) and non-url() values.
+    // NOTE: cannot use bgVal.includes(',') — Cloudinary URLs contain commas in transform params.
+    if (!bgVal || !bgVal.trim().startsWith('url(') || (bgVal.match(/url\(/g) || []).length !== 1) return;
+    const match = bgVal.match(/url\(['"]?([^'")\s]+)['"]?\)/);
+    if (!match) return;
+    const url = match[1];
+    if (!url || !url.startsWith('http')) return;
+    const img = document.createElement('img');
+    img.src = url;
+    img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
+    // Classify using rendered dimensions stamped pre-clone (getBoundingClientRect=0 on detached clone).
+    const bgH = parseInt(el.getAttribute('data-bg-h') || '0');
+    const bgCtx = bgH >= 200 ? 'preview' : bgH >= 100 ? 'medium' : 'thumbnail';
+    img.setAttribute('data-scale-context', bgCtx);
+    console.log(`[SpotBoard] bg-img promoted → ${bgCtx} (bgH=${bgH}px)`);
+    el.removeAttribute('data-bg-w');
+    el.removeAttribute('data-bg-h');
+    el.appendChild(img);
+    el.style.removeProperty('background-image'); // clone is detached — no repaint
+  });
+
+  // 🎯 PICTURE SOURCE FLATTENING: Stamp largest <source> URL into img.src at capture time.
+  // <picture> + <source media="(min-width: Npx)"> in a narrow card context (~380px) causes
+  // the browser to select the smallest responsive source. Flatten to the highest min-width
+  // source URL so the stored html_cache always shows the best available image.
+  // Guard: only mutates if a larger URL is found and differs from the current img.src.
+  clone.querySelectorAll('picture').forEach(pic => {
+    const img = pic.querySelector('img');
+    if (!img) return;
+    const sources = [...pic.querySelectorAll<HTMLSourceElement>('source[srcset]')];
+    if (!sources.length) return;
+    let largestUrl: string | null = null;
+    let bestActualWidth = -1;
+    for (const source of sources) {
+      const srcset = source.getAttribute('srcset') || '';
+      const parts = srcset.trim().split(/\s+/);
+      const url = parts[0];
+      if (!url || !url.startsWith('http')) continue;
+      // Determine actual image pixel width — highest wins.
+      // Priority: w-descriptor ("1000w") > Cloudinary t_focal-WxH > generic WxH > min-width fallback.
+      // NBC pattern: (1240px)→860px, (758px)→1000px — highest breakpoint ≠ largest image.
+      let actualWidth = 0;
+      const wDesc = parts[1];
+      if (wDesc && /^\d+w$/i.test(wDesc)) actualWidth = parseInt(wDesc);
+      if (!actualWidth) {
+        const cld = url.match(/t_(?:focal|fit|scale|fill|pad|crop|thumb)-(\d+)(?:x\d+|w\b)/i);
+        if (cld) actualWidth = parseInt(cld[1]);
+      }
+      if (!actualWidth) {
+        const gen = url.match(/[/_-](\d{3,5})x(\d{2,5})[/_.\-?&]/);
+        if (gen) actualWidth = parseInt(gen[1]);
+      }
+      if (!actualWidth) {
+        const wp = url.match(/[?&]w=(\d+)/i);
+        if (wp) actualWidth = parseInt(wp[1]);
+      }
+      if (!actualWidth) {
+        // Last resort: use min-width breakpoint as rough proxy
+        const media = source.getAttribute('media') || '';
+        const mw = media.match(/min-width\s*:\s*(\d+)/);
+        actualWidth = mw ? parseInt(mw[1], 10) : 0;
+      }
+      if (actualWidth > bestActualWidth) {
+        bestActualWidth = actualWidth;
+        largestUrl = url;
+      }
+    }
+    if (!largestUrl) largestUrl = (sources[0].getAttribute('srcset') || '').trim().split(/\s+/)[0] || null;
+    const originalSrc = img.getAttribute('src');
+    if (largestUrl && largestUrl !== originalSrc) {
+      img.setAttribute('src', largestUrl);
+      sources.forEach(s => s.remove());
+      console.log(`[SpotBoard] picture flattened bestW=${bestActualWidth}`);
+    }
+  });
+
   // 🎯 FIX PLACEHOLDER DIMENSIONS: Remove aspect ratio markers
   // Sites like AS.com use width="4" height="3" as 4:3 aspect ratio, not 4x3 pixels
   // These break CSS sizing because max-height:25px doesn't expand 3px images

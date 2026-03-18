@@ -647,6 +647,28 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
           }
         });
 
+        // 🎯 CSS BACKGROUND-IMAGE: Promote inline bg-image to <img> for image capture
+        // Covers: JW Player .jw-preview thumbnails, NBC sidebar [data-testid="background-image"],
+        // and any element using background-image as a visual image container.
+        // Guard: single-layer http/https URLs only; skips multi-layer, gradients, data URIs.
+        // NOTE: removeProperty intentionally skipped — live tab path, no visual repaint wanted.
+        element.querySelectorAll('[style*="background-image"]').forEach(el => {
+          if (el.querySelector('img')) return;
+          const bgVal = (el instanceof HTMLElement) ? el.style.backgroundImage : '';
+          // Skip multi-layer backgrounds (multiple url() calls) and non-url() values.
+          // NOTE: cannot use bgVal.includes(',') — Cloudinary URLs contain commas in transform params.
+          if (!bgVal || !bgVal.trim().startsWith('url(') || (bgVal.match(/url\(/g) || []).length !== 1) return;
+          const match = bgVal.match(/url\(['"]?([^'")\s]+)['"]?\)/);
+          if (!match) return;
+          const url = match[1];
+          if (!url || !url.startsWith('http')) return;
+          const img = document.createElement('img');
+          img.src = url;
+          img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
+          el.appendChild(img);
+          console.log('[SpotBoard] bg-image promoted to img (tab-refresh):', url.substring(0, 80));
+        });
+
         // 🎯 MARK CSS-HIDDEN-BUT-LOADED IMAGES (Rightmove fallback pattern)
         // Attribute-only marking — no live-page style mutation, no flicker.
         element.querySelectorAll('img').forEach(img => {
@@ -993,6 +1015,28 @@ async function tryActiveTab(url, selector, fingerprint = null) {
               }
             }
           }
+        });
+
+        // 🎯 CSS BACKGROUND-IMAGE: Promote inline bg-image to <img> for image capture
+        // Covers: JW Player .jw-preview thumbnails, NBC sidebar [data-testid="background-image"],
+        // and any element using background-image as a visual image container.
+        // Guard: single-layer http/https URLs only; skips multi-layer, gradients, data URIs.
+        // NOTE: removeProperty intentionally skipped — live tab path, no visual repaint wanted.
+        element.querySelectorAll('[style*="background-image"]').forEach(el => {
+          if (el.querySelector('img')) return;
+          const bgVal = (el instanceof HTMLElement) ? el.style.backgroundImage : '';
+          // Skip multi-layer backgrounds (multiple url() calls) and non-url() values.
+          // NOTE: cannot use bgVal.includes(',') — Cloudinary URLs contain commas in transform params.
+          if (!bgVal || !bgVal.trim().startsWith('url(') || (bgVal.match(/url\(/g) || []).length !== 1) return;
+          const match = bgVal.match(/url\(['"]?([^'")\s]+)['"]?\)/);
+          if (!match) return;
+          const url = match[1];
+          if (!url || !url.startsWith('http')) return;
+          const img = document.createElement('img');
+          img.src = url;
+          img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
+          el.appendChild(img);
+          console.log('[SpotBoard] bg-image promoted to img (tab-refresh):', url.substring(0, 80));
         });
 
         // 🎯 MARK CSS-HIDDEN-BUT-LOADED IMAGES (Rightmove fallback pattern)

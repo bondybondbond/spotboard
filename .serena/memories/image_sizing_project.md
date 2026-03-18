@@ -33,9 +33,21 @@
 
 Sites using intersection-observer lazyload (ESPN) store URLs in `<source data-srcset>`; JS copies to `srcset` at runtime. Direct-fetch HTML has empty `srcset` → dashboard renders nothing. Fixed in `normalizeAndConvertUrls`: after existing `<img data-src>` → `src` pass, copy `data-srcset` → `srcset` on source elements when srcset absent. Also enables heuristic 4 `getMaxSourceWidth` to read these widths. See LEARNINGS.md §63.
 
+## `<picture>` Early-Return Guard + Actual Pixel Width Fix (v1.3.7 — NBC session)
+
+Two bugs in `classifyImagesForRefresh` compounded for NBC News:
+
+1. **Early-return guard** (`!inPicture || (ctx !== 'small' && ctx !== 'icon')`) skipped picture images with ANY existing non-small/icon classification (e.g. `'medium'`). This prevented `resolveLargestPictureSourceForCard` and HEURISTIC 4 from ever running. Fix: `!inPicture && ctx !== 'small' && ctx !== 'icon'` — picture images ALWAYS reclassified. See LEARNINGS.md §64.
+
+2. **`resolveLargestPictureSourceForCard`** used highest `min-width` breakpoint to select source. NBC Cloudinary pattern: `(min-width:758px)→t_focal-1000x563` is larger than `(min-width:1240px)→t_focal-860x484`. Fix: use actual pixel width via `extractWidthFromCdnUrl` + `w`-descriptor + `&w=` param, with min-width as last-resort fallback only. See LEARNINGS.md §65.
+
+Result: NBC editorial pictures upgraded from `medium` (100px) to `preview` (280px) on refresh. Initial capture image-missing on NBC — deferred (root cause unconfirmed).
+
 ## Known Limitation
 
 Capture-time classification depends on page state (window size, responsive breakpoint). Same element at different times may get different size tiers. Cosmetic, not functional.
+
+Initial capture images missing on NBC News (hero picture in CSS Grid + JW Player stack) — fixes exist in compiled code but user reports no improvement. Suspected root cause: captured section may not include the hero element, or CSS Grid hiding at capture time. Deferred — revisit only on user complaints.
 
 ## Files Modified
 

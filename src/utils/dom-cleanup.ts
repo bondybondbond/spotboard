@@ -1197,15 +1197,86 @@ function getMaxSrcsetWidth(el: Element): number {
 }
 
 /**
+ * Forces the largest available <source> URL into img.src for card storage.
+ * Selects by actual image pixel width (CDN URL dimensions, w-descriptor) — NOT by min-width
+ * breakpoint. NBC/Cloudinary pattern: (min-width:758px)→t_focal-1000x563 is larger than
+ * (min-width:1240px)→t_focal-860x484, so highest breakpoint ≠ largest image.
+ * Guard: only mutates if a larger URL is found and differs from the current img.src.
+ * Returns true if the picture was flattened (sources removed).
+ */
+function resolveLargestPictureSourceForCard(picture: Element, img: HTMLImageElement): boolean {
+  const sources = [...picture.querySelectorAll<HTMLSourceElement>('source[srcset]')];
+  if (!sources.length) return false;
+
+  let largestUrl: string | null = null;
+  let bestActualWidth = -1;
+
+  for (const source of sources) {
+    const srcset = source.getAttribute('srcset') || '';
+    const parts = srcset.trim().split(/\s+/);
+    const url = parts[0];
+    if (!url || !url.startsWith('http')) continue;
+    // Determine actual image pixel width — highest wins.
+    // Priority: w-descriptor > Cloudinary t_focal-WxH > generic WxH path > min-width fallback.
+    let actualWidth = 0;
+    const wDesc = parts[1];
+    if (wDesc && /^\d+w$/i.test(wDesc)) actualWidth = parseInt(wDesc);
+    if (!actualWidth) actualWidth = extractWidthFromCdnUrl(url);
+    if (!actualWidth) {
+      const wp = url.match(/[?&]w=(\d+)/i);
+      if (wp) actualWidth = parseInt(wp[1]);
+    }
+    if (!actualWidth) {
+      const media = source.getAttribute('media') || '';
+      const mw = media.match(/min-width\s*:\s*(\d+)/);
+      actualWidth = mw ? parseInt(mw[1], 10) : 0;
+    }
+    if (actualWidth > bestActualWidth) { bestActualWidth = actualWidth; largestUrl = url; }
+  }
+
+  // Fallback: no valid URLs found → use first source's srcset URL
+  if (!largestUrl) {
+    largestUrl = (sources[0].getAttribute('srcset') || '').trim().split(/\s+/)[0] || null;
+  }
+
+  const originalSrc = img.getAttribute('src');
+  if (largestUrl && largestUrl !== originalSrc) {
+    img.setAttribute('src', largestUrl);
+    sources.forEach(s => s.remove()); // prevent narrow card from overriding with smallest source
+    console.log('[SpotBoard] picture flattened to largest source:', largestUrl.substring(0, 80));
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Extracts image width from CDN URL transform patterns that don't use `w` descriptors.
+ * Covers Cloudinary focal/fit transforms (t_focal-860x484) and generic WxH path segments.
+ */
+function extractWidthFromCdnUrl(url: string): number {
+  // Cloudinary: t_focal-860x484, t_fit-760w, t_scale-500x, t_fill-300x200, etc.
+  const cld = url.match(/t_(?:focal|fit|scale|fill|pad|crop|thumb)-(\d+)(?:x\d+|w\b)/i);
+  if (cld) return parseInt(cld[1], 10);
+  // Generic WxH in path segments: /860x484/, -860x484., _860x484_
+  const generic = url.match(/[/_-](\d{3,4})x(\d{2,4})[/_.\-?&]/);
+  if (generic) return parseInt(generic[1], 10);
+  return 0;
+}
+
+/**
  * Returns the largest image width signal from an img and, for <picture> images,
- * its <source> siblings. Checks both standard `w` descriptors and CDN `&w=N` query
- * params (e.g. ESPN combiner: `?img=...&w=660&h=26`).
+ * its <source> siblings. Checks both standard `w` descriptors, CDN `&w=N` query
+ * params (e.g. ESPN combiner: `?img=...&w=660&h=26`), and CDN URL transform patterns
+ * (e.g. Cloudinary `t_focal-860x484`).
  */
 function getMaxSourceWidth(img: HTMLImageElement): number {
   let maxW = getMaxSrcsetWidth(img);
   // CDN w= query param on img srcset (future-proofing for CDN-style img srcset)
   const mImg = (img.getAttribute('srcset') || '').match(/[?&]w=(\d+)/i);
   if (mImg) maxW = Math.max(maxW, parseInt(mImg[1], 10));
+
+  // CDN URL dimension extraction on img src (Cloudinary t_focal-WxH, generic WxH)
+  maxW = Math.max(maxW, extractWidthFromCdnUrl(img.getAttribute('src') || ''));
 
   const picture = img.closest('picture');
   if (picture) {
@@ -1215,6 +1286,9 @@ function getMaxSourceWidth(img: HTMLImageElement): number {
       // CDN width query param: "?img=...&w=660&h=26" (ESPN combiner, many CDN patterns)
       const m = (source.getAttribute('srcset') || '').match(/[?&]w=(\d+)/i);
       if (m) maxW = Math.max(maxW, parseInt(m[1], 10));
+      // CDN URL dimension extraction on source srcset first URL
+      const srcsetUrl = (source.getAttribute('srcset') || '').trim().split(/\s+/)[0];
+      if (srcsetUrl) maxW = Math.max(maxW, extractWidthFromCdnUrl(srcsetUrl));
     });
   }
   return maxW;
@@ -1245,14 +1319,14 @@ export function classifyImagesForRefresh(html: string): string {
     }
 
     // Skip if already classified (from capture or tab-based refresh).
-    // For <picture> images: trust 'thumbnail', 'medium', 'preview' — these were stamped by
-    // the preservation system via reliable URL matching and should not be discarded.
-    // Only reclassify 'small'/'icon' on picture images — the BBC alt-text bug specifically
-    // produces these by matching old placeholder dim classifications via alt text.
+    // Non-picture images: preserve classification unless it's 'small'/'icon' (BBC alt-text bug).
+    // Picture images: ALWAYS reclassify — allows resolveLargestPictureSourceForCard + HEURISTIC 4
+    // to run on every refresh, upgrading 'medium'/'thumbnail' → 'preview' when sources indicate
+    // a large CDN image. Without this, a mis-classified 'medium' from initial capture persists.
     if (img.hasAttribute('data-scale-context')) {
       const ctx = img.getAttribute('data-scale-context');
-      if (!inPicture || (ctx !== 'small' && ctx !== 'icon')) return;
-      img.removeAttribute('data-scale-context'); // reclassify suspect small/icon on picture
+      if (!inPicture && ctx !== 'small' && ctx !== 'icon') return;
+      img.removeAttribute('data-scale-context'); // reclassify picture images + small/icon non-pictures
     }
 
     let context = 'thumbnail'; // Safe default (80px)
@@ -1377,10 +1451,14 @@ export function classifyImagesForRefresh(html: string): string {
       });
     }
     if (inPicture) {
+      // Flatten <picture> to largest source URL so narrow card context doesn't pick smallest source.
+      // Must run BEFORE data-scale-context is set — classification may change after src update.
+      const picture = img.closest('picture')!;
+      resolveLargestPictureSourceForCard(picture, img);
       console.log('[SpotBoard] classifyPicture:', {
         widthAttr: img.getAttribute('width'),
         heightAttr: img.getAttribute('height'),
-        currentSrc: img.currentSrc || null,
+        src: img.getAttribute('src')?.substring(0, 80),
         context,
         classes: img.className.substring(0, 60),
       });
@@ -1392,6 +1470,40 @@ export function classifyImagesForRefresh(html: string): string {
 }
 
 
+/**
+ * Promotes inline CSS background-image to a real <img> element for image capture.
+ * Covers video thumbnail containers (JW Player .jw-preview, NBC sidebar bg-image divs)
+ * and any element using background-image as a visual image container.
+ *
+ * Guards: only promotes single-layer http/https URLs with no existing <img> child.
+ * Multi-layer backgrounds (containing ",") and non-URL values are skipped.
+ * Operates on a detached HTML string — safe, no live DOM repaint.
+ */
+function extractBackgroundImages(html: string): string {
+  if (!html || !html.includes('background-image')) return html;
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  temp.querySelectorAll<HTMLElement>('[style*="background-image"]').forEach(el => {
+    if (el.querySelector('img')) return; // already has img child
+    const bgVal = el.style.backgroundImage;
+    // Skip multi-layer backgrounds (multiple url() calls) and non-url() values.
+    // NOTE: cannot use bgVal.includes(',') — Cloudinary URLs contain commas in transform params
+    // (e.g. t_focal-860x484,f_auto,q_auto:best). Count url() occurrences instead.
+    if (!bgVal || !bgVal.trim().startsWith('url(') || (bgVal.match(/url\(/g) || []).length !== 1) return;
+    const match = bgVal.match(/url\(['"]?([^'")\s]+)['"]?\)/);
+    if (!match) return;
+    const url = match[1];
+    if (!url || !url.startsWith('http')) return; // absolute URLs only
+    const img = document.createElement('img');
+    img.src = url;
+    img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
+    el.appendChild(img);
+    el.style.removeProperty('background-image'); // safe on detached HTML, no live repaint
+    console.log('[SpotBoard] bg-image promoted to img:', url.substring(0, 80));
+  });
+  return temp.innerHTML;
+}
+
 interface SanitizationComponent {
   excludedSelectors?: string[];
   html_cache?: string;
@@ -1401,16 +1513,17 @@ interface SanitizationComponent {
  * Apply the full sanitization pipeline to refreshed HTML content.
  * Consolidates the 4-step sequence that was previously duplicated across
  * all refresh paths in refresh-engine.js.
- * 
- * Pipeline: applyExclusions → preserveImageClassifications → classifyImagesForRefresh → cleanupDuplicates
- * 
+ *
+ * Pipeline: applyExclusions → extractBackgroundImages → preserveImageClassifications → classifyImagesForRefresh → cleanupDuplicates
+ *
  * @param inputHtml - The raw HTML from a refresh (fetch, background tab, or active tab)
  * @param component - The component metadata object (needs .excludedSelectors and .html_cache)
  * @returns Sanitized HTML ready for storage and display
  */
 export function applySanitizationPipeline(inputHtml: string, component: SanitizationComponent): string {
   const withExclusions = applyExclusions(inputHtml, component.excludedSelectors);
-  const withPreserved = preserveImageClassifications(withExclusions, component.html_cache || '');
+  const withBgImages = extractBackgroundImages(withExclusions);
+  const withPreserved = preserveImageClassifications(withBgImages, component.html_cache || '');
   const withImageClassification = classifyImagesForRefresh(withPreserved);
   return cleanupDuplicates(withImageClassification);
 }
