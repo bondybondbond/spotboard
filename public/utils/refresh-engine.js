@@ -8,6 +8,32 @@
  */
 
 /**
+ * EXPERIMENT FLAG: IntersectionObserver override for background-tab image capture
+ *
+ * Problem: Vue/React SPAs (e.g. HotUKDeals) use IntersectionObserver to gate image src
+ * assignment. Background tabs never trigger real viewport intersection, so IO callbacks
+ * don't fire → deal images missing even after visibility/focus spoofing.
+ *
+ * Proposed fix: Override window.IntersectionObserver at document_start to immediately
+ * call callbacks with isIntersecting: true for every observed element, forcing image loads.
+ *
+ * Current status: PARKED — do not enable by default.
+ * - The current fix (hasFocus spoof + expectedLargeImgCount fallback) correctly falls back
+ *   to active tab when background misses images. That is safe and working.
+ * - IO override is more invasive: triggers ALL observed elements as visible (analytics
+ *   observers, scroll-triggered animations, etc.), and Chrome background-tab rendering
+ *   pipeline may still suppress callbacks even with override (unverified).
+ * - Enable only for targeted experimentation if active-tab flash is unacceptable.
+ *
+ * To experiment: set DEBUG_IO_SPOOF = true and observe [SpotBoard-BG] logs.
+ * Success criteria: background tab logs ≥20 large imgs, no active-tab fallback fires,
+ * no regressions on BBC / Guardian / NPR / NBC.
+ *
+ * See: LEARNINGS.md §66, Notion HotUKDeals investigation page.
+ */
+const DEBUG_IO_SPOOF = false;
+
+/**
  * Error classification helper - converts raw error strings into friendly user-facing labels
  * Returns enum error code ('skeleton', 'network', 'layout_changed', 'unknown')
  */
@@ -397,7 +423,7 @@ function requiresVisibleTab(url) {
  * 
  * Used in: refreshComponent() when direct fetch fails or for known problematic sites
  */
-async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0) {
+async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0) {
   try {
     // Check if this site MUST be visible (Page Visibility API blocks background)
     if (requiresVisibleTab(url)) {
@@ -405,14 +431,18 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
       const result = await tryActiveTab(url, selector, fingerprint);
       return result || null;
     }
-    
+
     // ATTEMPT 1: Try background tab with visibility spoof
     const result = await tryBackgroundWithSpoof(url, selector, fingerprint);
     if (result) {
-      // Check if images are missing (site may still detect background tab)
+      // Check if images are degraded (site may detect background tab despite spoof)
       const resultImgCount = (result.match(/<img/gi) || []).length;
-      if (expectedImgCount >= 3 && resultImgCount === 0) {
-        if (DEBUG) console.log(`🖼️ [Background Tab] Images missing (expected ${expectedImgCount}, got ${resultImgCount}) - falling back to active tab`);
+      const resultLargeImgCount = (result.match(/data-scale-context="(?:thumbnail|medium|preview)"/gi) || []).length;
+      // Fallback if: all images gone OR meaningful (thumbnail+) images gone while expected
+      // Covers Vue/React sites (HotUKDeals) where avatars survive but deal images are IO-gated
+      if ((expectedImgCount >= 3 && resultImgCount === 0) ||
+          (expectedLargeImgCount >= 1 && resultLargeImgCount === 0)) {
+        if (DEBUG) console.log(`🖼️ [Background Tab] Images degraded (expected ${expectedImgCount}/${expectedLargeImgCount} large, got ${resultImgCount}/${resultLargeImgCount}) - falling back to active tab`);
         // Fall through to active tab
       } else {
         return result;
@@ -577,17 +607,71 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
         });
         // Fire event so listeners think page became visible
         document.dispatchEvent(new Event('visibilitychange'));
+        // Spoof hasFocus — Vue/React components check this for IO-triggered rendering
+        // NOTE: fires before Vue bootstraps — a second dispatch runs post-consent (Part B below)
+        Object.defineProperty(document, 'hasFocus', {
+          value: () => true,
+          configurable: true
+        });
+        window.dispatchEvent(new Event('focus'));
+        window.dispatchEvent(new Event('scroll'));
+        window.dispatchEvent(new Event('resize'));
       }
     });
-    
+
+    // EXPERIMENT: IO override — only active when DEBUG_IO_SPOOF = true at top of file
+    // Forces IntersectionObserver callbacks to fire immediately with isIntersecting: true,
+    // enabling Vue/React IO-gated image loads in background tabs without active-tab flash.
+    // See flag declaration at top of file for full rationale and success criteria.
+    if (DEBUG_IO_SPOOF) {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        world: 'MAIN',
+        injectImmediately: true,
+        func: () => {
+          const _IO = window.IntersectionObserver;
+          window.IntersectionObserver = function(callback, options) {
+            const io = new _IO(callback, options);
+            const _observe = io.observe.bind(io);
+            io.observe = function(target) {
+              setTimeout(() => callback([{
+                target,
+                intersectionRatio: 1,
+                isIntersecting: true,
+                boundingClientRect: target.getBoundingClientRect(),
+                intersectionRect: target.getBoundingClientRect(),
+                rootBounds: null,
+                time: performance.now()
+              }], io), 0);
+              return _observe(target);
+            };
+            return io;
+          };
+          console.log('[SpotBoard-IO] IntersectionObserver override active');
+        }
+      });
+    }
+
     // Wait 2s for initial page load
     await new Promise(r => setTimeout(r, 2000));
-    
+
     // Handle consent dialog if present
     const consentResult = await handleConsentDialog(tab.id);
     if (consentResult.found) {
       await new Promise(r => setTimeout(r, 3000));
     }
+
+    // Re-fire focus/scroll/resize AFTER Vue/React has bootstrapped (registers IO callbacks post-DOMContentLoaded)
+    // The document_start dispatch fires into a void — this hits mounted components
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () => {
+        window.dispatchEvent(new Event('focus'));
+        window.dispatchEvent(new Event('scroll'));
+        window.dispatchEvent(new Event('resize'));
+      }
+    });
 
     // Wait additional time for JS to fully load (complex sites)
     await new Promise(r => setTimeout(r, 3000));
@@ -905,9 +989,14 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
 
     const html = results[0]?.result;
 
+    // [DIAG] Log image breakdown — tells you whether spoof worked vs fallback doing the work
+    const _totalImgs = (html?.match(/<img/gi) || []).length;
+    const _largeImgs = (html?.match(/data-scale-context="(?:thumbnail|medium|preview)"/gi) || []).length;
+    console.log(`[SpotBoard-BG] ${url}: ${_totalImgs} total imgs, ${_largeImgs} large (thumbnail+) in background tab result`);
+
     await chrome.tabs.remove(tab.id);
     return html;
-    
+
   } catch (error) {
     console.error(`❌ [Background] Error:`, error);
     try { await chrome.tabs.remove(tab.id); } catch (e) {}
@@ -1326,9 +1415,11 @@ async function refreshComponent(component) {
         // Check if this site requires tab-based refresh (session-dependent content)
     // Count images in original for fallback detection
     const originalImgCount = (component.html_cache?.match(/<img/gi) || []).length;
+    // Count meaningful (display-sized) images — 0 for legacy cards pre-classification (not a regression)
+    const originalLargeImgCount = (component.html_cache?.match(/data-scale-context="(?:thumbnail|medium|preview)"/gi) || []).length;
     const captureMode = willNeedActiveTab(component.url) ? 'tab-based' : 'direct-fetch';
     if (captureMode === 'tab-based') {
-      const tabHtml = await tabBasedRefresh(component.url, component.selector, null, originalImgCount);
+      const tabHtml = await tabBasedRefresh(component.url, component.selector, null, originalImgCount, originalLargeImgCount);
       
       if (tabHtml) {
         // Verify with fingerprint
@@ -1392,7 +1483,7 @@ async function refreshComponent(component) {
       console.warn(`⚠️ Direct fetch failed for ${component.name} (${component.url}): ${fetchError} - trying tab fallback`);
       
       const originalFingerprint = extractFingerprint(component.html_cache);
-      const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount);
+      const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount);
       
       if (tabHtml) {
         // Fingerprint verification (skip for position-based captures)
@@ -1591,7 +1682,7 @@ async function refreshComponent(component) {
           const originalFingerprint = extractFingerprint(component.html_cache);
           
           // Try tab-based refresh as fallback
-          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount);
+          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount);
           
           if (tabHtml) {
             // Verify we got the right element by checking fingerprint
@@ -1660,7 +1751,7 @@ async function refreshComponent(component) {
         } else if (driftBaseline > 500 && extractedHtml.length > driftBaseline * 1.5) {
           console.log(`[SB-REFRESH] Content drift detected: raw=${extractedHtml.length} vs rawBaseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x) → falling back to tab-based refresh`);
           const driftFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
-          const tabHtml = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount);
+          const tabHtml = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount, originalLargeImgCount);
           if (tabHtml) {
             // Skip fingerprint check for position-based captures
             if (!component.positionBased && driftFingerprint && !tabHtml.toLowerCase().includes(driftFingerprint.toLowerCase())) {
@@ -1837,7 +1928,7 @@ async function refreshComponent(component) {
         // If heading fallback didn't work, try tab-based refresh
         if (!extractedHtml) {
           const originalFingerprint = extractFingerprint(component.html_cache);
-          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount);
+          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount);
         
           if (tabHtml) {
             // 🎯 BATCH 3: Skip fingerprint check for position-based captures
