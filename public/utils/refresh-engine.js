@@ -989,11 +989,6 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
 
     const html = results[0]?.result;
 
-    // [DIAG] Log image breakdown — tells you whether spoof worked vs fallback doing the work
-    const _totalImgs = (html?.match(/<img/gi) || []).length;
-    const _largeImgs = (html?.match(/data-scale-context="(?:thumbnail|medium|preview)"/gi) || []).length;
-    console.log(`[SpotBoard-BG] ${url}: ${_totalImgs} total imgs, ${_largeImgs} large (thumbnail+) in background tab result`);
-
     await chrome.tabs.remove(tab.id);
     return html;
 
