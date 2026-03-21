@@ -475,9 +475,55 @@ function cloneWithShadow(el: Element): Element {
   const clone = el.cloneNode(false) as Element;
   const host = el as HTMLElement;
   if (host.shadowRoot) {
-    // Shadow content is trusted (same-origin browser DOM, sanitised downstream by cleanupDuplicates)
+    // Shadow content is trusted (same-origin browser DOM, sanitised downstream by cleanupDuplicates).
+    // Slot flattening: replace <slot name="X"> with matching light DOM [slot="X"] children,
+    // and the default <slot> with unslotted children. This preserves the shadow template
+    // layout while ensuring light DOM content (e.g. Reddit shreddit-post titles) is not lost.
     const temp = document.createElement('div');
     temp.innerHTML = host.shadowRoot.innerHTML;
+
+    // Named slots → substitute matching light DOM children
+    temp.querySelectorAll('slot[name]').forEach(slot => {
+      const slotName = slot.getAttribute('name')!;
+      const assigned = Array.from(el.children).filter(
+        c => c.getAttribute('slot') === slotName
+      );
+      if (assigned.length > 0) {
+        const frag = document.createDocumentFragment();
+        assigned.forEach(c => {
+          const childClone = cloneWithShadow(c);
+          childClone.removeAttribute('slot'); // clean HTML — slot attr is meaningless outside shadow
+          frag.appendChild(childClone);
+        });
+        slot.replaceWith(frag);
+      } else if (!slot.hasChildNodes()) {
+        slot.remove(); // empty fallback — drop it
+      }
+      // else: keep slot's fallback children as-is
+    });
+
+    // Default (unnamed) slot → substitute unslotted light DOM children
+    const defaultSlot = temp.querySelector('slot:not([name])');
+    if (defaultSlot) {
+      const unslotted = Array.from(el.childNodes).filter(n => {
+        if (n.nodeType === Node.ELEMENT_NODE) {
+          return !(n as Element).hasAttribute('slot');
+        }
+        return n.nodeType === Node.TEXT_NODE;
+      });
+      if (unslotted.length > 0) {
+        const frag = document.createDocumentFragment();
+        unslotted.forEach(n => {
+          if (n.nodeType === Node.ELEMENT_NODE) {
+            frag.appendChild(cloneWithShadow(n as Element));
+          } else {
+            frag.appendChild(n.cloneNode(true));
+          }
+        });
+        defaultSlot.replaceWith(frag);
+      }
+    }
+
     while (temp.firstChild) clone.appendChild(temp.firstChild);
   } else {
     for (const child of el.childNodes) {
@@ -1800,9 +1846,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         
         // ✨ SANITIZE HTML BEFORE STORING (after JS renders)
         // Pass excluded elements so they can be removed from saved HTML
-        const rawCaptureLength = (target as HTMLElement).shadowRoot
-          ? (target as HTMLElement).shadowRoot!.innerHTML.length
-          : target.innerHTML.length; // pristine baseline for drift guard (raw-to-raw)
+        const rawCaptureLength = target.innerHTML.length; // pristine baseline for drift guard (raw-to-raw); light DOM is the consistent source after slot flattening
         const cleanedHTML = sanitizeHTML(target, excludedElements);
         log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
         

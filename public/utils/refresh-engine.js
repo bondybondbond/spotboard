@@ -887,8 +887,54 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
         function cloneWithShadow(el) {
           const shadowClone = el.cloneNode(false);
           if (el.shadowRoot) {
+            // Slot flattening: replace <slot name="X"> with matching light DOM [slot="X"] children,
+            // and the default <slot> with unslotted children. Preserves shadow template layout
+            // while ensuring light DOM content (e.g. Reddit shreddit-post titles) is not lost.
             const temp = document.createElement('div');
             temp.innerHTML = el.shadowRoot.innerHTML;
+
+            // Named slots → substitute matching light DOM children
+            temp.querySelectorAll('slot[name]').forEach(slot => {
+              const slotName = slot.getAttribute('name');
+              const assigned = Array.from(el.children).filter(
+                c => c.getAttribute('slot') === slotName
+              );
+              if (assigned.length > 0) {
+                const frag = document.createDocumentFragment();
+                assigned.forEach(c => {
+                  const childClone = cloneWithShadow(c);
+                  childClone.removeAttribute('slot');
+                  frag.appendChild(childClone);
+                });
+                slot.replaceWith(frag);
+              } else if (!slot.hasChildNodes()) {
+                slot.remove();
+              }
+              // else: keep slot's fallback children as-is
+            });
+
+            // Default (unnamed) slot → substitute unslotted light DOM children
+            const defaultSlot = temp.querySelector('slot:not([name])');
+            if (defaultSlot) {
+              const unslotted = Array.from(el.childNodes).filter(n => {
+                if (n.nodeType === Node.ELEMENT_NODE) {
+                  return !n.hasAttribute('slot');
+                }
+                return n.nodeType === Node.TEXT_NODE;
+              });
+              if (unslotted.length > 0) {
+                const frag = document.createDocumentFragment();
+                unslotted.forEach(n => {
+                  if (n.nodeType === Node.ELEMENT_NODE) {
+                    frag.appendChild(cloneWithShadow(n));
+                  } else {
+                    frag.appendChild(n.cloneNode(true));
+                  }
+                });
+                defaultSlot.replaceWith(frag);
+              }
+            }
+
             while (temp.firstChild) shadowClone.appendChild(temp.firstChild);
           } else {
             for (const child of el.childNodes) {
@@ -1257,8 +1303,54 @@ async function tryActiveTab(url, selector, fingerprint = null) {
         function cloneWithShadow(el) {
           const shadowClone = el.cloneNode(false);
           if (el.shadowRoot) {
+            // Slot flattening: replace <slot name="X"> with matching light DOM [slot="X"] children,
+            // and the default <slot> with unslotted children. Preserves shadow template layout
+            // while ensuring light DOM content (e.g. Reddit shreddit-post titles) is not lost.
             const temp = document.createElement('div');
             temp.innerHTML = el.shadowRoot.innerHTML;
+
+            // Named slots → substitute matching light DOM children
+            temp.querySelectorAll('slot[name]').forEach(slot => {
+              const slotName = slot.getAttribute('name');
+              const assigned = Array.from(el.children).filter(
+                c => c.getAttribute('slot') === slotName
+              );
+              if (assigned.length > 0) {
+                const frag = document.createDocumentFragment();
+                assigned.forEach(c => {
+                  const childClone = cloneWithShadow(c);
+                  childClone.removeAttribute('slot');
+                  frag.appendChild(childClone);
+                });
+                slot.replaceWith(frag);
+              } else if (!slot.hasChildNodes()) {
+                slot.remove();
+              }
+              // else: keep slot's fallback children as-is
+            });
+
+            // Default (unnamed) slot → substitute unslotted light DOM children
+            const defaultSlot = temp.querySelector('slot:not([name])');
+            if (defaultSlot) {
+              const unslotted = Array.from(el.childNodes).filter(n => {
+                if (n.nodeType === Node.ELEMENT_NODE) {
+                  return !n.hasAttribute('slot');
+                }
+                return n.nodeType === Node.TEXT_NODE;
+              });
+              if (unslotted.length > 0) {
+                const frag = document.createDocumentFragment();
+                unslotted.forEach(n => {
+                  if (n.nodeType === Node.ELEMENT_NODE) {
+                    frag.appendChild(cloneWithShadow(n));
+                  } else {
+                    frag.appendChild(n.cloneNode(true));
+                  }
+                });
+                defaultSlot.replaceWith(frag);
+              }
+            }
+
             while (temp.firstChild) shadowClone.appendChild(temp.firstChild);
           } else {
             for (const child of el.childNodes) {
