@@ -124,7 +124,11 @@ function getDominantTag(html) {
       const count = doc.querySelectorAll(tag).length;
       if (count > bestCount) { bestCount = count; best = tag; }
     }
-    return bestCount >= 3 ? { tag: best, count: bestCount } : null;
+    if (bestCount >= 3) return { tag: best, count: bestCount };
+    // Also handle anchor-heavy feeds (e.g. grid-layout news feeds using <a> as feed items)
+    const aCount = doc.querySelectorAll('a').length;
+    if (aCount >= 5) return { tag: 'a', count: aCount };
+    return null;
   } catch (_) {
     return null;
   }
@@ -2020,9 +2024,25 @@ async function refreshComponent(component) {
           if (tabHtml) {
             // 🎯 BATCH 3: Skip fingerprint check for position-based captures
             if (!component.positionBased && originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
-              console.error(`❌ FINGERPRINT MISMATCH: ${component.name}`);
-              console.error(`   Expected fingerprint: "${originalFingerprint}"`);
-              console.error(`   Tab HTML length: ${tabHtml.length} chars`);
+              console.warn('[Selector Not Found] Fingerprint mismatch - checking for feed rotation');
+              // Feed fallback: fingerprint mismatch on a news feed just means content rotated
+              const dominantTag = getDominantTag(component.html_cache);
+              if (dominantTag) {
+                const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
+                const newCount = tabDoc.querySelectorAll(dominantTag.tag).length;
+                if (newCount >= 3) {
+                  console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
+                  const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+                  const newFingerprint = extractFingerprint(sanitizedHtml);
+                  if (newFingerprint) component.headingFingerprint = newFingerprint;
+                  return {
+                    success: true,
+                    html_cache: sanitizedHtml,
+                    last_refresh: new Date().toISOString(),
+                    status: 'active'
+                  };
+                }
+              }
               return {
                 success: false,
                 error: 'Tab refresh returned different element',
