@@ -1,6 +1,6 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
 import { cleanupDuplicates, tagSentimentData } from './utils/dom-cleanup';
-import { cloneWithShadow, promoteLazyImages } from './utils/dom-snapshot';
+import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, classifyImages } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
 
 // Debug mode - set to true for detailed logging
@@ -563,119 +563,8 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   });
 
   // 🎯 IMAGE CONTEXT CLASSIFICATION (BEFORE CLONING)
-  // 5-tier system based on rendered size and container ratio:
-  // Icon (25px): Tiny images like logos, avatars, voting buttons
-  // Small (48px): Avatars, badges
-  // Thumbnail (80px): HotUK style deal images
-  // Medium (100px): Zoopla property images (landscape)
-  // Preview (150px): Large product hero images
-  element.querySelectorAll('img').forEach(img => {
-    try {
-      // Calculate RENDERED image dimensions first (needed for container walk)
-      const imgRect = img.getBoundingClientRect();
-      const imageArea = imgRect.width * imgRect.height;
-      const imgHeight = imgRect.height;
-
-      // Walk up to find a card-level container: first ancestor meaningfully taller than the image.
-      // Avoids over-broad containers like full-page <section> wrappers that inflate the denominator
-      // and cause article thumbnails to be mis-classified as 'small'.
-      let container: Element | null = img.parentElement;
-      let walkEl = img.parentElement;
-      while (walkEl && walkEl !== element) {
-        const r = walkEl.getBoundingClientRect();
-        if (r.height > imgRect.height * 1.3) {
-          container = walkEl;
-          break;
-        }
-        walkEl = walkEl.parentElement;
-      }
-      if (!container) {
-        console.log('  ⚠️ Image has no container, defaulting to icon');
-        img.setAttribute('data-scale-context', 'icon');
-        return;
-      }
-
-      // Zero-height container fallback.
-      // <picture> is display:inline so its BoundingClientRect height is always 0
-      // (inline box; the <img> child is absolutely positioned inside the grid stack).
-      // Also triggers for CSS padding-top aspect-ratio containers (height:0 + padding-top:%).
-      // Walk up to find the nearest ancestor with positive rendered height.
-      // If none found before the captured root, classify directly by image height.
-      let containerRect = container.getBoundingClientRect();
-      if (containerRect.height === 0) {
-        let fallbackEl = container.parentElement;
-        while (fallbackEl && fallbackEl !== element) {
-          const r = fallbackEl.getBoundingClientRect();
-          if (r.height > 0) { container = fallbackEl; containerRect = r; break; }
-          fallbackEl = fallbackEl.parentElement;
-        }
-        if (containerRect.height === 0) {
-          // No qualifying ancestor — classify by rendered image height directly.
-          const ctx = imgHeight >= 200 ? 'preview' : imgHeight >= 100 ? 'medium' : imgHeight >= 70 ? 'thumbnail' : imgHeight >= 40 ? 'small' : 'icon';
-          img.setAttribute('data-scale-context', ctx);
-          console.log(`[SpotBoard] zero-container fallback → ${ctx} (h=${Math.round(imgHeight)}px)`);
-          return;
-        }
-      }
-      const containerArea = containerRect.width * containerRect.height;
-      
-      // Calculate area ratio
-      const areaRatio = containerArea > 0 ? imageArea / containerArea : 0;
-      
-      // 🐛 DEBUG: Log image dimensions for AS.com investigation
-      const imgSrc = img.src.substring(img.src.lastIndexOf('/') + 1, img.src.lastIndexOf('/') + 30);
-      console.log(`  📸 IMG DEBUG: ${imgSrc}`, {
-        rendered: `${Math.round(imgRect.width)}x${Math.round(imgRect.height)}`,
-        container: `${Math.round(containerRect.width)}x${Math.round(containerRect.height)}`,
-        areaRatio: `${(areaRatio * 100).toFixed(1)}%`,
-        imageArea,
-        widthAttr: img.getAttribute('width'),
-        heightAttr: img.getAttribute('height'),
-        className: img.className.substring(0, 40)
-      });
-      
-      // 5-tier classification logic (HEIGHT-BASED primary)
-      let context: 'icon' | 'small' | 'thumbnail' | 'medium' | 'preview';
-      
-      // Rule 1: Tiny images (<40px height) = icon (25px)
-      if (imgHeight < 40 || imageArea < 1600) {
-        context = 'icon';
-      }
-      // Rule 2: Small images (<70px height) = small (48px)
-      else if (imgHeight < 70 || imageArea < 4900) {
-        context = 'small';
-      }
-      // Rule 3: Small ratio (<10%) = small (48px) - decorative
-      else if (areaRatio < 0.10) {
-        context = 'small';
-      }
-      // Rule 4: Medium ratio (10-25%) = thumbnail (80px)
-      else if (areaRatio < 0.25 || imageArea < 15000) {
-        context = 'thumbnail';
-      }
-      // Rule 5: Medium-large ratio (25-50%) = medium (100px)
-      else if (areaRatio < 0.50 || imageArea < 40000) {
-        context = 'medium';
-      }
-      // Rule 6: Large ratio (>50%) AND large area = preview (150px)
-      else {
-        context = 'preview';
-      }
-      
-      if (context === 'icon') {
-        const iconReason = (imgHeight < 40 || imageArea < 1600)
-          ? `rule1-tiny (${Math.round(imgHeight)}px h / ${Math.round(imageArea)} area)`
-          : `rule2/3 (small height or small ratio)`;
-        console.log(`  [img-icon-reason] ${iconReason} | lazy=${!img.complete}`);
-      }
-      img.setAttribute('data-scale-context', context);
-      console.log(`  ✅ Classified as: ${context.toUpperCase()}`);
-      
-    } catch (e) {
-      console.warn('  ⚠️ Failed to classify image, defaulting to icon:', e);
-      img.setAttribute('data-scale-context', 'icon');
-    }
-  });
+  // Unified container-walk classification via dom-snapshot — single source of truth.
+  classifyImages(element);
 
 
   // 💚❤️ SENTIMENT TAGGING (Phase 2: Semantic Coloring)
@@ -815,34 +704,9 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   // 🎯 FIX LAZY-LOADED IMAGES: Convert data-image/data-src to src (shared via DomSnapshot)
   promoteLazyImages(clone);
   
-  // 🎯 CSS BACKGROUND-IMAGE: Promote inline bg-image to <img> for image capture
-  // Covers: JW Player .jw-preview thumbnails, NBC sidebar [data-testid="background-image"],
-  // and any element using background-image as a visual image container.
-  // Guard: single-layer http/https URLs only; skips multi-layer, gradients, data URIs.
-  // Runs on the detached clone — safe to removeProperty with no live repaint.
-  clone.querySelectorAll<HTMLElement>('[style*="background-image"]').forEach(el => {
-    if (el.querySelector('img')) return; // already has img child
-    const bgVal = el.style.backgroundImage;
-    // Skip multi-layer backgrounds (multiple url() calls) and non-url() values.
-    // NOTE: cannot use bgVal.includes(',') — Cloudinary URLs contain commas in transform params.
-    if (!bgVal || !bgVal.trim().startsWith('url(') || (bgVal.match(/url\(/g) || []).length !== 1) return;
-    const match = bgVal.match(/url\(['"]?([^'")\s]+)['"]?\)/);
-    if (!match) return;
-    const url = match[1];
-    if (!url || !url.startsWith('http')) return;
-    const img = document.createElement('img');
-    img.src = url;
-    img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
-    // Classify using rendered dimensions stamped pre-clone (getBoundingClientRect=0 on detached clone).
-    const bgH = parseInt(el.getAttribute('data-bg-h') || '0');
-    const bgCtx = bgH >= 200 ? 'preview' : bgH >= 100 ? 'medium' : 'thumbnail';
-    img.setAttribute('data-scale-context', bgCtx);
-    console.log(`[SpotBoard] bg-img promoted → ${bgCtx} (bgH=${bgH}px)`);
-    el.removeAttribute('data-bg-w');
-    el.removeAttribute('data-bg-h');
-    el.appendChild(img);
-    el.style.removeProperty('background-image'); // clone is detached — no repaint
-  });
+  // 🎯 CSS BACKGROUND-IMAGE: Promote inline bg-image to <img> for image capture (shared via DomSnapshot)
+  // Uses data-bg-h attribute stamped above (getBoundingClientRect=0 on detached clone).
+  promoteBackgroundImages(clone, 'capture');
 
   // 🎯 PICTURE SOURCE FLATTENING: Stamp largest <source> URL into img.src at capture time.
   // <picture> + <source media="(min-width: Npx)"> in a narrow card context (~380px) causes

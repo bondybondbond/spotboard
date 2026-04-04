@@ -21,6 +21,7 @@ var DomSnapshot = (() => {
   // src/utils/dom-snapshot.ts
   var dom_snapshot_exports = {};
   __export(dom_snapshot_exports, {
+    classifyImages: () => classifyImages,
     cloneWithShadow: () => cloneWithShadow,
     promoteBackgroundImages: () => promoteBackgroundImages,
     promoteLazyImages: () => promoteLazyImages
@@ -108,8 +109,70 @@ var DomSnapshot = (() => {
       const img = document.createElement("img");
       img.src = url;
       img.style.cssText = "width:100%;height:auto;display:block;max-width:100%";
+      const liveRect = bgEl.getBoundingClientRect?.();
+      const bgH = liveRect && liveRect.height > 0 ? liveRect.height : parseInt(bgEl.getAttribute?.("data-bg-h") || "0");
+      if (bgH > 0) {
+        const bgCtx = bgH >= 200 ? "preview" : bgH >= 100 ? "medium" : "thumbnail";
+        img.setAttribute("data-scale-context", bgCtx);
+      }
+      bgEl.removeAttribute?.("data-bg-w");
+      bgEl.removeAttribute?.("data-bg-h");
       bgEl.appendChild(img);
       console.log(`[SpotBoard] bg-image promoted to img (${label}):`, url.substring(0, 80));
+    });
+  }
+  function classifyImages(root) {
+    root.querySelectorAll("img").forEach((img) => {
+      if (img.hasAttribute("data-scale-context")) return;
+      try {
+        const imgRect = img.getBoundingClientRect();
+        const imageArea = imgRect.width * imgRect.height;
+        const imgHeight = imgRect.height;
+        let container = img.parentElement;
+        let walkEl = img.parentElement;
+        while (walkEl && walkEl !== root) {
+          const r = walkEl.getBoundingClientRect();
+          if (r.height > imgRect.height * 1.3) {
+            container = walkEl;
+            break;
+          }
+          walkEl = walkEl.parentElement;
+        }
+        if (!container) {
+          img.setAttribute("data-scale-context", "icon");
+          return;
+        }
+        let containerRect = container.getBoundingClientRect();
+        if (containerRect.height === 0) {
+          let fallbackEl = container.parentElement;
+          while (fallbackEl && fallbackEl !== root) {
+            const r = fallbackEl.getBoundingClientRect();
+            if (r.height > 0) {
+              container = fallbackEl;
+              containerRect = r;
+              break;
+            }
+            fallbackEl = fallbackEl.parentElement;
+          }
+          if (containerRect.height === 0) {
+            const ctx = imgHeight >= 200 ? "preview" : imgHeight >= 100 ? "medium" : imgHeight >= 70 ? "thumbnail" : imgHeight >= 40 ? "small" : "icon";
+            img.setAttribute("data-scale-context", ctx);
+            return;
+          }
+        }
+        const containerArea = containerRect.width * containerRect.height;
+        const areaRatio = containerArea > 0 ? imageArea / containerArea : 0;
+        let context;
+        if (imgHeight < 40 || imageArea < 1600) context = "icon";
+        else if (imgHeight < 70 || imageArea < 4900) context = "small";
+        else if (areaRatio < 0.1) context = "small";
+        else if (areaRatio < 0.25 || imageArea < 15e3) context = "thumbnail";
+        else if (areaRatio < 0.5 || imageArea < 4e4) context = "medium";
+        else context = "preview";
+        img.setAttribute("data-scale-context", context);
+      } catch (e) {
+        img.setAttribute("data-scale-context", "icon");
+      }
     });
   }
   return __toCommonJS(dom_snapshot_exports);

@@ -3,7 +3,7 @@
 // Used in content.ts (capture) and refresh-engine.js (all 3 tab tiers).
 //
 // Phase 1: cloneWithShadow, promoteLazyImages, promoteBackgroundImages
-// Phase 2 (future): findClippingAncestor, classifyImages
+// Phase 2: classifyImages (unified container-walk classification for capture + refresh)
 
 /**
  * Flattens open shadow DOM into light DOM for static capture.
@@ -101,11 +101,12 @@ export function promoteLazyImages(el: Element): void {
 /**
  * Promotes inline background-image CSS to an injected <img> element.
  * Guards: single-layer http/https URLs only; skips multi-layer, gradients, data URIs.
- * NOTE: does NOT stamp data-scale-context or do classification — that is Phase 2.
- * NOTE: removeProperty intentionally skipped — safe for live DOM paths (no visual repaint wanted).
+ * Stamps data-scale-context using rendered height (live DOM) or data-bg-h attribute (detached clone).
+ * Cleans up data-bg-w / data-bg-h pre-stamped attributes after reading them.
+ * NOTE: removeProperty intentionally skipped — avoids live-DOM visual mutation on refresh paths.
  *
  * @param el    Root element to search within
- * @param label Refresh context label for console log (e.g. 'tab-refresh', 'offscreen-refresh')
+ * @param label Refresh context label for console log (e.g. 'tab-refresh', 'capture')
  */
 export function promoteBackgroundImages(el: Element, label: string): void {
   el.querySelectorAll('[style*="background-image"]').forEach(bgEl => {
@@ -121,7 +122,85 @@ export function promoteBackgroundImages(el: Element, label: string): void {
     const img = document.createElement('img');
     img.src = url;
     img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
+    // Classify: live DOM has real getBoundingClientRect height; detached clone falls back to data-bg-h.
+    const liveRect = (bgEl as HTMLElement).getBoundingClientRect?.();
+    const bgH = (liveRect && liveRect.height > 0)
+      ? liveRect.height
+      : parseInt((bgEl as HTMLElement).getAttribute?.('data-bg-h') || '0');
+    if (bgH > 0) {
+      const bgCtx = bgH >= 200 ? 'preview' : bgH >= 100 ? 'medium' : 'thumbnail';
+      img.setAttribute('data-scale-context', bgCtx);
+    }
+    // Clean up pre-stamped dimension attributes (capture clone path — no-op on live DOM)
+    (bgEl as HTMLElement).removeAttribute?.('data-bg-w');
+    (bgEl as HTMLElement).removeAttribute?.('data-bg-h');
     bgEl.appendChild(img);
     console.log(`[SpotBoard] bg-image promoted to img (${label}):`, url.substring(0, 80));
+  });
+}
+
+/**
+ * Classifies all <img> descendants with a data-scale-context tier (icon/small/thumbnail/medium/preview).
+ * Uses a container walk (1.3× height ratio) to find the card-level container, avoiding over-broad
+ * wrappers like full-page <section> elements. Includes a zero-height fallback for <picture> elements
+ * (display:inline, height=0) and CSS padding-top aspect-ratio containers.
+ * Skips images already stamped with data-scale-context.
+ * Works on live DOM only — getBoundingClientRect() returns zero on detached clones.
+ *
+ * @param root Element to classify images within (the extracted card root)
+ */
+export function classifyImages(root: Element): void {
+  root.querySelectorAll('img').forEach(img => {
+    if (img.hasAttribute('data-scale-context')) return; // already classified
+    try {
+      const imgRect = img.getBoundingClientRect();
+      const imageArea = imgRect.width * imgRect.height;
+      const imgHeight = imgRect.height;
+
+      // Container walk: first ancestor meaningfully taller than the image (1.3× threshold).
+      // Avoids over-broad containers like full-page <section> wrappers that inflate the denominator.
+      let container: Element | null = img.parentElement;
+      let walkEl: Element | null = img.parentElement;
+      while (walkEl && walkEl !== root) {
+        const r = walkEl.getBoundingClientRect();
+        if (r.height > imgRect.height * 1.3) { container = walkEl; break; }
+        walkEl = walkEl.parentElement;
+      }
+      if (!container) { img.setAttribute('data-scale-context', 'icon'); return; }
+
+      // Zero-height fallback: <picture> is display:inline (height=0); CSS padding-top containers also hit 0.
+      // Walk up to find the nearest ancestor with positive rendered height.
+      // If none found before root, classify directly by image height.
+      let containerRect = container.getBoundingClientRect();
+      if (containerRect.height === 0) {
+        let fallbackEl: Element | null = container.parentElement;
+        while (fallbackEl && fallbackEl !== root) {
+          const r = fallbackEl.getBoundingClientRect();
+          if (r.height > 0) { container = fallbackEl; containerRect = r; break; }
+          fallbackEl = fallbackEl.parentElement;
+        }
+        if (containerRect.height === 0) {
+          const ctx = imgHeight >= 200 ? 'preview' : imgHeight >= 100 ? 'medium'
+            : imgHeight >= 70 ? 'thumbnail' : imgHeight >= 40 ? 'small' : 'icon';
+          img.setAttribute('data-scale-context', ctx);
+          return;
+        }
+      }
+
+      const containerArea = containerRect.width * containerRect.height;
+      const areaRatio = containerArea > 0 ? imageArea / containerArea : 0;
+
+      let context: string;
+      if (imgHeight < 40 || imageArea < 1600)          context = 'icon';
+      else if (imgHeight < 70 || imageArea < 4900)     context = 'small';
+      else if (areaRatio < 0.10)                       context = 'small';
+      else if (areaRatio < 0.25 || imageArea < 15000)  context = 'thumbnail';
+      else if (areaRatio < 0.50 || imageArea < 40000)  context = 'medium';
+      else                                             context = 'preview';
+
+      img.setAttribute('data-scale-context', context);
+    } catch (e) {
+      img.setAttribute('data-scale-context', 'icon');
+    }
   });
 }
