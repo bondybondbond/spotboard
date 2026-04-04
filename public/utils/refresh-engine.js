@@ -404,24 +404,19 @@ function requiresVisibleTab(url) {
   return false;
 }
 
-// Per-refresh flag: set to true when tabBasedRefresh escalates to the focused active popup
-// (ATTEMPT 3) for a site that hasn't been flagged before. Reset at the start of each call.
-// Read by _buildTabSuccessResult() to include requiresActiveFocus in the return object,
-// allowing callers to persist the flag to sync storage so future refreshes skip to active directly.
-let _sbActiveFocusNeeded = false;
-
 /**
  * Build a successful tab-refresh result object. Includes requiresActiveFocus:true if the
  * refresh escalated to the focused active popup (site requires compositor focus to render).
+ * @param {boolean} activeFocusNeeded - per-call value returned from tabBasedRefresh (no global state)
  */
-function _buildTabSuccessResult(sanitizedHtml) {
+function _buildTabSuccessResult(sanitizedHtml, activeFocusNeeded = false) {
   const r = {
     success: true,
     html_cache: sanitizedHtml,
     last_refresh: new Date().toISOString(),
     status: 'active'
   };
-  if (_sbActiveFocusNeeded) r.requiresActiveFocus = true;
+  if (activeFocusNeeded) r.requiresActiveFocus = true;
   return r;
 }
 
@@ -451,14 +446,16 @@ function _buildTabSuccessResult(sanitizedHtml) {
  * Used in: refreshComponent() when direct fetch fails or for known problematic sites
  */
 async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0, skipToActive = false) {
-  _sbActiveFocusNeeded = false; // Reset for this call — will be set if escalation to active popup occurs
+  // Per-call local flag — parallel-refresh safe (no shared module-level state)
+  let activeFocusNeeded = false;
   try {
     // Check if this site MUST be visible (Page Visibility API blocks background)
     // skipToActive is set for components with stored requiresActiveFocus=true (self-learned flag)
     if (requiresVisibleTab(url) || skipToActive) {
       // Skip background + offscreen attempts - go straight to active tab
+      // activeFocusNeeded stays false: flag is already persisted in storage for this card
       const result = await tryActiveTab(url, selector, fingerprint);
-      return result || null;
+      return { html: result || null, activeFocusNeeded: false };
     }
 
     if (DEBUG) console.log('[SB-REFRESH]', new URL(url).hostname, 'path=background', 'expected=', expectedImgCount + '/' + expectedLargeImgCount);
@@ -476,7 +473,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
         if (DEBUG) console.log('[SB-REFRESH]', new URL(url).hostname, 'images degraded expected=', expectedImgCount + '/' + expectedLargeImgCount, 'got=', resultImgCount + '/' + resultLargeImgCount, '→ trying offscreen');
         // Fall through to offscreen window
       } else {
-        return result;
+        return { html: result, activeFocusNeeded: false };
       }
     }
 
@@ -499,20 +496,20 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
         if (DEBUG) console.log('🪟 [Offscreen] Large imgs absent:', offLargeImgCount, '/', expectedLargeImgCount, '→ trying active popup');
       } else {
         if (DEBUG) console.log('🪟 [Offscreen] Accepted:', offImgCount, 'imgs', offLargeImgCount, 'large (classifyFallback will resize)');
-        return offscreenHtml;
+        return { html: offscreenHtml, activeFocusNeeded: false };
       }
     }
 
     // ATTEMPT 3: Focused active popup (last resort — site requires compositor focus frame to render)
-    // Set flag BEFORE calling so callers can persist requiresActiveFocus if this succeeds.
-    _sbActiveFocusNeeded = true;
+    // Set activeFocusNeeded BEFORE calling so it is captured in the return value on success.
+    activeFocusNeeded = true;
     const fallbackResult = await tryActiveTab(url, selector, fingerprint);
-    if (fallbackResult) return fallbackResult;
+    if (fallbackResult) return { html: fallbackResult, activeFocusNeeded: true };
 
-    return null;
+    return { html: null, activeFocusNeeded: false };
   } catch (error) {
     console.error('Tab refresh failed:', error);
-    return null;
+    return { html: null, activeFocusNeeded: false };
   }
 }
 
@@ -2033,12 +2030,12 @@ async function refreshComponent(component) {
     const originalLargeImgCount = (component.html_cache?.match(/data-scale-context="(?:thumbnail|medium|preview)"/gi) || []).length;
     const captureMode = willNeedActiveTab(component.url) ? 'tab-based' : 'direct-fetch';
     if (captureMode === 'tab-based') {
-      const tabHtml = await tabBasedRefresh(component.url, component.selector, null, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
-      
+      const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, null, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+
       if (tabHtml) {
         // Verify with fingerprint
         const originalFingerprint = extractFingerprint(component.html_cache);
-        
+
         // 🎯 BATCH 3: Skip fingerprint check for position-based captures
         if (!component.positionBased && originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
           return {
@@ -2050,10 +2047,10 @@ async function refreshComponent(component) {
         if (component.positionBased) {
           // Position-based capture - skip fingerprint verification
         }
-        
+
         // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
         const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-        return _buildTabSuccessResult(sanitizedHtml);
+        return _buildTabSuccessResult(sanitizedHtml, activeFocusNeeded);
       } else {
         return {
           success: false,
@@ -2092,7 +2089,7 @@ async function refreshComponent(component) {
       console.warn(`⚠️ Direct fetch failed for ${component.name} (${component.url}): ${fetchError} - trying tab fallback`);
       
       const originalFingerprint = extractFingerprint(component.html_cache);
-      const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+      const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
 
       if (tabHtml) {
         // Fingerprint verification (skip for position-based captures)
@@ -2106,7 +2103,7 @@ async function refreshComponent(component) {
 
         if (DEBUG) console.log(`🔧 [Fetch Fallback] Tab refresh succeeded for ${component.name}`);
         const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-        return _buildTabSuccessResult(sanitizedHtml);
+        return _buildTabSuccessResult(sanitizedHtml, activeFocusNeeded);
       }
       
       // Both fetch and tab failed
@@ -2285,7 +2282,7 @@ async function refreshComponent(component) {
           const originalFingerprint = extractFingerprint(component.html_cache);
 
           // Try tab-based refresh as fallback
-          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+          const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
           if (tabHtml) {
             // Verify we got the right element by checking fingerprint
             // 🎯 BATCH 3: Skip fingerprint check for position-based captures
@@ -2303,7 +2300,7 @@ async function refreshComponent(component) {
                   const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
                   const newFingerprint = extractFingerprint(sanitizedHtml);
                   if (newFingerprint) component.headingFingerprint = newFingerprint;
-                  return _buildTabSuccessResult(sanitizedHtml);
+                  return _buildTabSuccessResult(sanitizedHtml, activeFocusNeeded);
                 }
               }
               return {
@@ -2317,7 +2314,7 @@ async function refreshComponent(component) {
             // Tab refresh worked and verified!
             // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-            return _buildTabSuccessResult(sanitizedHtml);
+            return _buildTabSuccessResult(sanitizedHtml, activeFocusNeeded);
           }
 
           // Tab refresh also failed - keep original
@@ -2343,7 +2340,7 @@ async function refreshComponent(component) {
         } else if (driftBaseline > 500 && extractedHtml.length > driftBaseline * 1.5) {
           console.log(`[SB-REFRESH] Content drift detected: raw=${extractedHtml.length} vs rawBaseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x) → falling back to tab-based refresh`);
           const driftFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
-          const tabHtml = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+          const { html: tabHtml, activeFocusNeeded: driftActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
           if (tabHtml) {
             // Skip fingerprint check for position-based captures
             if (!component.positionBased && driftFingerprint && !tabHtml.toLowerCase().includes(driftFingerprint.toLowerCase())) {
@@ -2360,7 +2357,7 @@ async function refreshComponent(component) {
                   const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
                   const newFingerprint = extractFingerprint(sanitizedHtml);
                   if (newFingerprint) component.headingFingerprint = newFingerprint;
-                  return _buildTabSuccessResult(sanitizedHtml);
+                  return _buildTabSuccessResult(sanitizedHtml, driftActiveFocusNeeded);
                 }
               }
               return {
@@ -2370,7 +2367,7 @@ async function refreshComponent(component) {
               };
             }
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-            return _buildTabSuccessResult(sanitizedHtml);
+            return _buildTabSuccessResult(sanitizedHtml, driftActiveFocusNeeded);
           }
           // Tab fallback failed — check if direct-fetch content is substantial.
           // Drift may have fired due to natural content growth (e.g. weather table shows more
@@ -2527,8 +2524,8 @@ async function refreshComponent(component) {
         // If heading fallback didn't work, try tab-based refresh
         if (!extractedHtml) {
           const originalFingerprint = extractFingerprint(component.html_cache);
-          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
-        
+          const { html: tabHtml, activeFocusNeeded: selectorTabActiveFocus } = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+
           if (tabHtml) {
             // 🎯 BATCH 3: Skip fingerprint check for position-based captures
             if (!component.positionBased && originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
@@ -2543,7 +2540,7 @@ async function refreshComponent(component) {
                   const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
                   const newFingerprint = extractFingerprint(sanitizedHtml);
                   if (newFingerprint) component.headingFingerprint = newFingerprint;
-                  return _buildTabSuccessResult(sanitizedHtml);
+                  return _buildTabSuccessResult(sanitizedHtml, selectorTabActiveFocus);
                 }
               }
               return {
@@ -2557,7 +2554,7 @@ async function refreshComponent(component) {
             if (DEBUG) console.log(`   1. Tab HTML: ${tabHtml.length} chars`);
 
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-            return _buildTabSuccessResult(sanitizedHtml);
+            return _buildTabSuccessResult(sanitizedHtml, selectorTabActiveFocus);
           }
         }
       }
@@ -2621,7 +2618,24 @@ async function refreshComponent(component) {
 }
 
 /**
- * Refresh all components sequentially
+ * Inline concurrency limiter — no external dependencies.
+ * Runs `fn(item)` for each item, with at most `limit` running simultaneously.
+ * Uses a worker-drain pattern: N workers each pop from a shared queue until empty.
+ */
+async function runWithConcurrency(items, fn, limit) {
+  const queue = [...items];
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (queue.length) {
+        const item = queue.shift();
+        await fn(item);
+      }
+    })
+  );
+}
+
+/**
+ * Refresh all components in parallel (limit=3 for normal cards, serial for focus-required)
  */
 async function refreshAll() {
   const btn = document.getElementById('refresh-all-btn');
@@ -2693,25 +2707,39 @@ async function refreshAll() {
       : `${activeComponents.length} components`;
     toastManager.startRefresh(activeComponents.length, toastMessage);
     
-    // Refresh active components only (skip paused)
+    // Refresh active components in parallel (normal cards: limit=3, focus-required: serial)
     const results = [];
     const componentRefreshMap = new Map(); // Track which components were refreshed
-    
-    for (let i = 0; i < activeComponents.length; i++) {
-      const comp = activeComponents[i];
+
+    // Split into two pools:
+    // - normalCards: background/offscreen refresh — safe to run concurrently
+    // - focusCards: requiresActiveFocus (focused popup) — must be serial (one popup at a time)
+    const focusCards = activeComponents.filter(c => c.requiresActiveFocus || requiresVisibleTab(c.url));
+    const normalCards = activeComponents
+      .filter(c => !c.requiresActiveFocus && !requiresVisibleTab(c.url))
+      .sort((a, b) => {
+        // Direct-fetch cards first (no Chrome window needed) — frees worker slots faster
+        const aTab = willNeedActiveTab(a.url) ? 1 : 0;
+        const bTab = willNeedActiveTab(b.url) ? 1 : 0;
+        return aTab - bTab;
+      });
+
+    if (DEBUG) console.log('[SB-PARALLEL] refreshAll start:', activeComponents.length, 'cards at', new Date().toISOString());
+    if (DEBUG) console.log('[SB-PARALLEL] pools: normal=' + normalCards.length + ' (limit=3) focus=' + focusCards.length + ' (serial)');
+
+    // Single card toast message for parallel mode
+    toastManager.updateProgress('Refreshing ' + activeComponents.length + ' card' + (activeComponents.length !== 1 ? 's' : '') + '…', false);
+
+    // Per-card worker — shared between both pools
+    async function processCard(comp) {
       const displayName = comp.customLabel || comp.name;
-      const needsActiveTab = requiresVisibleTab(comp.url);
+      if (DEBUG) console.log('[SB-PARALLEL] started:', displayName);
+      const t0 = Date.now();
 
-      if (DEBUG) console.log('[SB-QUEUE] card=', displayName, (i + 1) + '/' + activeComponents.length, 'started');
-
-      // Update toast to show current component
-      toastManager.updateProgress(displayName, needsActiveTab);
-      
-      // Do the refresh
       const refreshResult = await refreshComponent(comp);
       results.push(refreshResult);
       componentRefreshMap.set(comp.id, refreshResult);
-      
+
       // 🎯 BATCH 5: Track individual refresh failures
       if (!refreshResult.success) {
         // Classify error using new helper function
@@ -2761,7 +2789,15 @@ async function refreshAll() {
 
       // Mark this component as complete
       toastManager.completeComponent(refreshResult.success);
+      if (DEBUG) console.log('[SB-PARALLEL] done:', displayName, 'elapsed=' + (Date.now() - t0) + 'ms success=' + refreshResult.success);
     }
+
+    // Run normal cards concurrently (up to 3 at once)
+    await runWithConcurrency(normalCards, processCard, 3);
+    // Run focus-required cards serially after (one focused popup at a time)
+    for (const comp of focusCards) await processCard(comp);
+
+    if (DEBUG) console.log('[SB-PARALLEL] refreshAll complete elapsed=' + (Date.now() - refreshStartTime) + 'ms');
     
     // Update components with new data (split between sync and local storage)
     // Handle both active (refreshed) and paused (unchanged) components
