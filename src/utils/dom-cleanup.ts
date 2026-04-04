@@ -265,27 +265,18 @@ export function cleanupDuplicates(html: string): string {
     matches.forEach(el => el.remove());
   });
 
-  // 🎯 CAROUSEL SLIDE COLLAPSE: Keep only first slide for [class*="slider"] containers.
-  // Rightmove uses div.PropertyCardImage_slider__* — a horizontal flex row of photo slides.
+  // 🎯 CAROUSEL SLIDE COLLAPSE: Keep only first slide for photo carousel containers.
+  // Rightmove uses div.PropertyCardImage_slider__*; Zoopla uses <ol class="tnabq01"> (hashed React).
   // Without this, all slides spread horizontally causing blank white space in the dashboard.
-  // Guard: all direct children must contain an img (confirms photo carousel, not navigation).
-  temp.querySelectorAll('[class*="slider"]').forEach(el => {
+  // Guard: all direct children must contain an img (confirms photo carousel, not nav/pagination).
+  // Note: nested slider > ul matches twice — second pass hits children.length < 2 guard safely.
+  temp.querySelectorAll('[class*="slider"], ol, ul').forEach(el => {
     const children = Array.from(el.children);
     if (children.length < 2) return;
     const allHaveImages = children.every(c => c.querySelector('img'));
     if (!allHaveImages) return;
+    console.log(`[SpotBoard] carousel-collapse: ${el.tagName.toLowerCase()} kept 1 of ${children.length} slides`);
     children.slice(1).forEach(child => child.remove());
-  });
-
-  // 🔍 CAROUSEL INSTRUMENTATION: Log multi-image horizontal containers.
-  // Updated to include [class*="slider"] now that we've confirmed Rightmove's pattern.
-  temp.querySelectorAll('ul, ol, [class*="slider"], [class*="track"], [class*="wrapper"], [class*="slides"]').forEach(el => {
-    const children = Array.from(el.children);
-    if (children.length < 2) return;
-    const allHaveImages = children.every(c => c.querySelector('img'));
-    if (!allHaveImages) return;
-    const classes = (el.className as string).split(' ').slice(0, 4).join('.');
-    console.log(`[SpotBoard] carousel-candidate: ${el.tagName.toLowerCase()}.${classes} — ${children.length} slides`);
   });
 
   // 🎯 RESPONSIVE CARD DEDUP: detect mobile/desktop duplicate siblings.
@@ -1361,8 +1352,12 @@ export function classifyImagesForRefresh(html: string): string {
         context = 'preview';    // 150px - Large hero images
       }
       
-      img.setAttribute('data-scale-context', context);
-      return; // Done with this image
+      if (!inPicture) {
+        img.setAttribute('data-scale-context', context);
+        return; // Done for non-picture images
+      }
+      // Picture images: fall through to HEURISTIC 4 — <source> srcset may upgrade classification.
+      // e.g. Zoopla: height="229" → medium by dims, but sources carry 2400w → upgrades to preview.
     }
     
     // HEURISTIC 2: Check class names (for images without valid dimensions)
@@ -1412,13 +1407,15 @@ export function classifyImagesForRefresh(html: string): string {
       }
     }
     
-    // HEURISTIC 4: srcset max-width upgrade (thumbnail → preview only)
+    // HEURISTIC 4: srcset max-width upgrade (thumbnail → preview; medium → preview for pictures)
     // Large editorial images on news sites carry high `w` srcset descriptors but no class names
     // or dimension attrs — they fall to thumbnail by default. A max-width ≥ 400w signals a
     // full editorial image. 400w is safe: AS.com observed floor = 488w across 5 sessions.
-    // Never overrides icon/small/medium — those are set by upstream heuristics before this point.
-    // Uses getMaxSourceWidth to also check <source> srcset and CDN &w= params (ESPN pattern).
-    if (context === 'thumbnail') {
+    // Never overrides icon/small — those are set by upstream heuristics before this point.
+    // For picture images: also upgrades medium → preview when sources carry large w-descriptors.
+    // At this point sources still exist (resolveLargestPictureSourceForCard runs after HEURISTIC 4).
+    // Uses getMaxSourceWidth to check <source> srcset and CDN &w= params (ESPN pattern).
+    if (context === 'thumbnail' || (context === 'medium' && inPicture)) {
       if (getMaxSourceWidth(img) >= 400) context = 'preview';
     }
 
