@@ -130,6 +130,8 @@ export function promoteBackgroundImages(el: Element, label: string): void {
     if (bgH > 0) {
       const bgCtx = bgH >= 200 ? 'preview' : bgH >= 100 ? 'medium' : 'thumbnail';
       img.setAttribute('data-scale-context', bgCtx);
+    } else {
+      img.setAttribute('data-scale-context', 'thumbnail'); // fallback: no height info available
     }
     // Clean up pre-stamped dimension attributes (capture clone path — no-op on live DOM)
     (bgEl as HTMLElement).removeAttribute?.('data-bg-w');

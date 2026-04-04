@@ -114,6 +114,8 @@ var DomSnapshot = (() => {
       if (bgH > 0) {
         const bgCtx = bgH >= 200 ? "preview" : bgH >= 100 ? "medium" : "thumbnail";
         img.setAttribute("data-scale-context", bgCtx);
+      } else {
+        img.setAttribute("data-scale-context", "thumbnail");
       }
       bgEl.removeAttribute?.("data-bg-w");
       bgEl.removeAttribute?.("data-bg-h");
