@@ -396,45 +396,72 @@ function willNeedActiveTab(url) {
  * These sites use IntersectionObserver or Page Visibility API that cannot be spoofed
  */
 function requiresVisibleTab(url) {
-  // Removed hardcoded domain list - let intelligent fallback handle detection
-  // Previously forced active tab for: hotukdeals.com, premierleague.com, ign.com
-  // Now relies on:
-  // 1. Direct fetch attempt
-  // 2. Skeleton content detection → background tab
-  // 3. Background tab failure → active tab fallback
+  // Intentionally empty — intelligent fallback handles detection automatically:
+  // 1. Background tab attempt
+  // 2. Offscreen popup (unfocused, IO spoof)
+  // 3. Active popup (focused, small screen-edge window) — only if offscreen gets 0 large images
+  // No hardcoded domain list: gate in tabBasedRefresh detects the need organically.
   return false;
+}
+
+// Per-refresh flag: set to true when tabBasedRefresh escalates to the focused active popup
+// (ATTEMPT 3) for a site that hasn't been flagged before. Reset at the start of each call.
+// Read by _buildTabSuccessResult() to include requiresActiveFocus in the return object,
+// allowing callers to persist the flag to sync storage so future refreshes skip to active directly.
+let _sbActiveFocusNeeded = false;
+
+/**
+ * Build a successful tab-refresh result object. Includes requiresActiveFocus:true if the
+ * refresh escalated to the focused active popup (site requires compositor focus to render).
+ */
+function _buildTabSuccessResult(sanitizedHtml) {
+  const r = {
+    success: true,
+    html_cache: sanitizedHtml,
+    last_refresh: new Date().toISOString(),
+    status: 'active'
+  };
+  if (_sbActiveFocusNeeded) r.requiresActiveFocus = true;
+  return r;
 }
 
 /**
  * Tab-based refresh for JS-heavy sites
  * Opens a tab (background or active), waits for JS to load, extracts content
- * 
+ *
  * @param {string} url - The URL to fetch
  * @param {string} selector - CSS selector for component to extract
  * @param {string|null} fingerprint - Optional heading text for multi-match disambiguation
+ * @param {boolean} skipToActive - If true, skip background+offscreen and go straight to active popup
+ *                                 Set for components with requiresActiveFocus=true in storage (self-learned).
  * @returns {Promise<string|null>} - Extracted HTML or null if failed
- * 
+ *
  * Process:
- * 1. Check if site requires active tab (requiresVisibleTab)
+ * 1. Check if site requires active tab (requiresVisibleTab or skipToActive)
  * 2. Try background tab with visibility spoof (seamless)
- * 3. Fallback to active tab if background fails (brief flash)
- * 
+ * 3. Try offscreen unfocused popup (IO fires, no taskbar flash)
+ * 4. Fallback to focused active popup if offscreen gets 0 large images
+ *
  * Handles:
  * - Consent dialogs (auto-click reject/accept)
  * - Lazy-loaded content (waits 5-8s total)
  * - Multiple selector matches (uses fingerprint)
  * - CSS-based duplicates (marks display:none before cloning)
- * 
+ *
  * Used in: refreshComponent() when direct fetch fails or for known problematic sites
  */
-async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0) {
+async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0, skipToActive = false) {
+  _sbActiveFocusNeeded = false; // Reset for this call — will be set if escalation to active popup occurs
   try {
     // Check if this site MUST be visible (Page Visibility API blocks background)
-    if (requiresVisibleTab(url)) {
-      // Skip background attempt - go straight to active tab
+    // skipToActive is set for components with stored requiresActiveFocus=true (self-learned flag)
+    if (requiresVisibleTab(url) || skipToActive) {
+      // Skip background + offscreen attempts - go straight to active tab
       const result = await tryActiveTab(url, selector, fingerprint);
       return result || null;
     }
+
+    if (DEBUG) console.log('[SB-REFRESH]', new URL(url).hostname, 'path=background', 'expected=', expectedImgCount + '/' + expectedLargeImgCount);
 
     // ATTEMPT 1: Try background tab with visibility spoof
     const result = await tryBackgroundWithSpoof(url, selector, fingerprint);
@@ -446,17 +473,42 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
       // Covers Vue/React sites (HotUKDeals) where avatars survive but deal images are IO-gated
       if ((expectedImgCount >= 3 && resultImgCount === 0) ||
           (expectedLargeImgCount >= 1 && resultLargeImgCount === 0)) {
-        if (DEBUG) console.log(`🖼️ [Background Tab] Images degraded (expected ${expectedImgCount}/${expectedLargeImgCount} large, got ${resultImgCount}/${resultLargeImgCount}) - falling back to active tab`);
-        // Fall through to active tab
+        if (DEBUG) console.log('[SB-REFRESH]', new URL(url).hostname, 'images degraded expected=', expectedImgCount + '/' + expectedLargeImgCount, 'got=', resultImgCount + '/' + resultLargeImgCount, '→ trying offscreen');
+        // Fall through to offscreen window
       } else {
         return result;
       }
     }
-    
-    // ATTEMPT 2: Fallback to active tab (guaranteed to work)
+
+    // ATTEMPT 2: Unfocused popup at screen edge — IO spoof fires immediately.
+    // Works for sites where IO-gated images load without a compositor focus frame (e.g. Zoopla).
+    // Does NOT work for sites where Vue child components require a focused compositor frame
+    // to mount (e.g. HotUKDeals box--contents). Gate falls through in that case.
+    const offscreenHtml = await tryOffscreenWindow(url, selector, fingerprint);
+    if (offscreenHtml) {
+      const offImgCount = (offscreenHtml.match(/<img/gi) || []).length;
+      const offLargeImgCount = (offscreenHtml.match(/data-scale-context="(?:thumbnail|medium|preview)"/gi) || []).length;
+      // Gate 1: zero images → fall through
+      if (expectedImgCount >= 3 && offImgCount === 0) {
+        if (DEBUG) console.log('🪟 [Offscreen] Zero images → trying active popup');
+      // Gate 2: zero large images → Vue child components didn't mount (unfocused compositor frame).
+      // Use strict === 0 to avoid false positives on sites with variable content counts (e.g. Zoopla).
+      // Sites like Zoopla get fewer large images due to content rotation, not Vue mounting failure.
+      // HotUKDeals gets 0 large images in offscreen (box--contents never mounts without focus).
+      } else if (expectedLargeImgCount >= 5 && offLargeImgCount === 0) {
+        if (DEBUG) console.log('🪟 [Offscreen] Large imgs absent:', offLargeImgCount, '/', expectedLargeImgCount, '→ trying active popup');
+      } else {
+        if (DEBUG) console.log('🪟 [Offscreen] Accepted:', offImgCount, 'imgs', offLargeImgCount, 'large (classifyFallback will resize)');
+        return offscreenHtml;
+      }
+    }
+
+    // ATTEMPT 3: Focused active popup (last resort — site requires compositor focus frame to render)
+    // Set flag BEFORE calling so callers can persist requiresActiveFocus if this succeeds.
+    _sbActiveFocusNeeded = true;
     const fallbackResult = await tryActiveTab(url, selector, fingerprint);
     if (fallbackResult) return fallbackResult;
-    
+
     return null;
   } catch (error) {
     console.error('Tab refresh failed:', error);
@@ -591,6 +643,8 @@ async function handleConsentDialog(tabId) {
  * Used in: tabBasedRefresh() as first attempt before active tab fallback
  */
 async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
+  const _bgStart = Date.now();
+  if (DEBUG) console.log('[SB-REFRESH] tryBackgroundWithSpoof ENTER', url);
   const tab = await chrome.tabs.create({ url, active: false });
   
   try {
@@ -1040,6 +1094,7 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
     const html = results[0]?.result;
 
     await chrome.tabs.remove(tab.id);
+    if (DEBUG) console.log('[SB-REFRESH] tryBackgroundWithSpoof EXIT elapsed=', Date.now() - _bgStart + 'ms');
     return html;
 
   } catch (error) {
@@ -1050,46 +1105,513 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
 }
 
 /**
- * Active tab refresh (guaranteed to work but flashes briefly)
- * Fallback when background refresh fails or for sites requiring active tab
- * 
+ * Off-screen popup window refresh — silent to user, IntersectionObserver fires (real viewport)
+ * Intermediate fallback between background tab and active tab.
+ *
+ * Creates a 1280×900 popup window positioned at left:-9999 (off any monitor).
+ * The window has a real compositor frame, so IO callbacks fire (unlike minimised windows).
+ * focused:false prevents any focus steal or taskbar flash.
+ *
  * @param {string} url - URL to load
  * @param {string} selector - CSS selector to extract
  * @param {string|null} fingerprint - Optional heading text for multi-match selection
  * @returns {Promise<string|null>} - Extracted HTML or null if failed
- * 
+ */
+async function tryOffscreenWindow(url, selector, fingerprint = null) {
+  let win = null;
+  const _owStart = Date.now();
+  if (DEBUG) console.log('[SB-OFFSCREEN] ENTER', url);
+  try {
+    // state:'normal', focused:false — real compositor frame: Vue virtual scroller gets a real
+    // viewport height and renders list items (and their images). No focus steal.
+    // Positioned so ~55% of the window is on the right screen edge and ~45% extends off-screen.
+    // This satisfies Chrome's "≥50% within visible screen space" constraint while keeping
+    // the window largely out of view. Uses screen.avail* (dashboard page context) to account
+    // for Windows taskbar offset. IO spoof still active for any IO-gated items not yet scrolled into view.
+    const _screenRight = screen.availLeft + screen.availWidth;
+    const _winW = 300;
+    const _winH = Math.min(900, screen.availHeight - 20);
+    const _winLeft = Math.round(_screenRight - _winW * 0.55); // 55% on-screen
+    const _winTop = screen.availTop + 20;
+    win = await chrome.windows.create({
+      url,
+      type: 'popup',
+      state: 'normal',
+      focused: false,
+      left: _winLeft,
+      top: _winTop,
+      width: _winW,
+      height: _winH
+    });
+    const tabId = win.tabs[0].id; // Assign before any await
+
+    // PART A: Inject visibility spoof at document_start — same as tryBackgroundWithSpoof
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      injectImmediately: true,
+      func: () => {
+        Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+        Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+        Object.defineProperty(document, 'hasFocus', { value: () => true, configurable: true });
+        window.dispatchEvent(new Event('focus'));
+        window.dispatchEvent(new Event('scroll'));
+        window.dispatchEvent(new Event('resize'));
+      }
+    });
+
+    // IO SPOOF: always-on for minimized window (no real viewport = IO won't fire without this)
+    // Replaces IntersectionObserver with a mock that immediately fires isIntersecting:true,
+    // triggering Vue/React IO-gated image loads (HotUKDeals, Zoopla, etc.)
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      injectImmediately: true,
+      func: () => {
+        const _IO = window.IntersectionObserver;
+        window.IntersectionObserver = function(callback, options) {
+          const io = new _IO(callback, options);
+          const _observe = io.observe.bind(io);
+          io.observe = function(target) {
+            setTimeout(() => callback([{
+              target,
+              intersectionRatio: 1,
+              isIntersecting: true,
+              boundingClientRect: target.getBoundingClientRect(),
+              intersectionRect: target.getBoundingClientRect(),
+              rootBounds: null,
+              time: performance.now()
+            }], io), 0);
+            return _observe(target);
+          };
+          return io;
+        };
+        console.log('[SpotBoard-IO] IntersectionObserver override active (offscreen window)');
+      }
+    });
+
+    // Wait 2s for initial page load
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Handle consent dialog if present
+    const consentResult = await handleConsentDialog(tabId);
+    if (consentResult.found) {
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    // PART B: Re-fire focus events AFTER Vue/React has bootstrapped (registers IO callbacks post-DOMContentLoaded)
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: () => {
+        window.dispatchEvent(new Event('focus'));
+        window.dispatchEvent(new Event('scroll'));
+        window.dispatchEvent(new Event('resize'));
+      }
+    });
+
+    // Wait for JS to load
+    await new Promise(r => setTimeout(r, 3000));
+
+    // Extract - same script as tryActiveTab (real viewport so IO fires)
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      args: [selector, fingerprint],
+      func: (sel, fp) => {
+        // Find the correct element (by fingerprint if provided)
+        let element = null;
+
+        if (fp) {
+          const allMatches = document.querySelectorAll(sel);
+          for (const el of allMatches) {
+            const text = el.textContent || '';
+            if (text.toLowerCase().includes(fp.toLowerCase())) {
+              element = el;
+              break;
+            }
+          }
+
+          if (!element) {
+            element = document.querySelector(sel);
+          }
+        } else {
+          // No fingerprint - just use first match
+          element = document.querySelector(sel);
+        }
+
+        if (!element) {
+          console.error('[Offscreen] Element not found!');
+          return null;
+        }
+
+        // Now sanitize and extract the found element
+        // Mark hidden elements BEFORE cloning (while CSS is loaded)
+        const allElements = [element, ...Array.from(element.querySelectorAll('*'))];
+        const marked = [];
+
+        allElements.forEach(el => {
+          if (el instanceof HTMLElement && el !== element) {
+            const computed = window.getComputedStyle(el);
+            if (computed.display === 'none') {
+              el.setAttribute('data-spotboard-hidden', 'true');
+              marked.push(el);
+            }
+          }
+        });
+
+        // Convert lazy-loaded images BEFORE cloning
+        // Epic Games and many sites use data-image, data-src, etc. for lazy loading
+        element.querySelectorAll('img').forEach(img => {
+          const lazyAttrs = ['data-image', 'data-src', 'data-lazy-src', 'data-original', 'data-lazy'];
+          for (const attr of lazyAttrs) {
+            const lazyUrl = img.getAttribute(attr);
+            if (lazyUrl && lazyUrl.trim()) {
+              try {
+                const resolvedUrl = new URL(lazyUrl, window.location.href).href;
+                img.setAttribute('src', resolvedUrl);
+                break;
+              } catch (e) {
+                // Invalid URL - skip
+              }
+            }
+          }
+        });
+
+        // 🎯 CSS BACKGROUND-IMAGE: Promote inline bg-image to <img> for image capture
+        element.querySelectorAll('[style*="background-image"]').forEach(el => {
+          if (el.querySelector('img')) return;
+          const bgVal = (el instanceof HTMLElement) ? el.style.backgroundImage : '';
+          if (!bgVal || !bgVal.trim().startsWith('url(') || (bgVal.match(/url\(/g) || []).length !== 1) return;
+          const match = bgVal.match(/url\(['"]?([^'")\s]+)['"]?\)/);
+          if (!match) return;
+          const url = match[1];
+          if (!url || !url.startsWith('http')) return;
+          const img = document.createElement('img');
+          img.src = url;
+          img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
+          el.appendChild(img);
+          console.log('[SpotBoard] bg-image promoted to img (offscreen-refresh):', url.substring(0, 80));
+        });
+
+        // 🎯 MARK CSS-HIDDEN-BUT-LOADED IMAGES (Rightmove fallback pattern)
+        element.querySelectorAll('img').forEach(img => {
+          if (img.naturalWidth > 0 && img.offsetWidth === 0 && img.offsetHeight === 0) {
+            img.setAttribute('data-spotboard-force-visible', 'true');
+          }
+          if ((img.getAttribute('src') ?? '').trim() === '' && !img.closest('picture')) {
+            img.setAttribute('data-spotboard-hidden', 'true');
+            marked.push(img);
+          }
+        });
+
+        // 🎯 5-TIER IMAGE CLASSIFICATION USING LIVE CSS
+        element.querySelectorAll('img').forEach(img => {
+          try {
+            if (img.hasAttribute('data-scale-context')) return;
+
+            let container = img.closest('article, section') || img.parentElement;
+            if (!container) {
+              img.setAttribute('data-scale-context', 'icon');
+              return;
+            }
+
+            const containerRect = container.getBoundingClientRect();
+            const containerArea = containerRect.width * containerRect.height;
+
+            const imgRect = img.getBoundingClientRect();
+            const imageArea = imgRect.width * imgRect.height;
+            const imgHeight = imgRect.height;
+
+            const areaRatio = containerArea > 0 ? imageArea / containerArea : 0;
+
+            let context;
+
+            if (imgHeight < 40 || imageArea < 1600) {
+              context = 'icon';
+            }
+            else if (imgHeight < 70 || imageArea < 4900) {
+              context = 'small';
+            }
+            else if (areaRatio < 0.10) {
+              context = 'small';
+            }
+            else if (areaRatio < 0.25 || imageArea < 15000) {
+              context = 'thumbnail';
+            }
+            else if (areaRatio < 0.50 || imageArea < 40000) {
+              context = 'medium';
+            }
+            else {
+              context = 'preview';
+            }
+
+            img.setAttribute('data-scale-context', context);
+
+          } catch (e) {
+            img.setAttribute('data-scale-context', 'icon');
+          }
+        });
+
+        // 💚❤️ SENTIMENT TAGGING (Phase 2: Semantic Coloring)
+        const SKIP_SELECTOR = 'SCRIPT, STYLE, NOSCRIPT, TEMPLATE, SVG';
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            if (node.parentElement?.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+            if (node.parentElement?.closest('[data-sb-sentiment]')) return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_ACCEPT;
+          }
+        });
+        const textNodesToTag = [];
+        let node;
+
+        const tokenPattern = /(?<!\w)(?<!\±)([+-])(\d[\d.,]*)(%?)/g;
+
+        while ((node = walker.nextNode())) {
+          const text = node.textContent?.trim() || '';
+          if (text.length === 0) continue;
+
+          tokenPattern.lastIndex = 0;
+          const m = tokenPattern.exec(text);
+          if (m) {
+            const sentiment = m[1] === '+' ? 'positive' : 'negative';
+            textNodesToTag.push({ node: node, sentiment: sentiment });
+          }
+        }
+
+        let tagged = 0;
+        textNodesToTag.forEach(({ node, sentiment }) => {
+          let parent = node.parentElement;
+          while (parent && parent !== element) {
+            if (parent.tagName === 'A' || parent.tagName === 'BUTTON' || parent.tagName === 'SPAN') {
+              parent.setAttribute('data-sb-sentiment', sentiment);
+              tagged++;
+              break;
+            }
+            parent = parent.parentElement;
+          }
+          if (node.parentElement && !node.parentElement.hasAttribute('data-sb-sentiment')) {
+            node.parentElement.setAttribute('data-sb-sentiment', sentiment);
+            tagged++;
+          }
+        });
+
+        if (tagged > 0) {
+          console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
+        }
+
+        // Shadow DOM flattening (keep in sync with cloneWithShadow in content.ts)
+        function cloneWithShadow(el) {
+          const shadowClone = el.cloneNode(false);
+          if (el.shadowRoot) {
+            const temp = document.createElement('div');
+            temp.innerHTML = el.shadowRoot.innerHTML;
+
+            temp.querySelectorAll('slot[name]').forEach(slot => {
+              const slotName = slot.getAttribute('name');
+              const assigned = Array.from(el.children).filter(
+                c => c.getAttribute('slot') === slotName
+              );
+              if (assigned.length > 0) {
+                const frag = document.createDocumentFragment();
+                assigned.forEach(c => {
+                  const childClone = cloneWithShadow(c);
+                  childClone.removeAttribute('slot');
+                  frag.appendChild(childClone);
+                });
+                slot.replaceWith(frag);
+              } else if (!slot.hasChildNodes()) {
+                slot.remove();
+              }
+            });
+
+            const defaultSlot = temp.querySelector('slot:not([name])');
+            if (defaultSlot) {
+              const unslotted = Array.from(el.childNodes).filter(n => {
+                if (n.nodeType === Node.ELEMENT_NODE) {
+                  return !n.hasAttribute('slot');
+                }
+                return n.nodeType === Node.TEXT_NODE;
+              });
+              if (unslotted.length > 0) {
+                const frag = document.createDocumentFragment();
+                unslotted.forEach(n => {
+                  if (n.nodeType === Node.ELEMENT_NODE) {
+                    frag.appendChild(cloneWithShadow(n));
+                  } else {
+                    frag.appendChild(n.cloneNode(true));
+                  }
+                });
+                defaultSlot.replaceWith(frag);
+              }
+            }
+
+            while (temp.firstChild) shadowClone.appendChild(temp.firstChild);
+          } else {
+            for (const child of el.childNodes) {
+              if (child.nodeType === Node.ELEMENT_NODE) {
+                shadowClone.appendChild(cloneWithShadow(child));
+              } else {
+                shadowClone.appendChild(child.cloneNode(true));
+              }
+            }
+          }
+          return shadowClone;
+        }
+
+        // Clone with markers (shadow-aware)
+        const clone = cloneWithShadow(element);
+
+        // Clean up original DOM
+        marked.forEach(el => el.removeAttribute('data-spotboard-hidden'));
+
+        // Remove marked elements from clone
+        const hiddenInClone = clone.querySelectorAll('[data-spotboard-hidden="true"]');
+        hiddenInClone.forEach(el => el.remove());
+
+        // PASS 2: Un-hide CSS-constrained images that are actually loaded (safe on clone)
+        clone.querySelectorAll('[data-spotboard-force-visible]').forEach(el => {
+          el.style.cssText += ';display:block!important;width:auto!important;height:auto!important;max-width:100%!important';
+          el.removeAttribute('data-spotboard-force-visible');
+        });
+        element.querySelectorAll('[data-spotboard-force-visible]')
+               .forEach(el => el.removeAttribute('data-spotboard-force-visible'));
+
+        // 🎯 DATA-URI BLUR PLACEHOLDER: Next.js / LQIP pattern
+        let blurPromotions = 0;
+        clone.querySelectorAll('img').forEach(img => {
+          const src = img.getAttribute('src') ?? '';
+          if (!src.startsWith('data:')) return;
+          const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset') || '';
+          const candidates = srcset.split(',')
+            .map(s => s.trim().split(/\s+/)[0])
+            .filter(u => u && !u.startsWith('data:') && u.length > 10);
+          const bestUrl = candidates[candidates.length - 1];
+          if (bestUrl) { img.setAttribute('src', bestUrl); blurPromotions++; }
+        });
+
+        // 🎯 NEXT.JS IMAGE OPTIMIZER: Extract original CDN URL from /_next/image?url=
+        let proxyUnwraps = 0;
+        clone.querySelectorAll('img[src*="/_next/image"]').forEach(img => {
+          try {
+            const parsed = new URL(img.getAttribute('src') ?? '', location.href);
+            const original = parsed.searchParams.get('url');
+            if (original && original.startsWith('http')) { img.setAttribute('src', original); proxyUnwraps++; }
+          } catch { /* malformed URL */ }
+        });
+
+        if (blurPromotions > 0 || proxyUnwraps > 0) {
+          console.log(`🖼️ [SpotBoard] Next.js image fix: ${blurPromotions} blur promotions, ${proxyUnwraps} proxy unwraps`);
+        }
+
+        // 🎯 NEXT.JS FILL LAYOUT: Strip position:absolute fill styles that collapse to 0
+        let fillFixes = 0;
+        clone.querySelectorAll('img').forEach(img => {
+          const style = img.getAttribute('style') ?? '';
+          if (/position\s*:\s*absolute/.test(style) && /width\s*:\s*0/.test(style)) {
+            img.removeAttribute('style');
+            const parent = img.parentElement;
+            if (parent?.tagName === 'SPAN' && /position\s*:\s*absolute/.test(parent.getAttribute('style') ?? '')) {
+              parent.removeAttribute('style');
+            }
+            let ancestor = img.parentElement;
+            for (let i = 0; i < 6 && ancestor; i++) {
+              const aStyle = ancestor.getAttribute('style') ?? '';
+              if (/padding-top\s*:\s*(calc\(|[\d.]+%)/.test(aStyle)) {
+                const cleaned = aStyle.replace(/padding-top\s*:[^;]+;?\s*/g, '').trim().replace(/;+$/, '');
+                if (cleaned) ancestor.setAttribute('style', cleaned);
+                else ancestor.removeAttribute('style');
+                break;
+              }
+              ancestor = ancestor.parentElement;
+            }
+            fillFixes++;
+          }
+        });
+        if (fillFixes > 0) {
+          console.log(`🖼️ [SpotBoard] Next.js fill layout fix: ${fillFixes} images un-collapsed`);
+        }
+
+        return clone.outerHTML;
+      }
+    });
+
+    const html = results?.[0]?.result ?? null;
+    if (DEBUG && html) {
+      const imgCount = (html.match(/<img/gi) || []).length;
+      const largeCount = (html.match(/data-scale-context="(?:thumbnail|medium|preview)"/gi) || []).length;
+      const iconCount = (html.match(/data-scale-context="icon"/gi) || []).length;
+      const smallCount = (html.match(/data-scale-context="small"/gi) || []).length;
+      console.log('[SB-OFFSCREEN] EXIT elapsed=', Date.now() - _owStart + 'ms', 'html=', html.length + ' chars', '| imgs=', imgCount, 'large=', largeCount, 'icon=', iconCount, 'small=', smallCount);
+    } else {
+      if (DEBUG) console.log('[SB-OFFSCREEN] EXIT elapsed=', Date.now() - _owStart + 'ms', 'html= null');
+    }
+    return html;
+
+  } catch (err) {
+    if (DEBUG) console.error('[SB-OFFSCREEN] Error:', err);
+    return null;
+  } finally {
+    if (win?.id) try { await chrome.windows.remove(win.id); } catch (_) {}
+  }
+}
+
+/**
+ * Active tab refresh (guaranteed to work but flashes briefly)
+ * Fallback when background refresh fails or for sites requiring active tab
+ *
+ * @param {string} url - URL to load
+ * @param {string} selector - CSS selector to extract
+ * @param {string|null} fingerprint - Optional heading text for multi-match selection
+ * @returns {Promise<string|null>} - Extracted HTML or null if failed
+ *
  * Process:
  * 1. Save current tab reference
  * 2. Open URL in active tab (user sees it briefly)
  * 3. Wait 2s + consent handling + 3s for JS = 7s total
  * 4. Use fingerprint to select correct element if multiple matches
  * 5. Close tab and return to original tab
- * 
+ *
  * Success rate: 100% (sites can't detect active vs background)
  * User experience: Brief tab flash (2-7 seconds visible)
- * 
+ *
  * Used in: tabBasedRefresh() as fallback, or directly for requiresVisibleTab() sites
  */
 async function tryActiveTab(url, selector, fingerprint = null) {
-  const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const tab = await chrome.tabs.create({ url, active: true });
-  
+  const _atStart = Date.now();
+  if (DEBUG) console.log('[SB-REFRESH] tryActiveTab ENTER', url);
+  // Capture the user's current window BEFORE creating our popup so we can restore focus.
+  const mainWindow = await chrome.windows.getLastFocused({ populate: false }).catch(() => null);
+  // Small focused popup at right screen edge — focused:true gives a real compositor frame
+  // (Vue child components mount, deal images load). 55% on-screen satisfies Chrome's
+  // ≥50% visible constraint; the ~165px visible strip is far less disruptive than a full tab.
+  const _screenRight = screen.availLeft + screen.availWidth;
+  const _winW = 300;
+  const _winH = Math.min(900, screen.availHeight - 20);
+  const _winLeft = Math.round(_screenRight - _winW * 0.55);
+  const _winTop = screen.availTop + 20;
+  const win = await chrome.windows.create({
+    url, type: 'popup', state: 'normal', focused: true,
+    left: _winLeft, top: _winTop, width: _winW, height: _winH
+  });
+  const atTabId = win.tabs[0].id;
+
   try {
     // Wait 2s for initial page load
     await new Promise(r => setTimeout(r, 2000));
     
     // Handle consent dialog if present
-    const consentResult = await handleConsentDialog(tab.id);
+    const consentResult = await handleConsentDialog(atTabId);
     if (consentResult.found) {
       await new Promise(r => setTimeout(r, 2000));
     }
-    
+
     // Wait for JS to load
     await new Promise(r => setTimeout(r, 3000));
-    
+
     // Extract - WITH SANITIZATION AND IMAGE CLASSIFICATION IN THE TAB
     const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+      target: { tabId: atTabId },
       args: [selector, fingerprint],
       func: (sel, fp) => {
         // Find the correct element (by fingerprint if provided)
@@ -1455,19 +1977,20 @@ async function tryActiveTab(url, selector, fingerprint = null) {
 
     const html = results[0]?.result;
 
-    // Close and switch back
-    await chrome.tabs.remove(tab.id);
-    if (currentTab?.id) {
-      await chrome.tabs.update(currentTab.id, { active: true });
+    // Close popup and restore focus to user's window
+    try { await chrome.windows.remove(win.id); } catch (_) {}
+    if (mainWindow?.id) {
+      try { await chrome.windows.update(mainWindow.id, { focused: true }); } catch (_) {}
     }
 
+    if (DEBUG) console.log('[SB-REFRESH] tryActiveTab EXIT elapsed=', Date.now() - _atStart + 'ms');
     return html;
-    
+
   } catch (error) {
     console.error(`❌ [Active Tab] Error:`, error);
-    try { await chrome.tabs.remove(tab.id); } catch (e) {}
-    if (currentTab?.id) {
-      try { await chrome.tabs.update(currentTab.id, { active: true }); } catch (e) {}
+    try { await chrome.windows.remove(win.id); } catch (_) {}
+    if (mainWindow?.id) {
+      try { await chrome.windows.update(mainWindow.id, { focused: true }); } catch (_) {}
     }
     return null;
   }
@@ -1510,7 +2033,7 @@ async function refreshComponent(component) {
     const originalLargeImgCount = (component.html_cache?.match(/data-scale-context="(?:thumbnail|medium|preview)"/gi) || []).length;
     const captureMode = willNeedActiveTab(component.url) ? 'tab-based' : 'direct-fetch';
     if (captureMode === 'tab-based') {
-      const tabHtml = await tabBasedRefresh(component.url, component.selector, null, originalImgCount, originalLargeImgCount);
+      const tabHtml = await tabBasedRefresh(component.url, component.selector, null, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
       
       if (tabHtml) {
         // Verify with fingerprint
@@ -1530,12 +2053,7 @@ async function refreshComponent(component) {
         
         // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
         const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-        return {
-          success: true,
-          html_cache: sanitizedHtml,
-          last_refresh: new Date().toISOString(),
-          status: 'active'
-        };
+        return _buildTabSuccessResult(sanitizedHtml);
       } else {
         return {
           success: false,
@@ -1544,7 +2062,7 @@ async function refreshComponent(component) {
         };
       }
     }
-    
+
     // Fetch fresh HTML from the source URL
     // Include credentials to maintain login sessions (e.g., Yahoo Finance, authenticated sites)
     let fullHtml;
@@ -1574,8 +2092,8 @@ async function refreshComponent(component) {
       console.warn(`⚠️ Direct fetch failed for ${component.name} (${component.url}): ${fetchError} - trying tab fallback`);
       
       const originalFingerprint = extractFingerprint(component.html_cache);
-      const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount);
-      
+      const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+
       if (tabHtml) {
         // Fingerprint verification (skip for position-based captures)
         if (!component.positionBased && originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
@@ -1585,15 +2103,10 @@ async function refreshComponent(component) {
             keepOriginal: true
           };
         }
-        
+
         if (DEBUG) console.log(`🔧 [Fetch Fallback] Tab refresh succeeded for ${component.name}`);
         const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-        return {
-          success: true,
-          html_cache: sanitizedHtml,
-          last_refresh: new Date().toISOString(),
-          status: 'active'
-        };
+        return _buildTabSuccessResult(sanitizedHtml);
       }
       
       // Both fetch and tab failed
@@ -1696,7 +2209,6 @@ async function refreshComponent(component) {
         
         extractedHtml = element.outerHTML;
 
-
                 // HOTUKDEALS/JS-RENDERED IMAGES PATTERN: Check if original had images but extracted has none
         // Sites like HotUKDeals render images via JavaScript - direct fetch gets text but no images
         const originalImgCount = (component.html_cache?.match(/<img/gi) || []).length;
@@ -1771,10 +2283,9 @@ async function refreshComponent(component) {
         if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing) {
           // Extract fingerprint FIRST to pass to tab refresh
           const originalFingerprint = extractFingerprint(component.html_cache);
-          
+
           // Try tab-based refresh as fallback
-          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount);
-          
+          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
           if (tabHtml) {
             // Verify we got the right element by checking fingerprint
             // 🎯 BATCH 3: Skip fingerprint check for position-based captures
@@ -1792,12 +2303,7 @@ async function refreshComponent(component) {
                   const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
                   const newFingerprint = extractFingerprint(sanitizedHtml);
                   if (newFingerprint) component.headingFingerprint = newFingerprint;
-                  return {
-                    success: true,
-                    html_cache: sanitizedHtml,
-                    last_refresh: new Date().toISOString(),
-                    status: 'active'
-                  };
+                  return _buildTabSuccessResult(sanitizedHtml);
                 }
               }
               return {
@@ -1807,18 +2313,13 @@ async function refreshComponent(component) {
               };
             }
             // Position-based captures skip fingerprint check
-            
+
             // Tab refresh worked and verified!
             // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-            return {
-              success: true,
-              html_cache: sanitizedHtml,
-              last_refresh: new Date().toISOString(),
-              status: 'active'
-            };
+            return _buildTabSuccessResult(sanitizedHtml);
           }
-          
+
           // Tab refresh also failed - keep original
           return {
             success: false,
@@ -1842,7 +2343,7 @@ async function refreshComponent(component) {
         } else if (driftBaseline > 500 && extractedHtml.length > driftBaseline * 1.5) {
           console.log(`[SB-REFRESH] Content drift detected: raw=${extractedHtml.length} vs rawBaseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x) → falling back to tab-based refresh`);
           const driftFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
-          const tabHtml = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount, originalLargeImgCount);
+          const tabHtml = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
           if (tabHtml) {
             // Skip fingerprint check for position-based captures
             if (!component.positionBased && driftFingerprint && !tabHtml.toLowerCase().includes(driftFingerprint.toLowerCase())) {
@@ -1859,12 +2360,7 @@ async function refreshComponent(component) {
                   const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
                   const newFingerprint = extractFingerprint(sanitizedHtml);
                   if (newFingerprint) component.headingFingerprint = newFingerprint;
-                  return {
-                    success: true,
-                    html_cache: sanitizedHtml,
-                    last_refresh: new Date().toISOString(),
-                    status: 'active'
-                  };
+                  return _buildTabSuccessResult(sanitizedHtml);
                 }
               }
               return {
@@ -1874,14 +2370,26 @@ async function refreshComponent(component) {
               };
             }
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+            return _buildTabSuccessResult(sanitizedHtml);
+          }
+          // Tab fallback failed — check if direct-fetch content is substantial.
+          // Drift may have fired due to natural content growth (e.g. weather table shows more
+          // hours than at capture time), not CSS-hidden sections. If so, use the direct-fetch
+          // result and reset the drift baseline so future refreshes don't re-trigger.
+          const _driftCheckDiv = document.createElement('div');
+          _driftCheckDiv.innerHTML = extractedHtml;
+          const _driftTextLen = _driftCheckDiv.textContent.trim().length;
+          if (_driftTextLen > 500) {
+            console.log(`[SB-REFRESH] Drift tab fallback failed but direct-fetch has real content (textLen=${_driftTextLen}, htmlLen=${extractedHtml.length}) — using direct-fetch and resetting baseline`);
+            const _driftSanitized = applySanitizationPipeline(extractedHtml, component);
             return {
               success: true,
-              html_cache: sanitizedHtml,
+              html_cache: _driftSanitized,
               last_refresh: new Date().toISOString(),
+              rawCaptureLength: extractedHtml.length,
               status: 'active'
             };
           }
-          // Tab fallback failed - keep original rather than using drifted content
           return {
             success: false,
             error: 'Content drift detected but tab refresh failed',
@@ -2019,7 +2527,7 @@ async function refreshComponent(component) {
         // If heading fallback didn't work, try tab-based refresh
         if (!extractedHtml) {
           const originalFingerprint = extractFingerprint(component.html_cache);
-          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount);
+          const tabHtml = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
         
           if (tabHtml) {
             // 🎯 BATCH 3: Skip fingerprint check for position-based captures
@@ -2035,12 +2543,7 @@ async function refreshComponent(component) {
                   const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
                   const newFingerprint = extractFingerprint(sanitizedHtml);
                   if (newFingerprint) component.headingFingerprint = newFingerprint;
-                  return {
-                    success: true,
-                    html_cache: sanitizedHtml,
-                    last_refresh: new Date().toISOString(),
-                    status: 'active'
-                  };
+                  return _buildTabSuccessResult(sanitizedHtml);
                 }
               }
               return {
@@ -2052,14 +2555,9 @@ async function refreshComponent(component) {
             // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
             if (DEBUG) console.log(`🔧 [2nd Tab Fallback HTML Pipeline] ${component.name}:`);
             if (DEBUG) console.log(`   1. Tab HTML: ${tabHtml.length} chars`);
-            
+
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-            return {
-              success: true,
-              html_cache: sanitizedHtml,
-              last_refresh: new Date().toISOString(),
-              status: 'active'
-            };
+            return _buildTabSuccessResult(sanitizedHtml);
           }
         }
       }
@@ -2102,6 +2600,7 @@ async function refreshComponent(component) {
       success: true,
       html_cache: sanitizedHtml,
       last_refresh: new Date().toISOString(),
+      rawCaptureLength: extractedHtml.length, // Self-updating baseline — prevents drift false-positives on sites with naturally varying content size (weather, scores, stocks)
       status: 'active'
     };
     
@@ -2202,7 +2701,9 @@ async function refreshAll() {
       const comp = activeComponents[i];
       const displayName = comp.customLabel || comp.name;
       const needsActiveTab = requiresVisibleTab(comp.url);
-      
+
+      if (DEBUG) console.log('[SB-QUEUE] card=', displayName, (i + 1) + '/' + activeComponents.length, 'started');
+
       // Update toast to show current component
       toastManager.updateProgress(displayName, needsActiveTab);
       
@@ -2300,7 +2801,8 @@ async function refreshAll() {
           lastSuccessAt: comp.lastSuccessAt,
           lastOutcome: comp.lastOutcome || 'paused',
           lastErrorCode: comp.lastErrorCode,
-          lastErrorAt: comp.lastErrorAt
+          lastErrorAt: comp.lastErrorAt,
+          ...(comp.requiresActiveFocus ? { requiresActiveFocus: true } : {})
         };
         
         const pausedEntry = {
@@ -2316,6 +2818,10 @@ async function refreshAll() {
         const attemptTimestamp = new Date().toISOString();
         const errorCode = result.success ? null : classifyError(result.error);
 
+        // If this refresh required the active focused popup, persist the flag so future
+        // refreshes skip background+offscreen and go straight to tryActiveTab.
+        // Once set, the flag is preserved (never cleared) — comp.requiresActiveFocus from storage.
+        const updatedActiveFocus = result.requiresActiveFocus || comp.requiresActiveFocus || false;
         syncUpdates[`comp-${comp.id}`] = {
           id: comp.id,
           name: comp.name,
@@ -2334,7 +2840,8 @@ async function refreshAll() {
           lastSuccessAt: result.success ? attemptTimestamp : comp.lastSuccessAt,
           lastOutcome: result.success ? 'success' : 'failed',
           lastErrorCode: errorCode,
-          lastErrorAt: result.success ? null : attemptTimestamp
+          lastErrorAt: result.success ? null : attemptTimestamp,
+          ...(updatedActiveFocus ? { requiresActiveFocus: true } : {})
         };
         
         // Save full data to local (including HTML)
@@ -2357,7 +2864,10 @@ async function refreshAll() {
               last_refresh: result.last_refresh,
               excludedSelectors: comp.excludedSelectors || []
             };
-            if (comp.rawCaptureLength) successEntry.rawCaptureLength = comp.rawCaptureLength;
+            // Use result.rawCaptureLength if the refresh provided an updated baseline (direct-fetch success or drift graceful fallback)
+            // Otherwise preserve the existing baseline
+            const _newRawCapture = result.rawCaptureLength || comp.rawCaptureLength;
+            if (_newRawCapture) successEntry.rawCaptureLength = _newRawCapture;
             updatedLocalData[comp.id] = successEntry;
           }
         } else {

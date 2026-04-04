@@ -1400,6 +1400,12 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 `;
               }
 
+              // Update in-memory component so the clock modal reads the fresh time on next open
+              component.last_refresh = result.last_refresh;
+
+              // Persist self-learned active-focus requirement so next refresh skips background+offscreen
+              if (result.requiresActiveFocus) component.requiresActiveFocus = true;
+
               // Update clock tooltip with new timestamp
               const clockTooltip = card.querySelector('.custom-tooltip');
               if (clockTooltip) {
@@ -1425,7 +1431,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                   lastSuccessAt: attemptTimestamp,
                   lastOutcome: 'success',
                   lastErrorCode: null,
-                  lastErrorAt: null
+                  lastErrorAt: null,
+                  ...(component.requiresActiveFocus ? { requiresActiveFocus: true } : {})
                 }
               }, () => {
                 if (chrome.runtime.lastError) console.warn('Sync write error:', chrome.runtime.lastError);
@@ -1717,6 +1724,21 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       if (clockBtn) {
         clockBtn.addEventListener('click', (e) => {
           e.stopPropagation();
+
+          // Compute fresh at click time — component.last_refresh is updated in memory
+          // after each single-card refresh, so this always shows the current value.
+          let currentTimestampText = 'Never refreshed';
+          if (component.last_refresh) {
+            const lu = new Date(component.last_refresh);
+            const now = new Date();
+            const diffMs = now - lu;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+            const abs = `${lu.getDate()} ${lu.toLocaleString('en-GB', { month: 'short' })} ${lu.getFullYear()}, ${lu.getHours().toString().padStart(2,'0')}:${lu.getMinutes().toString().padStart(2,'0')}`;
+            let rel = diffMins < 1 ? 'just now' : diffMins === 1 ? '1 minute ago' : diffMins < 60 ? `${diffMins} minutes ago` : diffHours === 1 ? '1 hour ago' : diffHours < 24 ? `${diffHours} hours ago` : diffDays === 1 ? '1 day ago' : diffDays < 7 ? `${diffDays} days ago` : 'over a week ago';
+            currentTimestampText = `${abs} (${rel})`;
+          }
           
           // Create custom modal with clickable URL
           const modal = document.createElement('div');
@@ -1756,7 +1778,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             </div>
             <div style="margin-bottom: 12px;">
               <div style="font-weight: 600; margin-bottom: 4px;">Last updated:</div>
-              <div style="color: #cbd5e0;">${timestampText}</div>
+              <div style="color: #cbd5e0;">${currentTimestampText}</div>
             </div>
             <div style="margin-bottom: 20px;">
               <div style="font-weight: 600; margin-bottom: 4px;">Capture method:</div>
