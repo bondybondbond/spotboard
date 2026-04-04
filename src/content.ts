@@ -1,5 +1,6 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
 import { cleanupDuplicates, tagSentimentData } from './utils/dom-cleanup';
+import { cloneWithShadow, promoteLazyImages } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
 
 // Debug mode - set to true for detailed logging
@@ -467,76 +468,6 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
   });
 }
 
-// Flattens open shadow DOM into light DOM for static capture.
-// Not suitable for re-hydrating components — snapshot semantics only.
-// Nested shadow roots are intentionally serialised as plain HTML (desired for sanitiser pipeline).
-// Closed shadow roots (el.shadowRoot === null) fall through gracefully — same behaviour as before.
-function cloneWithShadow(el: Element): Element {
-  const clone = el.cloneNode(false) as Element;
-  const host = el as HTMLElement;
-  if (host.shadowRoot) {
-    // Shadow content is trusted (same-origin browser DOM, sanitised downstream by cleanupDuplicates).
-    // Slot flattening: replace <slot name="X"> with matching light DOM [slot="X"] children,
-    // and the default <slot> with unslotted children. This preserves the shadow template
-    // layout while ensuring light DOM content (e.g. Reddit shreddit-post titles) is not lost.
-    const temp = document.createElement('div');
-    temp.innerHTML = host.shadowRoot.innerHTML;
-
-    // Named slots → substitute matching light DOM children
-    temp.querySelectorAll('slot[name]').forEach(slot => {
-      const slotName = slot.getAttribute('name')!;
-      const assigned = Array.from(el.children).filter(
-        c => c.getAttribute('slot') === slotName
-      );
-      if (assigned.length > 0) {
-        const frag = document.createDocumentFragment();
-        assigned.forEach(c => {
-          const childClone = cloneWithShadow(c);
-          childClone.removeAttribute('slot'); // clean HTML — slot attr is meaningless outside shadow
-          frag.appendChild(childClone);
-        });
-        slot.replaceWith(frag);
-      } else if (!slot.hasChildNodes()) {
-        slot.remove(); // empty fallback — drop it
-      }
-      // else: keep slot's fallback children as-is
-    });
-
-    // Default (unnamed) slot → substitute unslotted light DOM children
-    const defaultSlot = temp.querySelector('slot:not([name])');
-    if (defaultSlot) {
-      const unslotted = Array.from(el.childNodes).filter(n => {
-        if (n.nodeType === Node.ELEMENT_NODE) {
-          return !(n as Element).hasAttribute('slot');
-        }
-        return n.nodeType === Node.TEXT_NODE;
-      });
-      if (unslotted.length > 0) {
-        const frag = document.createDocumentFragment();
-        unslotted.forEach(n => {
-          if (n.nodeType === Node.ELEMENT_NODE) {
-            frag.appendChild(cloneWithShadow(n as Element));
-          } else {
-            frag.appendChild(n.cloneNode(true));
-          }
-        });
-        defaultSlot.replaceWith(frag);
-      }
-    }
-
-    while (temp.firstChild) clone.appendChild(temp.firstChild);
-  } else {
-    for (const child of el.childNodes) {
-      if (child.nodeType === Node.ELEMENT_NODE) {
-        clone.appendChild(cloneWithShadow(child as Element));
-      } else {
-        clone.appendChild(child.cloneNode(true));
-      }
-    }
-  }
-  return clone;
-}
-
 function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []): string {
   // 🎯 STEP 1: Mark hidden elements in ORIGINAL DOM (before cloning)
   // Check computed styles on live DOM elements, then mark them for removal
@@ -881,27 +812,8 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     });
   });
   
-  // 🎯 FIX LAZY-LOADED IMAGES: Convert data-image/data-src to src
-  // Epic Games, many modern sites use data-image, data-src, data-lazy-src for lazy loading
-  // These need to be swapped to src before we capture, otherwise images are blank placeholders
-  clone.querySelectorAll('img').forEach(img => {
-    // Common lazy-load attribute names (in priority order)
-    const lazyAttrs = ['data-image', 'data-src', 'data-lazy-src', 'data-original', 'data-lazy'];
-    
-    for (const attr of lazyAttrs) {
-      const lazyUrl = img.getAttribute(attr);
-      if (lazyUrl && lazyUrl.trim()) {
-        // Resolve relative URLs (e.g. resized_xxx.JPG) against the current page URL
-        try {
-          const resolvedUrl = new URL(lazyUrl, window.location.href).href;
-          img.setAttribute('src', resolvedUrl);
-          break; // Stop after first match
-        } catch (e) {
-          // Invalid URL - skip
-        }
-      }
-    }
-  });
+  // 🎯 FIX LAZY-LOADED IMAGES: Convert data-image/data-src to src (shared via DomSnapshot)
+  promoteLazyImages(clone);
   
   // 🎯 CSS BACKGROUND-IMAGE: Promote inline bg-image to <img> for image capture
   // Covers: JW Player .jw-preview thumbnails, NBC sidebar [data-testid="background-image"],

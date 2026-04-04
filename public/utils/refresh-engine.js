@@ -732,6 +732,8 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
     await new Promise(r => setTimeout(r, 3000));
     
     // Try to extract - WITH SANITIZATION AND IMAGE CLASSIFICATION IN THE TAB
+    // Inject DomSnapshot into tab context (needed — executeScript funcs run in tab's isolated world)
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['utils/dom-snapshot.js'] });
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       args: [selector, fingerprint],
@@ -768,45 +770,11 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
           }
         });
         
-        // Convert lazy-loaded images BEFORE cloning
-        // Epic Games and many sites use data-image, data-src, etc. for lazy loading
-        element.querySelectorAll('img').forEach(img => {
-          const lazyAttrs = ['data-image', 'data-src', 'data-lazy-src', 'data-original', 'data-lazy'];
-          for (const attr of lazyAttrs) {
-            const lazyUrl = img.getAttribute(attr);
-            if (lazyUrl && lazyUrl.trim()) {
-              try {
-                const resolvedUrl = new URL(lazyUrl, window.location.href).href;
-                img.setAttribute('src', resolvedUrl);
-                break;
-              } catch (e) {
-                // Invalid URL - skip
-              }
-            }
-          }
-        });
+        // Convert lazy-loaded images BEFORE cloning (shared via DomSnapshot)
+        window.DomSnapshot.promoteLazyImages(element);
 
-        // 🎯 CSS BACKGROUND-IMAGE: Promote inline bg-image to <img> for image capture
-        // Covers: JW Player .jw-preview thumbnails, NBC sidebar [data-testid="background-image"],
-        // and any element using background-image as a visual image container.
-        // Guard: single-layer http/https URLs only; skips multi-layer, gradients, data URIs.
-        // NOTE: removeProperty intentionally skipped — live tab path, no visual repaint wanted.
-        element.querySelectorAll('[style*="background-image"]').forEach(el => {
-          if (el.querySelector('img')) return;
-          const bgVal = (el instanceof HTMLElement) ? el.style.backgroundImage : '';
-          // Skip multi-layer backgrounds (multiple url() calls) and non-url() values.
-          // NOTE: cannot use bgVal.includes(',') — Cloudinary URLs contain commas in transform params.
-          if (!bgVal || !bgVal.trim().startsWith('url(') || (bgVal.match(/url\(/g) || []).length !== 1) return;
-          const match = bgVal.match(/url\(['"]?([^'")\s]+)['"]?\)/);
-          if (!match) return;
-          const url = match[1];
-          if (!url || !url.startsWith('http')) return;
-          const img = document.createElement('img');
-          img.src = url;
-          img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
-          el.appendChild(img);
-          console.log('[SpotBoard] bg-image promoted to img (tab-refresh):', url.substring(0, 80));
-        });
+        // Promote bg-image to <img> (shared via DomSnapshot)
+        window.DomSnapshot.promoteBackgroundImages(element, 'tab-refresh');
 
         // 🎯 MARK CSS-HIDDEN-BUT-LOADED IMAGES (Rightmove fallback pattern)
         // Attribute-only marking — no live-page style mutation, no flicker.
@@ -936,75 +904,8 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
           console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
         }
 
-        // Flattens open shadow DOM into light DOM for static capture.
-        // Not suitable for re-hydrating components — snapshot semantics only.
-        // Keep in sync with cloneWithShadow in src/content.ts.
-        function cloneWithShadow(el) {
-          const shadowClone = el.cloneNode(false);
-          if (el.shadowRoot) {
-            // Slot flattening: replace <slot name="X"> with matching light DOM [slot="X"] children,
-            // and the default <slot> with unslotted children. Preserves shadow template layout
-            // while ensuring light DOM content (e.g. Reddit shreddit-post titles) is not lost.
-            const temp = document.createElement('div');
-            temp.innerHTML = el.shadowRoot.innerHTML;
-
-            // Named slots → substitute matching light DOM children
-            temp.querySelectorAll('slot[name]').forEach(slot => {
-              const slotName = slot.getAttribute('name');
-              const assigned = Array.from(el.children).filter(
-                c => c.getAttribute('slot') === slotName
-              );
-              if (assigned.length > 0) {
-                const frag = document.createDocumentFragment();
-                assigned.forEach(c => {
-                  const childClone = cloneWithShadow(c);
-                  childClone.removeAttribute('slot');
-                  frag.appendChild(childClone);
-                });
-                slot.replaceWith(frag);
-              } else if (!slot.hasChildNodes()) {
-                slot.remove();
-              }
-              // else: keep slot's fallback children as-is
-            });
-
-            // Default (unnamed) slot → substitute unslotted light DOM children
-            const defaultSlot = temp.querySelector('slot:not([name])');
-            if (defaultSlot) {
-              const unslotted = Array.from(el.childNodes).filter(n => {
-                if (n.nodeType === Node.ELEMENT_NODE) {
-                  return !n.hasAttribute('slot');
-                }
-                return n.nodeType === Node.TEXT_NODE;
-              });
-              if (unslotted.length > 0) {
-                const frag = document.createDocumentFragment();
-                unslotted.forEach(n => {
-                  if (n.nodeType === Node.ELEMENT_NODE) {
-                    frag.appendChild(cloneWithShadow(n));
-                  } else {
-                    frag.appendChild(n.cloneNode(true));
-                  }
-                });
-                defaultSlot.replaceWith(frag);
-              }
-            }
-
-            while (temp.firstChild) shadowClone.appendChild(temp.firstChild);
-          } else {
-            for (const child of el.childNodes) {
-              if (child.nodeType === Node.ELEMENT_NODE) {
-                shadowClone.appendChild(cloneWithShadow(child));
-              } else {
-                shadowClone.appendChild(child.cloneNode(true));
-              }
-            }
-          }
-          return shadowClone;
-        }
-
-        // Clone with markers (shadow-aware)
-        const clone = cloneWithShadow(element);
+        // Clone with shadow DOM flattening (shared via DomSnapshot — src/utils/dom-snapshot.ts)
+        const clone = window.DomSnapshot.cloneWithShadow(element);
 
         // Clean up original DOM
         marked.forEach(el => el.removeAttribute('data-spotboard-hidden'));
@@ -1212,6 +1113,8 @@ async function tryOffscreenWindow(url, selector, fingerprint = null) {
     await new Promise(r => setTimeout(r, 3000));
 
     // Extract - same script as tryActiveTab (real viewport so IO fires)
+    // Inject DomSnapshot into tab context (needed — executeScript funcs run in tab's isolated world)
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['utils/dom-snapshot.js'] });
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       args: [selector, fingerprint],
@@ -1257,39 +1160,11 @@ async function tryOffscreenWindow(url, selector, fingerprint = null) {
           }
         });
 
-        // Convert lazy-loaded images BEFORE cloning
-        // Epic Games and many sites use data-image, data-src, etc. for lazy loading
-        element.querySelectorAll('img').forEach(img => {
-          const lazyAttrs = ['data-image', 'data-src', 'data-lazy-src', 'data-original', 'data-lazy'];
-          for (const attr of lazyAttrs) {
-            const lazyUrl = img.getAttribute(attr);
-            if (lazyUrl && lazyUrl.trim()) {
-              try {
-                const resolvedUrl = new URL(lazyUrl, window.location.href).href;
-                img.setAttribute('src', resolvedUrl);
-                break;
-              } catch (e) {
-                // Invalid URL - skip
-              }
-            }
-          }
-        });
+        // Convert lazy-loaded images BEFORE cloning (shared via DomSnapshot)
+        window.DomSnapshot.promoteLazyImages(element);
 
-        // 🎯 CSS BACKGROUND-IMAGE: Promote inline bg-image to <img> for image capture
-        element.querySelectorAll('[style*="background-image"]').forEach(el => {
-          if (el.querySelector('img')) return;
-          const bgVal = (el instanceof HTMLElement) ? el.style.backgroundImage : '';
-          if (!bgVal || !bgVal.trim().startsWith('url(') || (bgVal.match(/url\(/g) || []).length !== 1) return;
-          const match = bgVal.match(/url\(['"]?([^'")\s]+)['"]?\)/);
-          if (!match) return;
-          const url = match[1];
-          if (!url || !url.startsWith('http')) return;
-          const img = document.createElement('img');
-          img.src = url;
-          img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
-          el.appendChild(img);
-          console.log('[SpotBoard] bg-image promoted to img (offscreen-refresh):', url.substring(0, 80));
-        });
+        // Promote bg-image to <img> (shared via DomSnapshot)
+        window.DomSnapshot.promoteBackgroundImages(element, 'offscreen-refresh');
 
         // 🎯 MARK CSS-HIDDEN-BUT-LOADED IMAGES (Rightmove fallback pattern)
         element.querySelectorAll('img').forEach(img => {
@@ -1397,67 +1272,8 @@ async function tryOffscreenWindow(url, selector, fingerprint = null) {
           console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
         }
 
-        // Shadow DOM flattening (keep in sync with cloneWithShadow in content.ts)
-        function cloneWithShadow(el) {
-          const shadowClone = el.cloneNode(false);
-          if (el.shadowRoot) {
-            const temp = document.createElement('div');
-            temp.innerHTML = el.shadowRoot.innerHTML;
-
-            temp.querySelectorAll('slot[name]').forEach(slot => {
-              const slotName = slot.getAttribute('name');
-              const assigned = Array.from(el.children).filter(
-                c => c.getAttribute('slot') === slotName
-              );
-              if (assigned.length > 0) {
-                const frag = document.createDocumentFragment();
-                assigned.forEach(c => {
-                  const childClone = cloneWithShadow(c);
-                  childClone.removeAttribute('slot');
-                  frag.appendChild(childClone);
-                });
-                slot.replaceWith(frag);
-              } else if (!slot.hasChildNodes()) {
-                slot.remove();
-              }
-            });
-
-            const defaultSlot = temp.querySelector('slot:not([name])');
-            if (defaultSlot) {
-              const unslotted = Array.from(el.childNodes).filter(n => {
-                if (n.nodeType === Node.ELEMENT_NODE) {
-                  return !n.hasAttribute('slot');
-                }
-                return n.nodeType === Node.TEXT_NODE;
-              });
-              if (unslotted.length > 0) {
-                const frag = document.createDocumentFragment();
-                unslotted.forEach(n => {
-                  if (n.nodeType === Node.ELEMENT_NODE) {
-                    frag.appendChild(cloneWithShadow(n));
-                  } else {
-                    frag.appendChild(n.cloneNode(true));
-                  }
-                });
-                defaultSlot.replaceWith(frag);
-              }
-            }
-
-            while (temp.firstChild) shadowClone.appendChild(temp.firstChild);
-          } else {
-            for (const child of el.childNodes) {
-              if (child.nodeType === Node.ELEMENT_NODE) {
-                shadowClone.appendChild(cloneWithShadow(child));
-              } else {
-                shadowClone.appendChild(child.cloneNode(true));
-              }
-            }
-          }
-          return shadowClone;
-        }
-
-        // Clone with markers (shadow-aware)
-        const clone = cloneWithShadow(element);
+        // Clone with shadow DOM flattening (shared via DomSnapshot — src/utils/dom-snapshot.ts)
+        const clone = window.DomSnapshot.cloneWithShadow(element);
 
         // Clean up original DOM
         marked.forEach(el => el.removeAttribute('data-spotboard-hidden'));
@@ -1607,6 +1423,8 @@ async function tryActiveTab(url, selector, fingerprint = null) {
     await new Promise(r => setTimeout(r, 3000));
 
     // Extract - WITH SANITIZATION AND IMAGE CLASSIFICATION IN THE TAB
+    // Inject DomSnapshot into tab context (needed — executeScript funcs run in tab's isolated world)
+    await chrome.scripting.executeScript({ target: { tabId: atTabId }, files: ['utils/dom-snapshot.js'] });
     const results = await chrome.scripting.executeScript({
       target: { tabId: atTabId },
       args: [selector, fingerprint],
@@ -1652,45 +1470,11 @@ async function tryActiveTab(url, selector, fingerprint = null) {
           }
         });
         
-        // Convert lazy-loaded images BEFORE cloning
-        // Epic Games and many sites use data-image, data-src, etc. for lazy loading
-        element.querySelectorAll('img').forEach(img => {
-          const lazyAttrs = ['data-image', 'data-src', 'data-lazy-src', 'data-original', 'data-lazy'];
-          for (const attr of lazyAttrs) {
-            const lazyUrl = img.getAttribute(attr);
-            if (lazyUrl && lazyUrl.trim()) {
-              try {
-                const resolvedUrl = new URL(lazyUrl, window.location.href).href;
-                img.setAttribute('src', resolvedUrl);
-                break;
-              } catch (e) {
-                // Invalid URL - skip
-              }
-            }
-          }
-        });
+        // Convert lazy-loaded images BEFORE cloning (shared via DomSnapshot)
+        window.DomSnapshot.promoteLazyImages(element);
 
-        // 🎯 CSS BACKGROUND-IMAGE: Promote inline bg-image to <img> for image capture
-        // Covers: JW Player .jw-preview thumbnails, NBC sidebar [data-testid="background-image"],
-        // and any element using background-image as a visual image container.
-        // Guard: single-layer http/https URLs only; skips multi-layer, gradients, data URIs.
-        // NOTE: removeProperty intentionally skipped — live tab path, no visual repaint wanted.
-        element.querySelectorAll('[style*="background-image"]').forEach(el => {
-          if (el.querySelector('img')) return;
-          const bgVal = (el instanceof HTMLElement) ? el.style.backgroundImage : '';
-          // Skip multi-layer backgrounds (multiple url() calls) and non-url() values.
-          // NOTE: cannot use bgVal.includes(',') — Cloudinary URLs contain commas in transform params.
-          if (!bgVal || !bgVal.trim().startsWith('url(') || (bgVal.match(/url\(/g) || []).length !== 1) return;
-          const match = bgVal.match(/url\(['"]?([^'")\s]+)['"]?\)/);
-          if (!match) return;
-          const url = match[1];
-          if (!url || !url.startsWith('http')) return;
-          const img = document.createElement('img');
-          img.src = url;
-          img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
-          el.appendChild(img);
-          console.log('[SpotBoard] bg-image promoted to img (tab-refresh):', url.substring(0, 80));
-        });
+        // Promote bg-image to <img> (shared via DomSnapshot)
+        window.DomSnapshot.promoteBackgroundImages(element, 'tab-refresh');
 
         // 🎯 MARK CSS-HIDDEN-BUT-LOADED IMAGES (Rightmove fallback pattern)
         // Attribute-only marking — no live-page style mutation, no flicker.
@@ -1820,75 +1604,8 @@ async function tryActiveTab(url, selector, fingerprint = null) {
           console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
         }
 
-        // Flattens open shadow DOM into light DOM for static capture.
-        // Not suitable for re-hydrating components — snapshot semantics only.
-        // Keep in sync with cloneWithShadow in src/content.ts.
-        function cloneWithShadow(el) {
-          const shadowClone = el.cloneNode(false);
-          if (el.shadowRoot) {
-            // Slot flattening: replace <slot name="X"> with matching light DOM [slot="X"] children,
-            // and the default <slot> with unslotted children. Preserves shadow template layout
-            // while ensuring light DOM content (e.g. Reddit shreddit-post titles) is not lost.
-            const temp = document.createElement('div');
-            temp.innerHTML = el.shadowRoot.innerHTML;
-
-            // Named slots → substitute matching light DOM children
-            temp.querySelectorAll('slot[name]').forEach(slot => {
-              const slotName = slot.getAttribute('name');
-              const assigned = Array.from(el.children).filter(
-                c => c.getAttribute('slot') === slotName
-              );
-              if (assigned.length > 0) {
-                const frag = document.createDocumentFragment();
-                assigned.forEach(c => {
-                  const childClone = cloneWithShadow(c);
-                  childClone.removeAttribute('slot');
-                  frag.appendChild(childClone);
-                });
-                slot.replaceWith(frag);
-              } else if (!slot.hasChildNodes()) {
-                slot.remove();
-              }
-              // else: keep slot's fallback children as-is
-            });
-
-            // Default (unnamed) slot → substitute unslotted light DOM children
-            const defaultSlot = temp.querySelector('slot:not([name])');
-            if (defaultSlot) {
-              const unslotted = Array.from(el.childNodes).filter(n => {
-                if (n.nodeType === Node.ELEMENT_NODE) {
-                  return !n.hasAttribute('slot');
-                }
-                return n.nodeType === Node.TEXT_NODE;
-              });
-              if (unslotted.length > 0) {
-                const frag = document.createDocumentFragment();
-                unslotted.forEach(n => {
-                  if (n.nodeType === Node.ELEMENT_NODE) {
-                    frag.appendChild(cloneWithShadow(n));
-                  } else {
-                    frag.appendChild(n.cloneNode(true));
-                  }
-                });
-                defaultSlot.replaceWith(frag);
-              }
-            }
-
-            while (temp.firstChild) shadowClone.appendChild(temp.firstChild);
-          } else {
-            for (const child of el.childNodes) {
-              if (child.nodeType === Node.ELEMENT_NODE) {
-                shadowClone.appendChild(cloneWithShadow(child));
-              } else {
-                shadowClone.appendChild(child.cloneNode(true));
-              }
-            }
-          }
-          return shadowClone;
-        }
-
-        // Clone with markers (shadow-aware)
-        const clone = cloneWithShadow(element);
+        // Clone with shadow DOM flattening (shared via DomSnapshot — src/utils/dom-snapshot.ts)
+        const clone = window.DomSnapshot.cloneWithShadow(element);
 
         // Clean up original DOM
         marked.forEach(el => el.removeAttribute('data-spotboard-hidden'));
