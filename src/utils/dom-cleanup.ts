@@ -752,7 +752,10 @@ export function fixRelativeUrls(container: HTMLElement, sourceUrl: string): void
       const href = link.getAttribute('href');
       
       if (href && !href.startsWith('#') && !href.startsWith('javascript:') && !href.startsWith('mailto:') && !href.startsWith('tel:') && !href.startsWith('http')) {
-        if (href.startsWith('/')) {
+        if (href.startsWith('//')) {
+          // Protocol-relative: //cdn.site.com/path → https://cdn.site.com/path
+          (link as HTMLAnchorElement).href = 'https:' + href;
+        } else if (href.startsWith('/')) {
           // Absolute path: /deals/123 → https://hotukdeals.com/deals/123
           (link as HTMLAnchorElement).href = origin + href;
         } else if (href.startsWith('./') || href.startsWith('../')) {

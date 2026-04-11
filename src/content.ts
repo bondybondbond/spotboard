@@ -427,10 +427,10 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
       ${message}
     </div>
     <div style="display: flex; gap: 12px; flex-direction: column; font-family: inherit;">
-      <button id="viewBoardBtn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit;">
+      <button id="viewBoardBtn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; text-transform: none !important;">
         View on SpotBoard
       </button>
-      <button id="closeNotification" style="width: 100%; padding: 12px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit;">
+      <button id="closeNotification" style="width: 100%; padding: 12px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; text-transform: none !important;">
         Close
       </button>
     </div>
@@ -1372,6 +1372,9 @@ function getPreviewCSS(): string {
       font-size: 16px !important;
       line-height: 1.3 !important;
     }
+    h1 *, h2 *, h3 * {
+      font-size: inherit !important;
+    }
     li { margin: 4px 0 !important; padding: 0 !important; }
     a { cursor: pointer !important; }
 
@@ -1535,10 +1538,10 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       </div>
     </div>
     <div style="display: flex; gap: 8px; padding: 12px 20px; flex-shrink: 0; background: #6b46c1; border-radius: 0 0 12px 12px; position: sticky; bottom: 0; z-index: 1; font-family: inherit;">
-      <button id="confirmSpot" style="flex: 1; padding: 12px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit;">
+      <button id="confirmSpot" style="flex: 1; padding: 12px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; text-transform: none !important;">
         Confirm Spot
       </button>
-      <button id="cancelSpot" style="flex: 1; padding: 12px; background: #f56565; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit;">
+      <button id="cancelSpot" style="flex: 1; padding: 12px; background: #f56565; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; text-transform: none !important;">
         Cancel
       </button>
     </div>
