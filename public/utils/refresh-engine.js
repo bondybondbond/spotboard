@@ -743,11 +743,22 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
         if (fp) {
           const allMatches = document.querySelectorAll(sel);
           if (allMatches.length > 1) {
-            for (const el of allMatches) {
-              if ((el.textContent || '').toLowerCase().includes(fp.toLowerCase())) {
-                element = el;
-                break;
+            const _norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
+            const _fpNorm = _norm(fp);
+            // Pass 1: exact heading element match (prevents false positives from incidental text)
+            _outer1: for (const el of allMatches) {
+              for (const h of el.querySelectorAll('h1,h2,h3,h4,caption,[class*="heading"],[class*="title"],[class*="header"]')) {
+                if (_norm(h.textContent || '') === _fpNorm) { element = el; break _outer1; }
               }
+            }
+            // Pass 2: textContent.includes — collect all, prefer largest (main content beats sidebars)
+            if (!element) {
+              const _p2 = [];
+              for (const el of allMatches) {
+                if ((el.textContent || '').toLowerCase().includes(fp.toLowerCase())) _p2.push(el);
+              }
+              if (_p2.length === 1) element = _p2[0];
+              else if (_p2.length > 1) element = _p2.reduce((a, b) => a.outerHTML.length >= b.outerHTML.length ? a : b);
             }
           }
           if (!element) element = document.querySelector(sel);
@@ -1062,14 +1073,23 @@ async function tryOffscreenWindow(url, selector, fingerprint = null) {
 
         if (fp) {
           const allMatches = document.querySelectorAll(sel);
-          for (const el of allMatches) {
-            const text = el.textContent || '';
-            if (text.toLowerCase().includes(fp.toLowerCase())) {
-              element = el;
-              break;
+          const _norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
+          const _fpNorm = _norm(fp);
+          // Pass 1: exact heading element match (prevents false positives from incidental text)
+          _outer1: for (const el of allMatches) {
+            for (const h of el.querySelectorAll('h1,h2,h3,h4,caption,[class*="heading"],[class*="title"],[class*="header"]')) {
+              if (_norm(h.textContent || '') === _fpNorm) { element = el; break _outer1; }
             }
           }
-
+          // Pass 2: textContent.includes — collect all, prefer largest (main content beats sidebars)
+          if (!element) {
+            const _p2 = [];
+            for (const el of allMatches) {
+              if ((el.textContent || '').toLowerCase().includes(fp.toLowerCase())) _p2.push(el);
+            }
+            if (_p2.length === 1) element = _p2[0];
+            else if (_p2.length > 1) element = _p2.reduce((a, b) => a.outerHTML.length >= b.outerHTML.length ? a : b);
+          }
           if (!element) {
             element = document.querySelector(sel);
           }
@@ -1327,14 +1347,23 @@ async function tryActiveTab(url, selector, fingerprint = null) {
         
         if (fp) {
           const allMatches = document.querySelectorAll(sel);
-          for (const el of allMatches) {
-            const text = el.textContent || '';
-            if (text.toLowerCase().includes(fp.toLowerCase())) {
-              element = el;
-              break;
+          const _norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
+          const _fpNorm = _norm(fp);
+          // Pass 1: exact heading element match (prevents false positives from incidental text)
+          _outer1: for (const el of allMatches) {
+            for (const h of el.querySelectorAll('h1,h2,h3,h4,caption,[class*="heading"],[class*="title"],[class*="header"]')) {
+              if (_norm(h.textContent || '') === _fpNorm) { element = el; break _outer1; }
             }
           }
-          
+          // Pass 2: textContent.includes — collect all, prefer largest (main content beats sidebars)
+          if (!element) {
+            const _p2 = [];
+            for (const el of allMatches) {
+              if ((el.textContent || '').toLowerCase().includes(fp.toLowerCase())) _p2.push(el);
+            }
+            if (_p2.length === 1) element = _p2[0];
+            else if (_p2.length > 1) element = _p2.reduce((a, b) => a.outerHTML.length >= b.outerHTML.length ? a : b);
+          }
           if (!element) {
             element = document.querySelector(sel);
           }
@@ -1342,7 +1371,7 @@ async function tryActiveTab(url, selector, fingerprint = null) {
           // No fingerprint - just use first match
           element = document.querySelector(sel);
         }
-        
+
         if (!element) {
           console.error('[Active Tab] Element not found!');
           return null;
@@ -1839,8 +1868,9 @@ async function refreshComponent(component) {
               logStructureFingerprint('skeleton-cached-original', component.html_cache);
               logStructureFingerprint('skeleton-tab-refresh-result', tabHtml);
               // Feed fallback: fingerprint mismatch on a feed just means content rotated
+              // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
               const dominantTag = getDominantTag(component.html_cache);
-              if (dominantTag) {
+              if (dominantTag && dominantTag.tag !== 'a') {
                 const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
                 const newCount = tabDoc.querySelectorAll(dominantTag.tag).length;
                 if (newCount >= 3) {
@@ -1883,10 +1913,25 @@ async function refreshComponent(component) {
         // cleanupDuplicates shrinks stored HTML 2-4x vs the raw fetch.
         const driftBaseline = component.rawCaptureLength || null;
         if (!driftBaseline) {
-          // No baseline yet (old capture) — record raw length for future refreshes, skip detection this time
+          // No raw baseline yet (capture pre-dates rawCaptureLength field, or very first refresh).
+          // Proxy check: raw direct-fetch should not be substantially smaller than stored cleaned HTML
+          // (raw HTML is always ≥ cleaned HTML in normal cases).
+          // If it is < 50% of html_cache, the direct-fetch resolved the wrong DOM section.
+          const _nbCacheLen = (component.html_cache || '').length;
+          if (_nbCacheLen > 500 && extractedHtml.length < _nbCacheLen * 0.5) {
+            console.log(`[SB-REFRESH] No raw baseline: proxy check failed (raw=${extractedHtml.length} < 50% of cache=${_nbCacheLen}) → tab fallback (will not poison baseline)`);
+            const _nbFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
+            const { html: _nbTabHtml, activeFocusNeeded: _nbActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, _nbFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+            if (_nbTabHtml) {
+              const _nbSanitized = applySanitizationPipeline(_nbTabHtml, component);
+              return _buildTabSuccessResult(_nbSanitized, _nbActiveFocusNeeded);
+            }
+            return { success: false, error: 'No-baseline proxy check failed and tab refresh failed', keepOriginal: true };
+          }
+          // Proxy check passed — record raw length for future refreshes
           component.rawCaptureLength = extractedHtml.length;
-        } else if (driftBaseline > 500 && extractedHtml.length > driftBaseline * 1.5) {
-          console.log(`[SB-REFRESH] Content drift detected: raw=${extractedHtml.length} vs rawBaseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x) → falling back to tab-based refresh`);
+        } else if (driftBaseline > 500 && (extractedHtml.length > driftBaseline * 1.5 || extractedHtml.length < driftBaseline * 0.5)) {
+          console.log(`[SB-REFRESH] Content drift detected: raw=${extractedHtml.length} vs rawBaseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x, ${extractedHtml.length > driftBaseline ? 'expanded' : 'shrunk'}) → falling back to tab-based refresh`);
           const driftFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
           const { html: tabHtml, activeFocusNeeded: driftActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
           if (tabHtml) {
@@ -1896,8 +1941,9 @@ async function refreshComponent(component) {
               logStructureFingerprint('drift-cached-original', component.html_cache);
               logStructureFingerprint('drift-tab-refresh-result', tabHtml);
               // Feed fallback: fingerprint mismatch on a feed just means content rotated
+              // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
               const dominantTag = getDominantTag(component.html_cache);
-              if (dominantTag) {
+              if (dominantTag && dominantTag.tag !== 'a') {
                 const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
                 const newCount = tabDoc.querySelectorAll(dominantTag.tag).length;
                 if (newCount >= 3) {
@@ -1917,15 +1963,26 @@ async function refreshComponent(component) {
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
             return _buildTabSuccessResult(sanitizedHtml, driftActiveFocusNeeded);
           }
-          // Tab fallback failed — check if direct-fetch content is substantial.
+          // Tab fallback failed — check if direct-fetch content is substantial AND structurally
+          // compatible with the cached card (guards against accepting CSS-hidden sections like
+          // Cricbuzz "Featured Videos" which has real text but is a completely different section).
           // Drift may have fired due to natural content growth (e.g. weather table shows more
           // hours than at capture time), not CSS-hidden sections. If so, use the direct-fetch
           // result and reset the drift baseline so future refreshes don't re-trigger.
           const _driftCheckDiv = document.createElement('div');
           _driftCheckDiv.innerHTML = extractedHtml;
           const _driftTextLen = _driftCheckDiv.textContent.trim().length;
-          if (_driftTextLen > 500) {
-            console.log(`[SB-REFRESH] Drift tab fallback failed but direct-fetch has real content (textLen=${_driftTextLen}, htmlLen=${extractedHtml.length}) — using direct-fetch and resetting baseline`);
+          const _cachedStructDiv = document.createElement('div');
+          _cachedStructDiv.innerHTML = component.html_cache || '';
+          const _cachedItems = _cachedStructDiv.querySelectorAll('article, li, tr').length;
+          const _newItems = _driftCheckDiv.querySelectorAll('article, li, tr').length;
+          // Structurally compatible: both non-feed (≤2 items), or item count within 4x
+          const _structurallyCompatible = (
+            (_cachedItems <= 2 && _newItems <= 2) ||
+            (_newItems >= _cachedItems * 0.25 && _newItems <= _cachedItems * 4)
+          );
+          if (_driftTextLen > 500 && _structurallyCompatible) {
+            console.log(`[SB-REFRESH] Drift tab fallback failed but direct-fetch has real content (textLen=${_driftTextLen}, htmlLen=${extractedHtml.length}, cachedItems=${_cachedItems}, newItems=${_newItems}) — using direct-fetch and resetting baseline`);
             const _driftSanitized = applySanitizationPipeline(extractedHtml, component);
             return {
               success: true,
@@ -2079,8 +2136,9 @@ async function refreshComponent(component) {
             if (!component.positionBased && originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
               console.warn('[Selector Not Found] Fingerprint mismatch - checking for feed rotation');
               // Feed fallback: fingerprint mismatch on a news feed just means content rotated
+              // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
               const dominantTag = getDominantTag(component.html_cache);
-              if (dominantTag) {
+              if (dominantTag && dominantTag.tag !== 'a') {
                 const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
                 const newCount = tabDoc.querySelectorAll(dominantTag.tag).length;
                 if (newCount >= 3) {
