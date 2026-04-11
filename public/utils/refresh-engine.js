@@ -51,6 +51,9 @@ function classifyError(errorString) {
   if (errorLower.includes('fingerprint') || errorLower.includes('selector') || errorLower.includes('different element') || errorLower.includes('not found')) {
     return 'layout_changed';  // Site layout changed
   }
+  if (errorLower.includes('drift') || errorLower.includes('baseline') || errorLower.includes('proxy check')) {
+    return 'content_drift';   // Content size changed significantly
+  }
   return 'unknown';     // Fallback
 }
 
@@ -62,6 +65,7 @@ function getErrorLabel(errorCode) {
     'skeleton': "Site didn't load completely",
     'network': "Network error",
     'layout_changed': "Site layout changed",
+    'content_drift': "Content changed significantly",
     'unknown': "Refresh failed"
   };
   return labels[errorCode] || "Refresh failed";
@@ -1930,7 +1934,7 @@ async function refreshComponent(component) {
           }
           // Proxy check passed — record raw length for future refreshes
           component.rawCaptureLength = extractedHtml.length;
-        } else if (driftBaseline > 500 && (extractedHtml.length > driftBaseline * 1.5 || extractedHtml.length < driftBaseline * 0.5)) {
+        } else if (driftBaseline > 500 && (extractedHtml.length > driftBaseline * 1.5 || extractedHtml.length < driftBaseline * 0.3)) {
           console.log(`[SB-REFRESH] Content drift detected: raw=${extractedHtml.length} vs rawBaseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x, ${extractedHtml.length > driftBaseline ? 'expanded' : 'shrunk'}) → falling back to tab-based refresh`);
           const driftFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
           const { html: tabHtml, activeFocusNeeded: driftActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
@@ -1981,7 +1985,7 @@ async function refreshComponent(component) {
             (_cachedItems <= 2 && _newItems <= 2) ||
             (_newItems >= _cachedItems * 0.25 && _newItems <= _cachedItems * 4)
           );
-          if (_driftTextLen > 500 && _structurallyCompatible) {
+          if (_driftTextLen > 500) {
             console.log(`[SB-REFRESH] Drift tab fallback failed but direct-fetch has real content (textLen=${_driftTextLen}, htmlLen=${extractedHtml.length}, cachedItems=${_cachedItems}, newItems=${_newItems}) — using direct-fetch and resetting baseline`);
             const _driftSanitized = applySanitizationPipeline(extractedHtml, component);
             return {
