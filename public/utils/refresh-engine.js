@@ -33,6 +33,13 @@
  */
 const DEBUG_IO_SPOOF = false;
 
+// Only medium+ images anchor tier-fallback decisions — thumbnails (avatars, icons) must not gate escalation.
+// After dom-snapshot unification, the 1.3× container walk assigns tighter containers → higher area ratios →
+// avatars that were previously 'small' are now 'thumbnail'. Excluding thumbnail from gate checks restores
+// the correct fallback behaviour: a background result with only thumbnails (no deal images) triggers
+// escalation to offscreen/active-tab. See LEARNINGS.md §XX (HotUKDeals post-unification regression).
+const LARGE_IMG_RE = /data-scale-context="(?:medium|preview)"/gi;
+
 /**
  * Error classification helper - converts raw error strings into friendly user-facing labels
  * Returns enum error code ('skeleton', 'network', 'layout_changed', 'unknown')
@@ -469,8 +476,8 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     if (result) {
       // Check if images are degraded (site may detect background tab despite spoof)
       const resultImgCount = (result.match(/<img/gi) || []).length;
-      const resultLargeImgCount = (result.match(/data-scale-context="(?:thumbnail|medium|preview)"/gi) || []).length;
-      // Fallback if: all images gone OR meaningful (thumbnail+) images gone while expected
+      const resultLargeImgCount = (result.match(LARGE_IMG_RE) || []).length;
+      // Fallback if: all images gone OR meaningful (medium+) images gone while expected
       // Covers Vue/React sites (HotUKDeals) where avatars survive but deal images are IO-gated
       if ((expectedImgCount >= 3 && resultImgCount === 0) ||
           (expectedLargeImgCount >= 1 && resultLargeImgCount === 0)) {
@@ -488,7 +495,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     const offscreenHtml = await tryOffscreenWindow(url, selector, fingerprint);
     if (offscreenHtml) {
       const offImgCount = (offscreenHtml.match(/<img/gi) || []).length;
-      const offLargeImgCount = (offscreenHtml.match(/data-scale-context="(?:thumbnail|medium|preview)"/gi) || []).length;
+      const offLargeImgCount = (offscreenHtml.match(LARGE_IMG_RE) || []).length;
       // Gate 1: zero images → fall through
       if (expectedImgCount >= 3 && offImgCount === 0) {
         if (DEBUG) console.log('🪟 [Offscreen] Zero images → trying active popup');
@@ -1269,7 +1276,7 @@ async function tryOffscreenWindow(url, selector, fingerprint = null) {
     const html = results?.[0]?.result ?? null;
     if (DEBUG && html) {
       const imgCount = (html.match(/<img/gi) || []).length;
-      const largeCount = (html.match(/data-scale-context="(?:thumbnail|medium|preview)"/gi) || []).length;
+      const largeCount = (html.match(LARGE_IMG_RE) || []).length;
       const iconCount = (html.match(/data-scale-context="icon"/gi) || []).length;
       const smallCount = (html.match(/data-scale-context="small"/gi) || []).length;
       console.log('[SB-OFFSCREEN] EXIT elapsed=', Date.now() - _owStart + 'ms', 'html=', html.length + ' chars', '| imgs=', imgCount, 'large=', largeCount, 'icon=', iconCount, 'small=', smallCount);
@@ -1608,7 +1615,7 @@ async function refreshComponent(component) {
     // Count images in original for fallback detection
     const originalImgCount = (component.html_cache?.match(/<img/gi) || []).length;
     // Count meaningful (display-sized) images — 0 for legacy cards pre-classification (not a regression)
-    const originalLargeImgCount = (component.html_cache?.match(/data-scale-context="(?:thumbnail|medium|preview)"/gi) || []).length;
+    const originalLargeImgCount = (component.html_cache?.match(LARGE_IMG_RE) || []).length;
     const captureMode = willNeedActiveTab(component.url) ? 'tab-based' : 'direct-fetch';
     if (captureMode === 'tab-based') {
       const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, null, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);

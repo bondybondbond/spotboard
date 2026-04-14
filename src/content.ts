@@ -545,7 +545,10 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
       const clipRect = findClippingAncestor(el);
       const isOffScreenLeft = rect.right < clipRect.left;   // Fully left of clip container
       const isOffScreenRight = rect.left > clipRect.right;  // Fully right of clip container
-      const isOffScreen = isOffScreenLeft || isOffScreenRight;
+      // Guard: skip elements with zero bounding rect (display:contents wrappers, e.g. HotUKDeals
+      // box--contents). These have no rendered box of their own — rect={0,0,0,0} — but their
+      // children ARE visible and positioned. Treating zero-rect as off-screen strips all children.
+      const isOffScreen = (rect.width > 0 || rect.height > 0) && (isOffScreenLeft || isOffScreenRight);
       
       // Exception: loaded images (naturalWidth > 0) should never be hidden by display:none alone.
       // Carousels (Owl, Swiper, etc.) hide inactive slides with inline style="display:none" and
