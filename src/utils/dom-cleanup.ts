@@ -187,11 +187,11 @@ export function cleanupDuplicates(html: string): string {
   const temp = document.createElement('div');
   temp.innerHTML = html;
 
-  // 🎯 STRIP CSS INJECTION: Remove <style> and stylesheet <link> tags
+  // 🎯 STRIP CSS/JS INJECTION: Remove <style>, <script>, and stylesheet <link> tags
   // Sites like Sportskeeda inline CSS in <style> tags within page sections.
-  // When captured HTML is injected into the dashboard, those styles apply
-  // globally (not scoped to the card), causing layout bleed and dark overlays.
-  temp.querySelectorAll('style, link[rel="stylesheet"]').forEach(el => el.remove());
+  // CNN Fusion CMS injects inline <script> tags (e.g. imageLoadError handler) inside image wrappers.
+  // When captured HTML is injected into the dashboard those tags apply globally.
+  temp.querySelectorAll('style, script, link[rel="stylesheet"]').forEach(el => el.remove());
 
   // Remove known duplicate/hidden elements
   // Note: BBC uses CSS-in-JS class names like "ssrcss-xxx-MobileValue"
@@ -255,6 +255,26 @@ export function cleanupDuplicates(html: string): string {
     'div.caption[aria-label="Image caption"]', // Hidden expanded caption with long description
     'b.toggle-caption',                        // "toggle caption" button text
     'b.hide-caption',                          // "hide caption" button text
+
+    // 🎯 NPR BRIGHTSPOT AUDIO PLAYER — controls bar + hidden dropdown (direct-fetch)
+    // audio-module-controls-wrap: the entire audio player row — "Listen · 2:49", duration,
+    // Transcript link, and Toggle more options button. JS renders an interactive audio widget;
+    // without CSS/JS (DOMParser direct-fetch), all controls render as visible raw text/links.
+    // audio-module-more-tools is CSS-hidden; shown only after "Toggle more options" click.
+    // audio-embed-overlay is the embed code panel, also CSS-hidden by default.
+    'div.audio-module-controls-wrap', // Entire audio player bar: Listen, duration, Transcript, Toggle
+    'div.audio-module-tools',         // Transcript link + Toggle button (sibling of controls-wrap)
+    'ul.audio-module-more-tools',     // Hidden dropdown: Download / Embed / Transcript items
+    'div.audio-embed-overlay',        // Hidden embed code overlay (iframe snippet + copy input)
+
+    // 🎯 CNN FUSION CMS — article label metadata (CSS-hidden in direct-fetch)
+    // container__label-metadata: author/reporter byline inside the label pill
+    //   e.g. "by multiple CNN reporters", "by Aaron Blake" — always hidden in card layout.
+    // card__live-story-timestamp: live story age indicator ("4 mins ago") — always hidden.
+    // figcaption.image__credit: photo credit beneath card image ("CNN", "AP") — CSS-hidden.
+    'span.container__label-metadata',        // Author byline in label: "by multiple CNN reporters"
+    'span.card__live-story-timestamp',       // Live story timestamp: "4 mins ago"
+    'figcaption.image__credit',              // Image credit caption: "CNN", "AP", etc.
   ];
   
   let removedCount = 0;
@@ -263,6 +283,31 @@ export function cleanupDuplicates(html: string): string {
     const matches = temp.querySelectorAll(selector);
     removedCount += matches.length;
     matches.forEach(el => el.remove());
+  });
+
+  // 🎯 CNN FUSION CMS — duplicate label strip (per-article sibling check)
+  // CNN card layout renders two label elements per article item:
+  //   1. card__label-container → visible badge (e.g. "• Live Updates") — inside the image link
+  //   2. container__text-label → same label in the headline link — CSS-hidden when (1) is present
+  // CSS rule: `.container__link:has(>.card--media-card-label-show) + .container__link .container__text-label { display:none }`
+  // DOMParser sees both → "• Live Updates" appears twice.
+  // Fix: only remove a container__text-label whose containing .container__link is the IMMEDIATE
+  // NEXT sibling of a .container__link that contains .card__label-container.
+  // This mirrors the CSS exactly — no global strip that would remove standalone labels.
+  temp.querySelectorAll('.container__text-label').forEach(label => {
+    // Walk up to find the direct .container__link ancestor of this label
+    let ancestor: Element | null = label.parentElement;
+    while (ancestor && ancestor !== temp) {
+      if (ancestor.classList.contains('container__link')) {
+        // Check if previous sibling is also .container__link and contains card__label-container
+        const prev = ancestor.previousElementSibling;
+        if (prev && prev.classList.contains('container__link') && prev.querySelector('.card__label-container')) {
+          label.remove();
+        }
+        break;
+      }
+      ancestor = ancestor.parentElement;
+    }
   });
 
   // 🎯 CAROUSEL SLIDE COLLAPSE: Keep only first slide for photo carousel containers.
@@ -1251,6 +1296,13 @@ function extractWidthFromCdnUrl(url: string): number {
   // Cloudinary: t_focal-860x484, t_fit-760w, t_scale-500x, t_fill-300x200, etc.
   const cld = url.match(/t_(?:focal|fit|scale|fill|pad|crop|thumb)-(\d+)(?:x\d+|w\b)/i);
   if (cld) return parseInt(cld[1], 10);
+  // Cloudinary/Fastly transformation chain: ?q=h_720,w_1280,c_fill or &w_1280 in quality string
+  const chain = url.match(/[,&]w_(\d+)/i);
+  if (chain) return parseInt(chain[1], 10);
+  // NPR Brightspot dims3 CDN: /crop/3889x3889+offset/ → source image width is 3889px.
+  // Even though /resize/300/ is the output size, the crop tells us it's a high-res editorial image.
+  const crop = url.match(/\/crop\/(\d{3,5})x\d/);
+  if (crop) return parseInt(crop[1], 10);
   // Generic WxH in path segments: /860x484/, -860x484., _860x484_
   const generic = url.match(/[/_-](\d{3,4})x(\d{2,4})[/_.\-?&]/);
   if (generic) return parseInt(generic[1], 10);
@@ -1265,9 +1317,16 @@ function extractWidthFromCdnUrl(url: string): number {
  */
 function getMaxSourceWidth(img: HTMLImageElement): number {
   let maxW = getMaxSrcsetWidth(img);
-  // CDN w= query param on img srcset (future-proofing for CDN-style img srcset)
+  // CDN w= query param on img srcset
   const mImg = (img.getAttribute('srcset') || '').match(/[?&]w=(\d+)/i);
   if (mImg) maxW = Math.max(maxW, parseInt(mImg[1], 10));
+  // CDN width= alias (generic) and s= (NPR Brightspot: ?s=800 = 800px size).
+  // Note: ?s= is also used as a cache-buster on some CDNs (Akamai etc.) — if this causes
+  // false positives on non-NPR sites, add a hostname/path guard here.
+  const mWidth = (img.getAttribute('srcset') || '').match(/[?&]width=(\d+)/i);
+  if (mWidth) maxW = Math.max(maxW, parseInt(mWidth[1], 10));
+  const mS = (img.getAttribute('srcset') || '').match(/[?&]s=(\d+)/i);
+  if (mS) maxW = Math.max(maxW, parseInt(mS[1], 10));
 
   // CDN URL dimension extraction on img src (Cloudinary t_focal-WxH, generic WxH)
   maxW = Math.max(maxW, extractWidthFromCdnUrl(img.getAttribute('src') || ''));
@@ -1277,11 +1336,20 @@ function getMaxSourceWidth(img: HTMLImageElement): number {
     picture.querySelectorAll('source').forEach(source => {
       // Standard w-descriptor: "url 660w"
       maxW = Math.max(maxW, getMaxSrcsetWidth(source));
-      // CDN width query param: "?img=...&w=660&h=26" (ESPN combiner, many CDN patterns)
-      const m = (source.getAttribute('srcset') || '').match(/[?&]w=(\d+)/i);
-      if (m) maxW = Math.max(maxW, parseInt(m[1], 10));
-      // CDN URL dimension extraction on source srcset first URL
-      const srcsetUrl = (source.getAttribute('srcset') || '').trim().split(/\s+/)[0];
+      // CDN query params on source srcset: &w=660, ?width=800, ?s=800 (NPR Brightspot)
+      const srcset = source.getAttribute('srcset') || '';
+      const mW = srcset.match(/[?&]w=(\d+)/i);
+      if (mW) maxW = Math.max(maxW, parseInt(mW[1], 10));
+      const mWidth = srcset.match(/[?&]width=(\d+)/i);
+      if (mWidth) maxW = Math.max(maxW, parseInt(mWidth[1], 10));
+      const mS = srcset.match(/[?&]s=(\d+)/i);
+      if (mS) maxW = Math.max(maxW, parseInt(mS[1], 10));
+      // CNN media API / Cloudinary chain: ?q=h_384,w_256,c_fill — width is inside q= value.
+      // Srcsets use density descriptors (1x, 2x, 3x), so ,w_NNN appears at each density level.
+      // Must scan the FULL srcset string (all entries) to find the maximum width.
+      for (const m of srcset.matchAll(/,w_(\d+)/gi)) maxW = Math.max(maxW, parseInt(m[1], 10));
+      // CDN URL dimension extraction on first URL only (t_focal-WxH, generic /WxH/ paths)
+      const srcsetUrl = srcset.trim().split(/\s+/)[0];
       if (srcsetUrl) maxW = Math.max(maxW, extractWidthFromCdnUrl(srcsetUrl));
     });
   }
@@ -1317,9 +1385,14 @@ export function classifyImagesForRefresh(html: string): string {
     // Picture images: ALWAYS reclassify — allows resolveLargestPictureSourceForCard + HEURISTIC 4
     // to run on every refresh, upgrading 'medium'/'thumbnail' → 'preview' when sources indicate
     // a large CDN image. Without this, a mis-classified 'medium' from initial capture persists.
+    // Floor: for picture images, the preserved classification acts as a minimum — heuristics can
+    // upgrade but cannot downgrade. Prevents a correctly-classified 'preview' from falling to
+    // 'thumbnail' when CDN patterns aren't recognised (e.g. CNN ,w_1280 or NPR ?s=800).
+    let preservedCtx: string | null = null;
     if (img.hasAttribute('data-scale-context')) {
       const ctx = img.getAttribute('data-scale-context');
       if (!inPicture && ctx !== 'small' && ctx !== 'icon') return;
+      preservedCtx = inPicture ? ctx : null; // save for floor logic below
       img.removeAttribute('data-scale-context'); // reclassify picture images + small/icon non-pictures
     }
 
@@ -1441,27 +1514,21 @@ export function classifyImagesForRefresh(html: string): string {
       }
     }
 
-    const srcset = img.getAttribute('srcset');
-    if (srcset) {
-      console.log('[SpotBoard] classifyFallback:', {
-        context,
-        src: img.getAttribute('src'),
-        srcset,
-        classes: allClasses.trim(),
-      });
+    // Apply preserved-classification floor for picture images.
+    // HEURISTIC 4 may have already upgraded context; this guard prevents DOWNGRADE only.
+    // tierRank ?? 2 treats any unknown ctx value as 'thumbnail' (safe mid-tier fallback).
+    if (preservedCtx) {
+      const tierRank: Record<string, number> = { icon: 0, small: 1, thumbnail: 2, medium: 3, preview: 4 };
+      if ((tierRank[context] ?? 2) < (tierRank[preservedCtx] ?? 2)) {
+        context = preservedCtx;
+      }
     }
+
     if (inPicture) {
       // Flatten <picture> to largest source URL so narrow card context doesn't pick smallest source.
       // Must run BEFORE data-scale-context is set — classification may change after src update.
       const picture = img.closest('picture')!;
       resolveLargestPictureSourceForCard(picture, img);
-      console.log('[SpotBoard] classifyPicture:', {
-        widthAttr: img.getAttribute('width'),
-        heightAttr: img.getAttribute('height'),
-        src: img.getAttribute('src')?.substring(0, 80),
-        context,
-        classes: img.className.substring(0, 60),
-      });
     }
     img.setAttribute('data-scale-context', context);
   });
