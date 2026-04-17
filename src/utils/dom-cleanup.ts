@@ -201,6 +201,19 @@ export function cleanupDuplicates(html: string): string {
   // When captured HTML is injected into the dashboard those tags apply globally.
   temp.querySelectorAll('style, script, link[rel="stylesheet"]').forEach(el => el.remove());
 
+  // 🎯 TAILWIND SVG SIZE FIX: Inline SVGs with only `size-N` Tailwind classes have no explicit
+  // width/height attributes — Tailwind CSS isn't loaded in the card context, so they render at
+  // their viewBox intrinsic size instead of the intended size-N value (N×4 px).
+  temp.querySelectorAll('svg').forEach(svg => {
+    if (svg.hasAttribute('width') || svg.hasAttribute('height')) return;
+    const cls = svg.getAttribute('class') || '';
+    const m = cls.match(/\bsize-(\d+(?:\.\d+)?)\b/);
+    if (!m) return;
+    const px = Math.round(parseFloat(m[1]) * 4);
+    svg.setAttribute('width', String(px));
+    svg.setAttribute('height', String(px));
+  });
+
   // Remove known duplicate/hidden elements
   // Note: BBC uses CSS-in-JS class names like "ssrcss-xxx-MobileValue"
   const duplicateSelectors = [
@@ -1442,10 +1455,10 @@ export function classifyImagesForRefresh(html: string): string {
     const src = (img.getAttribute('src') || '').toLowerCase();
     const alt = (img.getAttribute('alt') || '').toLowerCase();
     
-    // Icon patterns (25px) - logos, avatars, voting buttons, nav icons
-    if (/icon|logo|badge|avatar|symbol|favicon|profile|user|member|author|upvote|vote|score|rating|rank|point|brand|app-icon|site-icon|emoji|arrow|chevron|caret|close|menu|nav-icon|button/.test(allClasses) ||
-        /avatar|profile|icon|logo|badge|vote|arrow/.test(src) ||
-        /avatar|profile pic|user photo|logo/.test(alt)) {
+    // Icon patterns (25px) - avatars, voting buttons, nav icons, location cues
+    if (/icon|badge|avatar|symbol|favicon|profile|user|member|author|upvote|vote|score|rating|rank|point|app-icon|site-icon|emoji|arrow|chevron|caret|close|menu|nav-icon|button|location|map-pin|direction|navigate/.test(allClasses) ||
+        /avatar|profile|icon|badge|vote|arrow/.test(src) ||
+        /avatar|profile pic|user photo/.test(alt)) {
       context = 'icon';
     }
     // Preview patterns (150px) - only for explicit hero/feature classes
@@ -1455,6 +1468,10 @@ export function classifyImagesForRefresh(html: string): string {
     // Medium patterns (100px) - property/listing images
     else if (/property|listing|house|estate|real-estate/.test(allClasses)) {
       context = 'medium';
+    }
+    // Thumbnail patterns (80px) - brand logos and card/deal images
+    else if (/logo|brand|thumb|card|tile|grid-item|product|item-image|deal|offer|preview/.test(allClasses)) {
+      context = 'thumbnail';
     }
     // Small patterns (48px) - decorative, secondary images
     else if (/small|mini|tiny|decorative|secondary/.test(allClasses)) {

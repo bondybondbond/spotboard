@@ -159,6 +159,10 @@ var DomSnapshot = (() => {
           if (containerRect.height === 0) {
             const ctx = imgHeight >= 200 ? "preview" : imgHeight >= 100 ? "medium" : imgHeight >= 70 ? "thumbnail" : imgHeight >= 40 ? "small" : "icon";
             img.setAttribute("data-scale-context", ctx);
+            const fallbackRef = Math.max(imgHeight * 2, 300);
+            const fallbackRatio = (imgHeight / fallbackRef).toFixed(2);
+            img.setAttribute("data-sb-ratio", fallbackRatio);
+            console.warn("[sb-ratio] zero-height fallback:", img.src, "imgH:", imgHeight, "ratio:", fallbackRatio);
             return;
           }
         }
@@ -171,7 +175,24 @@ var DomSnapshot = (() => {
         else if (areaRatio < 0.25 || imageArea < 15e3) context = "thumbnail";
         else if (areaRatio < 0.5 || imageArea < 4e4) context = "medium";
         else context = "preview";
+        const sbRatio = (imgHeight / containerRect.height).toFixed(2);
+        img.setAttribute("data-sb-ratio", sbRatio);
         img.setAttribute("data-scale-context", context);
+        const RATIO_REF = 200, RATIO_MIN = 14, RATIO_MAX = 180;
+        const wouldRender = Math.min(RATIO_MAX, Math.max(RATIO_MIN, Math.round(parseFloat(sbRatio) * RATIO_REF)));
+        console.info(
+          "[sb-ratio]",
+          img.src.split("/").pop(),
+          "ratio:",
+          sbRatio,
+          "current-tier:",
+          context,
+          "would-render:",
+          wouldRender + "px"
+        );
+        if (parseFloat(sbRatio) > 0.7) {
+          console.warn("[sb-ratio] high-ratio image (grid card?):", img.src, sbRatio);
+        }
       } catch (e) {
         img.setAttribute("data-scale-context", "icon");
       }
