@@ -145,8 +145,16 @@ function isResponsiveDuplicate(
   const linkB = linkHref(b);
 
   if (linkA && linkB) {
-    // Same article href = definitive responsive pair
-    if (linkA === linkB) return { match: true, confidence: 'high', reason: 'img+link' };
+    if (linkA === linkB) {
+      // Guard: same logo + same CTA link but different product text = distinct comparison rows,
+      // not responsive duplicates. Genuine responsive pairs have identical text (same headline).
+      // NOTE: this heuristic blends layout-duplicate detection with content-identity detection;
+      // if this grows more complex, consider splitting into two separate strategies.
+      const fullA = (a.textContent || '').replace(/\s+/g, ' ').trim();
+      const fullB = (b.textContent || '').replace(/\s+/g, ' ').trim();
+      if (fullA && fullB && fullA !== fullB) return NO_MATCH;
+      return { match: true, confidence: 'high', reason: 'img+link' };
+    }
     // Different href = different articles sharing a stock photo — do NOT dedup
     return NO_MATCH;
   }
@@ -203,7 +211,9 @@ export function cleanupDuplicates(html: string): string {
     
     // Mobile-specific content (hidden on desktop)
     '[class*="MobileValue"]',     // BBC mobile duplicate (partial match for CSS-in-JS)
-    '[class*="-mobile"]',         // Generic mobile classes (e.g., "content-mobile", "title-mobile")
+    '[class*="show-mobile"]',     // Shown-on-mobile-only duplicates (e.g., "hide show-mobile", "show-mobile-only")
+                                  // NOT "[class*="-mobile"]" — that also hits "hide-mobile" which means
+                                  // "hidden on mobile" (i.e., desktop-visible content we want to keep).
     '[class*="mobile-"]',         // Generic mobile classes (e.g., "mobile-content", "mobile-title")
     
     // Shortened/abbreviated content (mobile versions)
@@ -343,20 +353,6 @@ export function cleanupDuplicates(html: string): string {
         const first = seenByImg.get(imgUrl)!;
         const result = isResponsiveDuplicate(first, child);
         if (result.match) {
-          const hasLinksA = !!first.querySelector('a[href]');
-          const hasLinksB = !!child.querySelector('a[href]');
-          const textA = getOpeningText(first);
-          const tag = result.confidence === 'high' ? 'dedupCandidate' : 'possibleResponsiveDuplicate';
-          console.log(`[SpotBoard] ${tag}:`, {
-            reason: result.reason,
-            img: imgUrl.substring(imgUrl.lastIndexOf('/') + 1),
-            firstLink: (first.querySelector('a[href]') as HTMLAnchorElement | null)?.href?.substring(0, 80),
-            hasLinksA,
-            hasLinksB,
-            textLength: textA.length,
-            parentTag: parent.tagName,
-            parentClass: (parent.className as string).substring(0, 60),
-          });
           if (result.confidence === 'high') child.remove();
         }
       } else {
