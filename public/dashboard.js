@@ -1448,6 +1448,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                   excludedSelectors: component.excludedSelectors || []
                 };
                 if (component.originalCaptureLength) localEntry.originalCaptureLength = component.originalCaptureLength;
+                const _newRawCapture = result.rawCaptureLength || component.rawCaptureLength;
+                if (_newRawCapture) localEntry.rawCaptureLength = _newRawCapture;
                 localData[component.id] = localEntry;
                 chrome.storage.local.set({ componentsData: localData }, () => {
                   if (chrome.runtime.lastError) console.warn('Local write error:', chrome.runtime.lastError);

@@ -1972,7 +1972,9 @@ async function refreshComponent(component) {
               };
             }
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-            return _buildTabSuccessResult(sanitizedHtml, driftActiveFocusNeeded);
+            const _driftTabResult = _buildTabSuccessResult(sanitizedHtml, driftActiveFocusNeeded);
+            _driftTabResult.rawCaptureLength = tabHtml.length;
+            return _driftTabResult;
           }
           // Tab fallback failed — check if direct-fetch content is substantial AND structurally
           // compatible with the cached card (guards against accepting CSS-hidden sections like
@@ -1992,7 +1994,7 @@ async function refreshComponent(component) {
             (_cachedItems <= 2 && _newItems <= 2) ||
             (_newItems >= _cachedItems * 0.25 && _newItems <= _cachedItems * 4)
           );
-          if (_driftTextLen > 500) {
+          if (_driftTextLen > 30 && _newItems >= 1) {
             console.log(`[SB-REFRESH] Drift tab fallback failed but direct-fetch has real content (textLen=${_driftTextLen}, htmlLen=${extractedHtml.length}, cachedItems=${_cachedItems}, newItems=${_newItems}) — using direct-fetch and resetting baseline`);
             const _driftSanitized = applySanitizationPipeline(extractedHtml, component);
             return {
