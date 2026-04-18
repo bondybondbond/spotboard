@@ -2256,7 +2256,7 @@ async function runWithConcurrency(items, fn, limit) {
 /**
  * Refresh all components in parallel (limit=3 for normal cards, serial for focus-required)
  */
-async function refreshAll() {
+async function refreshAll(allowedIds = null) {
   const btn = document.getElementById('refresh-all-btn');
   const refreshStartTime = Date.now(); // GA4: Track refresh duration
   
@@ -2306,9 +2306,14 @@ async function refreshAll() {
     }
     
     // Separate active vs paused components
-    const activeComponents = components.filter(c => !c.refreshPaused);
+    let activeComponents = components.filter(c => !c.refreshPaused);
     const pausedComponents = components.filter(c => c.refreshPaused);
-    
+
+    // If scoped to a board, only refresh that board's cards — leave pausedComponents untouched
+    if (allowedIds) {
+      activeComponents = activeComponents.filter(c => allowedIds.includes(c.id));
+    }
+
     // Handle all-paused case
     if (activeComponents.length === 0) {
       btn.textContent = `✅ All ${pausedComponents.length} paused`;
@@ -2457,9 +2462,10 @@ async function refreshAll() {
           lastOutcome: comp.lastOutcome || 'paused',
           lastErrorCode: comp.lastErrorCode,
           lastErrorAt: comp.lastErrorAt,
-          ...(comp.requiresActiveFocus ? { requiresActiveFocus: true } : {})
+          ...(comp.requiresActiveFocus ? { requiresActiveFocus: true } : {}),
+          ...(comp.board ? { board: comp.board } : {})
         };
-        
+
         const pausedEntry = {
           selector: comp.selector,
           html_cache: comp.html_cache,
@@ -2496,9 +2502,10 @@ async function refreshAll() {
           lastOutcome: result.success ? 'success' : 'failed',
           lastErrorCode: errorCode,
           lastErrorAt: result.success ? null : attemptTimestamp,
-          ...(updatedActiveFocus ? { requiresActiveFocus: true } : {})
+          ...(updatedActiveFocus ? { requiresActiveFocus: true } : {}),
+          ...(comp.board ? { board: comp.board } : {})
         };
-        
+
         // Save full data to local (including HTML)
         if (result.success) {
           // Validate HTML is not empty before marking as success

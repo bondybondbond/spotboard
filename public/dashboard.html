@@ -7,7 +7,7 @@
   <style>
     body {
       margin: 0;
-      padding: 20px;
+      padding: 0;
       font-family: system-ui, -apple-system, sans-serif;
       background: #e3f2fd;
       min-height: 100vh;
@@ -16,10 +16,13 @@
     }
     .header {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      padding: 12px 20px;
-      margin-bottom: 20px;
-      border-radius: 8px;
+      padding: 8px 20px;
+      margin-bottom: 0;
+      border-radius: 0;
       box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+      position: sticky;
+      top: 0;
+      z-index: 101;
     }
     .components-grid {
       display: grid;
@@ -1607,6 +1610,168 @@
       max-height: calc(100vh - 120px); /* Leave room for button + margin */
       overflow: hidden; /* Prevent scrollbar on drawer */
     }
+
+    /* ── BOARDS PILL TRAY ── */
+    #tab-tray {
+      background: #e3f2fd;
+      padding: 6px 20px 6px;
+      border-bottom: none;
+      display: flex;
+      align-items: center;
+      position: sticky;
+      top: var(--header-h, 52px);
+      z-index: 100;
+    }
+    #tab-tray-inner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      flex: 1;
+    }
+    #tab-tray-inner::-webkit-scrollbar { display: none; }
+    .tab-tray-fade {
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 48px;
+      background: linear-gradient(to right, transparent, #e3f2fd);
+      pointer-events: none;
+    }
+    .sb-tab {
+      padding: 4px 14px;
+      border-radius: 99px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      font-family: inherit;
+      flex-shrink: 0;
+      border: 1.5px solid rgba(0,0,0,0.13);
+      background: #CFCBE5;
+      color: #1a1a2e;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      transition: background 0.15s, box-shadow 0.15s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .sb-tab.active {
+      background: #FFCC67;
+      color: #1a1a2e;
+      border-color: rgba(0,0,0,0.13);
+      box-shadow: 0 2px 8px rgba(255,204,103,0.45);
+    }
+    .sb-tab:not(.active):hover { background: #bdb8d8; }
+    .sb-tab-count {
+      font-size: 13px;
+      font-weight: 600;
+      background: white;
+      color: #1a1a2e;
+      border-radius: 99px;
+      padding: 1px 8px;
+      line-height: 1.5;
+    }
+    .sb-tab.active .sb-tab-count { background: rgba(255,255,255,0.75); }
+    .sb-tab-label { outline: none; }
+    .sb-tab-label[contenteditable="true"] {
+      background: rgba(0,0,0,0.08);
+      border-radius: 3px;
+      padding: 1px 4px;
+      min-width: 40px;
+    }
+    .sb-tab-kebab {
+      opacity: 0;
+      transition: opacity 0.12s;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0 1px;
+      color: rgba(0,0,0,0.45);
+      font-family: inherit;
+      line-height: 1;
+    }
+    .sb-tab:hover .sb-tab-kebab,
+    .sb-tab.active .sb-tab-kebab { opacity: 1; }
+    .sb-tab-kebab:hover { color: rgba(0,0,0,0.75); }
+    .sb-tab-add {
+      padding: 7px 14px;
+      border-radius: 99px;
+      border: 2px dashed #bbbbd0;
+      background: none;
+      color: #aaaabc;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.12s;
+      flex-shrink: 0;
+    }
+    .sb-tab-add:hover { border-color: #9b8cd4; color: #9b8cd4; background: rgba(102,126,234,0.06); }
+    .sb-tab.drag-over { background: #FFCC67 !important; box-shadow: 0 2px 8px rgba(255,204,103,0.5) !important; }
+    .sb-board-menu {
+      position: fixed;
+      background: white;
+      border: 1px solid #e2e2ea;
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      padding: 6px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 160px;
+    }
+    .sb-board-menu button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      padding: 7px 10px;
+      border-radius: 6px;
+      text-align: left;
+      color: #1a1a2e;
+      transition: background 0.1s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+    }
+    .sb-board-menu button:hover { background: #f0f0f5; }
+    .sb-board-menu button.sb-danger { color: #e04040; }
+    .sb-board-menu button.sb-danger:hover { background: #fff0f0; }
+    .sb-board-empty {
+      font-size: 14px;
+      color: #1a1a2e;
+    }
+    #components-container { padding: 10px 20px 20px; }
+    .sb-emoji-picker {
+      z-index: 9999;
+      background: white;
+      border: 1px solid #e2e2ea;
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+      padding: 8px;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 2px;
+      min-width: 200px;
+    }
+    .sb-emoji-picker button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 20px;
+      padding: 5px;
+      border-radius: 6px;
+      line-height: 1;
+      transition: background 0.1s;
+    }
+    .sb-emoji-picker button:hover { background: #f0f0f5; }
   </style>
 </head>
 <body>
@@ -1625,7 +1790,12 @@
       </div>
     </div>
   </div>
-  
+
+  <div id="tab-tray">
+    <div id="tab-tray-inner"></div>
+    <div class="tab-tray-fade"></div>
+  </div>
+
   <div id="components-container">
     <!-- Empty state rendered by dashboard.js on load -->
     <div class="empty-state">

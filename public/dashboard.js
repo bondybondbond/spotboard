@@ -132,6 +132,327 @@ function loadComponentsFromSync() {
   });
 }
 
+// ══════════════════════════════════════════════
+// BOARDS MODULE — tabbed board organisation
+// ══════════════════════════════════════════════
+
+let activeBoard = 'all';
+let allComponents = []; // live reference to IIFE components array
+
+function loadBoards() {
+  return new Promise(r => chrome.storage.sync.get(['boards'], d => r(d.boards || [])));
+}
+
+function saveBoards(arr) {
+  return new Promise(r => chrome.storage.sync.set({ boards: arr }, r));
+}
+
+function setBoardOnCard(componentId, boardId) {
+  return new Promise(resolve => {
+    chrome.storage.sync.get(`comp-${componentId}`, result => {
+      const comp = result[`comp-${componentId}`];
+      if (!comp) { resolve(); return; }
+      if (boardId) comp.board = boardId;
+      else delete comp.board;
+      chrome.storage.sync.set({ [`comp-${componentId}`]: comp }, resolve);
+    });
+  });
+}
+
+function renderTabTray(boards, components) {
+  const inner = document.getElementById('tab-tray-inner');
+  if (!inner) return;
+  inner.innerHTML = '';
+
+  const boardCounts = {};
+  (components || []).forEach(c => {
+    const b = c.board || '';
+    boardCounts[b] = (boardCounts[b] || 0) + 1;
+  });
+  const totalCount = (components || []).length;
+
+  inner.appendChild(createTabBtn('all', '📋', 'All', totalCount, activeBoard === 'all', false));
+
+  (boards || []).forEach(b => {
+    inner.appendChild(createTabBtn(b.id, b.emoji || '📁', b.name, boardCounts[b.id] || 0, activeBoard === b.id, true));
+  });
+
+  if ((boards || []).length < 9) {
+    const addBtn = document.createElement('button');
+    addBtn.className = 'sb-tab-add';
+    addBtn.title = 'New board';
+    addBtn.textContent = '+';
+    addBtn.addEventListener('click', addBoard);
+    inner.appendChild(addBtn);
+  }
+}
+
+function createTabBtn(id, emoji, name, count, isActive, hasKebab) {
+  const btn = document.createElement('button');
+  btn.className = 'sb-tab' + (isActive ? ' active' : '');
+  btn.dataset.boardId = id;
+
+  const emojiNode = document.createTextNode(emoji + ' ');
+  btn.appendChild(emojiNode);
+
+  const label = document.createElement('span');
+  label.className = 'sb-tab-label';
+  label.textContent = name;
+  if (hasKebab) {
+    label.addEventListener('dblclick', e => { e.stopPropagation(); startBoardRenameLabel(label, id); });
+  }
+  btn.appendChild(label);
+
+  const badge = document.createElement('span');
+  badge.className = 'sb-tab-count';
+  badge.textContent = count;
+  btn.appendChild(badge);
+
+  if (hasKebab) {
+    const kebab = document.createElement('button');
+    kebab.className = 'sb-tab-kebab';
+    kebab.title = 'Board options';
+    kebab.textContent = '⋯';
+    kebab.addEventListener('click', e => { e.stopPropagation(); showBoardMenu(e, id); });
+    btn.appendChild(kebab);
+    btn.addEventListener('contextmenu', e => { e.preventDefault(); showBoardMenu(e, id); });
+  }
+
+  btn.addEventListener('click', () => setActiveBoard(id));
+  btn.addEventListener('dragenter', e => { e.preventDefault(); btn.classList.add('drag-over'); });
+  btn.addEventListener('dragover', e => { e.preventDefault(); });
+  btn.addEventListener('dragleave', e => { if (!btn.contains(e.relatedTarget)) btn.classList.remove('drag-over'); });
+  btn.addEventListener('drop', e => { btn.classList.remove('drag-over'); handleTabDrop(e, id); });
+
+  return btn;
+}
+
+function setActiveBoard(id) {
+  activeBoard = id;
+  try { sessionStorage.setItem('sb_activeBoard', id); } catch(e) { /* extension context may block sessionStorage */ }
+  document.querySelectorAll('#tab-tray-inner .sb-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.boardId === id);
+  });
+  filterCardsToBoard(id);
+  if (id !== 'all' && window.GA4 && window.GA4.sendEvent) {
+    loadBoards().then(boards => {
+      window.GA4.sendEvent('board_switched', { board_id: id, total_boards: boards.length });
+    });
+  }
+}
+
+function filterCardsToBoard(boardId) {
+  const grid = document.querySelector('#components-container .components-grid');
+  if (!grid) return;
+
+  const cards = grid.querySelectorAll('.component-card[data-board-id]');
+  let visibleCount = 0;
+  cards.forEach(card => {
+    const show = boardId === 'all' || (card.dataset.boardId || '') === boardId;
+    card.style.display = show ? '' : 'none';
+    if (show) visibleCount++;
+  });
+
+  // Ghost cards: only in All tab
+  grid.querySelectorAll('.ghost-card').forEach(g => {
+    g.style.display = boardId === 'all' ? '' : 'none';
+  });
+
+  // Empty board message
+  let emptyMsg = grid.querySelector('.sb-board-empty');
+  if (visibleCount === 0 && boardId !== 'all') {
+    if (!emptyMsg) {
+      emptyMsg = document.createElement('div');
+      emptyMsg.className = 'sb-board-empty';
+      emptyMsg.style.cssText = 'grid-column:1/-1;padding:56px 24px;text-align:center;color:#aaa;font-size:14px;line-height:1.6;';
+      emptyMsg.innerHTML = '📌 No spots here yet<br><span style="font-size:12px;">Drag a card onto this tab to add it</span>';
+      grid.appendChild(emptyMsg);
+    }
+    emptyMsg.style.display = '';
+  } else if (emptyMsg) {
+    emptyMsg.style.display = 'none';
+  }
+}
+
+async function handleTabDrop(e, boardId) {
+  const cardId = e.dataTransfer.getData('cardId');
+  if (!cardId) return;
+  const newBoard = boardId === 'all' ? null : boardId;
+  await setBoardOnCard(cardId, newBoard);
+  // Update in-memory component
+  const comp = allComponents.find(c => c.id === cardId);
+  if (comp) {
+    if (newBoard) comp.board = newBoard; else delete comp.board;
+  }
+  // Update DOM card attribute
+  const card = document.querySelector(`.component-card[data-card-id="${cardId}"]`);
+  if (card) card.dataset.boardId = newBoard || '';
+  filterCardsToBoard(activeBoard);
+  loadBoards().then(boards => renderTabTray(boards, allComponents));
+}
+
+const BOARD_EMOJI_MAP = {
+  news: '📰', deal: '🛍️', deals: '🛍️', tech: '💻', technology: '💻',
+  house: '🏠', houses: '🏠', property: '🏠', home: '🏠', homes: '🏠',
+  sport: '⚽', sports: '⚽', finance: '💰', money: '💰', financial: '💰',
+  food: '🍕', travel: '✈️', health: '💊', music: '🎵', film: '🎬',
+  movies: '🎬', shopping: '🛒', work: '💼', jobs: '💼', other: '📦',
+  others: '📦', misc: '📦'
+};
+const NUMBER_EMOJIS = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣'];
+const EMOJI_PICKER_LIST = ['📰','🛍️','💻','🏠','⚽','💰','🍕','✈️','💊','🎵','🎬','🛒','💼','📦','📚','🎮','🏋️','🌍','📷','🔬','🌱','⭐','🔥','💡'];
+
+function assignBoardEmoji(name, position) {
+  const key = (name || '').toLowerCase().trim();
+  for (const [kw, em] of Object.entries(BOARD_EMOJI_MAP)) {
+    if (key.includes(kw)) return em;
+  }
+  return NUMBER_EMOJIS[position] || '9️⃣';
+}
+
+async function addBoard() {
+  const name = prompt('Board name:');
+  if (!name || !name.trim()) return;
+  const boards = await loadBoards();
+  if (boards.length >= 9) return; // max 9 boards
+  const emoji = assignBoardEmoji(name.trim(), boards.length);
+  const id = Date.now().toString(36);
+  boards.push({ id, name: name.trim(), emoji });
+  await saveBoards(boards);
+  renderTabTray(boards, allComponents);
+  if (window.GA4 && window.GA4.sendEvent) {
+    window.GA4.sendEvent('board_created', { board_count: boards.length, has_keyword_emoji: !NUMBER_EMOJIS.includes(emoji) });
+  }
+}
+
+function showEmojiPicker(e, boardId) {
+  document.querySelectorAll('.sb-emoji-picker').forEach(p => p.remove());
+  const picker = document.createElement('div');
+  picker.className = 'sb-emoji-picker';
+
+  EMOJI_PICKER_LIST.forEach(em => {
+    const btn = document.createElement('button');
+    btn.textContent = em;
+    btn.addEventListener('click', async () => {
+      picker.remove();
+      const boards = await loadBoards();
+      const board = boards.find(b => b.id === boardId);
+      if (board) { board.emoji = em; await saveBoards(boards); renderTabTray(boards, allComponents); }
+    });
+    picker.appendChild(btn);
+  });
+
+  const tab = document.querySelector(`#tab-tray-inner .sb-tab[data-board-id="${boardId}"]`);
+  const rect = (tab || e.currentTarget).getBoundingClientRect();
+  picker.style.position = 'fixed';
+  picker.style.top = (rect.bottom + 4) + 'px';
+  picker.style.left = rect.left + 'px';
+  document.body.appendChild(picker);
+
+  const closeOnScroll = () => picker.remove();
+  const tabTrayInner = document.getElementById('tab-tray-inner');
+  if (tabTrayInner) tabTrayInner.addEventListener('scroll', closeOnScroll, { once: true });
+  document.addEventListener('scroll', closeOnScroll, { once: true, capture: true });
+
+  const closeOnKey = e => { if (e.key === 'Escape') { picker.remove(); document.removeEventListener('keydown', closeOnKey); } };
+  document.addEventListener('keydown', closeOnKey);
+
+  setTimeout(() => {
+    document.addEventListener('click', ev => { if (!picker.contains(ev.target)) picker.remove(); }, { once: true });
+  }, 0);
+}
+
+function showBoardMenu(e, boardId) {
+  document.querySelectorAll('.sb-board-menu').forEach(m => m.remove());
+  const menu = document.createElement('div');
+  menu.className = 'sb-board-menu';
+
+  const emojiBtn = document.createElement('button');
+  emojiBtn.textContent = '😀 Change emoji';
+  emojiBtn.addEventListener('click', () => { menu.remove(); showEmojiPicker(e, boardId); });
+  menu.appendChild(emojiBtn);
+
+  const renameBtn = document.createElement('button');
+  renameBtn.textContent = '✏️ Rename';
+  renameBtn.addEventListener('click', () => { menu.remove(); startBoardRenameById(boardId); });
+  menu.appendChild(renameBtn);
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'sb-danger';
+  deleteBtn.textContent = '🗑 Delete board';
+  deleteBtn.addEventListener('click', () => { menu.remove(); deleteBoard(boardId); });
+  menu.appendChild(deleteBtn);
+
+  // Position below the parent tab (not just the kebab) for consistent left-alignment
+  const tab = e.currentTarget.closest('.sb-tab') || e.currentTarget;
+  const rect = tab.getBoundingClientRect();
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.left = rect.left + 'px';
+  document.body.appendChild(menu);
+
+  // Close on any scroll — prevents menu drifting when tab tray is scrolled horizontally
+  const closeOnScroll = () => menu.remove();
+  const tabTrayInner = document.getElementById('tab-tray-inner');
+  if (tabTrayInner) tabTrayInner.addEventListener('scroll', closeOnScroll, { once: true });
+  document.addEventListener('scroll', closeOnScroll, { once: true, capture: true });
+
+  setTimeout(() => {
+    document.addEventListener('click', () => menu.remove(), { once: true });
+  }, 0);
+}
+
+function startBoardRenameById(boardId) {
+  const label = document.querySelector(`#tab-tray-inner .sb-tab[data-board-id="${boardId}"] .sb-tab-label`);
+  if (label) startBoardRenameLabel(label, boardId);
+}
+
+function startBoardRenameLabel(label, boardId) {
+  label.setAttribute('contenteditable', 'true');
+  label.focus();
+  const range = document.createRange();
+  range.selectNodeContents(label);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(range);
+
+  const save = async () => {
+    label.removeAttribute('contenteditable');
+    const newName = label.textContent.trim();
+    if (!newName) { label.textContent = label.textContent || 'Board'; return; }
+    const boards = await loadBoards();
+    const board = boards.find(b => b.id === boardId);
+    if (board) { board.name = newName; await saveBoards(boards); }
+  };
+  label.onblur = save;
+  label.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); label.blur(); } };
+}
+
+async function deleteBoard(boardId) {
+  const boards = await loadBoards();
+  const board = boards.find(b => b.id === boardId);
+  if (!board) return;
+  if (!confirm(`Delete board "${board.name}"? Its spots will move to All.`)) return;
+
+  // Unassign all cards in this board (sync storage + in-memory)
+  const affected = allComponents.filter(c => c.board === boardId);
+  await Promise.all(affected.map(c => setBoardOnCard(c.id, null)));
+  affected.forEach(c => delete c.board);
+
+  // Update DOM cards
+  document.querySelectorAll(`.component-card[data-board-id="${boardId}"]`).forEach(card => {
+    card.dataset.boardId = '';
+  });
+
+  const updated = boards.filter(b => b.id !== boardId);
+  await saveBoards(updated);
+
+  if (activeBoard === boardId) activeBoard = 'all';
+  renderTabTray(updated, allComponents);
+  filterCardsToBoard(activeBoard);
+  if (window.GA4 && window.GA4.sendEvent) {
+    window.GA4.sendEvent('board_deleted', { board_count: updated.length });
+  }
+}
+
 // ⏱️ ENGAGEMENT TIME TRACKING: Initialize timer variables (MUST be before async IIFE)
 let engagementStartTime = null;
 const MAX_ENGAGEMENT_MS = 30 * 60 * 1000; // 30 minutes cap
@@ -1158,7 +1479,16 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       // Add size class to card
       const cardSize = component.cardSize || '1x1';
       card.className = `component-card size-${cardSize}${component.refreshPaused ? ' paused' : ''}`;
-      
+      card.dataset.boardId = component.board || '';
+      card.dataset.cardId = component.id;
+      card.setAttribute('draggable', 'true');
+      card.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('cardId', component.id);
+        e.dataTransfer.effectAllowed = 'move';
+        card.style.opacity = '0.5';
+      });
+      card.addEventListener('dragend', () => { card.style.opacity = ''; });
+
       // Format timestamp with both absolute and relative time
       let timestampText = 'Never refreshed';
       if (component.last_refresh) {
@@ -1432,7 +1762,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                   lastOutcome: 'success',
                   lastErrorCode: null,
                   lastErrorAt: null,
-                  ...(component.requiresActiveFocus ? { requiresActiveFocus: true } : {})
+                  ...(component.requiresActiveFocus ? { requiresActiveFocus: true } : {}),
+                  ...(component.board ? { board: component.board } : {})
                 }
               }, () => {
                 if (chrome.runtime.lastError) console.warn('Sync write error:', chrome.runtime.lastError);
@@ -1484,7 +1815,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                   lastSuccessAt: component.lastSuccessAt,
                   lastOutcome: 'failed',
                   lastErrorCode: errorCode,
-                  lastErrorAt: attemptTimestamp
+                  lastErrorAt: attemptTimestamp,
+                  ...(component.board ? { board: component.board } : {})
                 }
               });
 
@@ -1516,7 +1848,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                   lastSuccessAt: component.lastSuccessAt,
                   lastOutcome: 'failed',
                   lastErrorCode: errorCode,
-                  lastErrorAt: attemptTimestamp
+                  lastErrorAt: attemptTimestamp,
+                  ...(component.board ? { board: component.board } : {})
                 }
               });
 
@@ -1633,7 +1966,11 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           
           // Remove card from DOM
           card.remove();
-          
+
+          // Update board tab counts and per-board empty state
+          filterCardsToBoard(activeBoard);
+          loadBoards().then(boards => renderTabTray(boards, allComponents));
+
           // Show empty state — check tour completion first
           if (updated.length === 0) {
             chrome.storage.local.get(['onboardingCompleted', 'dashboardTourShown'], ({ onboardingCompleted, dashboardTourShown }) => {
@@ -1911,6 +2248,18 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       grid.appendChild(card);
     });
 
+    // Boards: store live reference and render tab tray, then restore active board from sessionStorage
+    allComponents = components;
+    loadBoards().then(boards => {
+      renderTabTray(boards, allComponents);
+      try {
+        const savedBoard = sessionStorage.getItem('sb_activeBoard');
+        if (savedBoard && savedBoard !== 'all' && boards.find(b => b.id === savedBoard)) {
+          setActiveBoard(savedBoard);
+        }
+      } catch(e) { /* sessionStorage unavailable */ }
+    });
+
     // Post-first-capture nudge: ghost cards fill empty grid slots up to 3 total
     renderGhostCards(grid, components);
 
@@ -2013,11 +2362,24 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   }
 });
 
-// Attach refresh handler when page loads
+// Attach refresh handler and measure header height for sticky tab tray offset
 document.addEventListener('DOMContentLoaded', () => {
   const refreshBtn = document.getElementById('refresh-all-btn');
   if (refreshBtn) {
-    refreshBtn.addEventListener('click', refreshAll);
+    refreshBtn.addEventListener('click', () => {
+      if (activeBoard === 'all') {
+        refreshAll();
+      } else {
+        const ids = allComponents.filter(c => (c.board || '') === activeBoard).map(c => c.id);
+        refreshAll(ids.length ? ids : null);
+      }
+    });
+  }
+
+  // Set --header-h so #tab-tray sticky top tracks the actual header height
+  const header = document.querySelector('.header');
+  if (header) {
+    document.documentElement.style.setProperty('--header-h', header.offsetHeight + 'px');
   }
 });
 
