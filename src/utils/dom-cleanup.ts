@@ -343,6 +343,10 @@ export function cleanupDuplicates(html: string): string {
     if (children.length < 2) return;
     const allHaveImages = children.every(c => c.querySelector('img'));
     if (!allHaveImages) return;
+    // Guard: product listing carousels (eBay, Amazon) have title+price text per child (>20 chars).
+    // Photo slideshow slides are image-only. Assumes product titles are present, not just prices.
+    const childrenWithSubstantialText = children.filter(c => (c.textContent || '').trim().length > 20);
+    if (childrenWithSubstantialText.length >= 2) return;
     console.log(`[SpotBoard] carousel-collapse: ${el.tagName.toLowerCase()} kept 1 of ${children.length} slides`);
     children.slice(1).forEach(child => child.remove());
   });
