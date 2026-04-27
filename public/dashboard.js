@@ -706,7 +706,9 @@ function renderEmptyState(container) {
       if (typeof gtag !== 'undefined') {
         gtag('event', 'interactive_directory_site_clicked', { site_url: url });
       }
-      chrome.tabs.create({ url: url + '?spotboard_onboarding=1' });
+      chrome.tabs.create({ url: url + '?spotboard_onboarding=1' }, (tab) => {
+        chrome.storage.session.set({ pendingCaptureTabId: tab.id });
+      });
     });
   });
 
@@ -737,11 +739,16 @@ function renderEmptyState(container) {
 // ===== SUBSEQUENT EMPTY STATE (returned user, board cleared after first capture) =====
 
 const SUBSEQUENT_EMPTY_CATEGORIES = [
-  { label: 'News',    domains: ['bbc.co.uk', 'nbcnews.com', 'npr.org'] },
+  { label: 'News',    domains: ['bbc.co.uk', 'cnn.com', 'npr.org'] },
   { label: 'Sports',  domains: ['espn.com', 'as.com', 'sportskeeda.com'] },
   { label: 'Tech',    domains: ['wired.com', 'producthunt.com', 'theverge.com'] },
   { label: 'Deals',   domains: ['amazon.com', 'hotukdeals.com', 'slickdeals.net'] }
 ];
+// Full URLs for domains whose bare-domain redirect drops query params (e.g. bbc.co.uk → www.bbc.co.uk/news)
+const DOMAIN_URL_OVERRIDES = {
+  'bbc.co.uk': 'https://www.bbc.co.uk/news',
+  'cnn.com': 'https://edition.cnn.com/'
+};
 
 function renderSubsequentEmptyState(container) {
   const wrap = document.createElement('div');
@@ -1029,8 +1036,8 @@ function showAddCardModal(cardCount = 0) {
         if (window.GA4 && window.GA4.sendEvent) {
           window.GA4.sendEvent('add_card_modal_site_selected', { domain, card_count: cardCount });
         }
-        chrome.tabs.create({ url: 'https://' + domain }, (tab) => {
-          chrome.storage.session.set({ pendingOnboardingTabId: tab.id });
+        chrome.tabs.create({ url: DOMAIN_URL_OVERRIDES[domain] || 'https://' + domain }, (tab) => {
+          chrome.storage.session.set({ pendingCaptureTabId: tab.id });
         });
       });
 

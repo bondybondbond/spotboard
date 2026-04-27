@@ -294,6 +294,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // keep message channel open for async sendResponse
   }
 
+  // Capture auto-start pull model: content script asks if it should start capture
+  if (request.type === 'CHECK_CAPTURE') {
+    const tabId = sender.tab?.id;
+    (async () => {
+      try {
+        const result = await chrome.storage.session.get('pendingCaptureTabId');
+        if (result.pendingCaptureTabId === tabId) {
+          await chrome.storage.session.remove('pendingCaptureTabId');
+          sendResponse(true);
+        } else {
+          sendResponse(false);
+        }
+      } catch {
+        sendResponse(false);
+      }
+    })();
+    return true;
+  }
+
   // GA4 event handler from content scripts
   if (request.type === 'GA4_EVENT') {
     sendGA4Event(request.eventName, request.params)
