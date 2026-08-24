@@ -15,38 +15,166 @@
  * @param excludedSelectors - Array of CSS selectors for elements to remove
  * @returns HTML with excluded elements removed
  * 
- * Safety: Skips ultra-generic selectors (bare tag names like "div", "span") 
- * to prevent accidentally removing all content
- * 
+ * Safety: Skips ultra-generic selectors (bare tag names like "div", "span")
+ * to prevent accidentally removing all content. A removal-budget check also skips any
+ * selector that matches MORE THAN ONE element and would remove too large a share of the
+ * card (proxy for a selector that over-generalized beyond the single element the user
+ * clicked at capture time). A selector matching exactly one element is always trusted,
+ * regardless of size -- one match cannot be over-generalization.
+ *
  * Used in: Direct fetch refresh, tab-based refresh, skeleton fallback
  */
 export function applyExclusions(html: string, excludedSelectors?: string[]): string {
   if (!html || !excludedSelectors || excludedSelectors.length === 0) {
     return html;
   }
-  
-  
+
+
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = html;
-  
+
+  const STRUCTURAL_SEL = 'li, tr, article';
+
   excludedSelectors.forEach(selector => {
     try {
       // 🚨 SAFETY CHECK: Detect ultra-generic selectors that would remove everything
       const isBareTag = /^[a-z]+$/i.test(selector.trim()); // Just "div", "span", "a", etc.
-      
+
       if (isBareTag) {
         console.warn(`🚨 SKIPPING ultra-generic selector that would remove too much: "${selector}"`);
         return; // Skip this selector entirely
       }
-      
-      const excluded = tempDiv.querySelectorAll(selector);
-      excluded.forEach(el => el.remove());
+
+      // 🎯 EXCLUSION BUDGET: refresh-time removal is querySelectorAll-based (all matches),
+      // not the exact element references the user clicked at capture time. A 3-class selector
+      // like "div.flex.gap-1.items-center" can match dozens of elements the user never saw.
+      //
+      // The budget only applies when a selector matches MORE THAN ONE element. A selector
+      // that matches exactly one element cannot be over-generalizing -- by definition it only
+      // removes what the user actually clicked, however large that one element is (a whole
+      // "Closest Senate Race" table, a multi-line "Begins in X days" paragraph). Penalizing a
+      // single precise match by its size was a real regression found on Kalshi's own re-capture:
+      // every stored selector matched exactly 1 element (generateExclusionSelector already
+      // guarantees this), yet legitimate exclusions were being skipped because that one element
+      // was 24-67% of the card's text. Match count -- not size -- is the actual signal for
+      // "did this selector generalize beyond what the user clicked".
+      const matchCountBefore = tempDiv.querySelectorAll(selector).length;
+
+      if (matchCountBefore > 1) {
+        // Measure by construction (clone -> remove -> compare) so nested matches can't be
+        // double-counted -- the DOM can only remove a subtree once. Evaluated sequentially
+        // against the CURRENT state of tempDiv, so a chain of individually-modest exclusions
+        // can't silently compound into total erasure.
+        const probe = tempDiv.cloneNode(true) as HTMLElement;
+        probe.querySelectorAll(selector).forEach(el => el.remove());
+
+        const textBefore = (tempDiv.textContent || '').trim().length;
+        const textAfter = (probe.textContent || '').trim().length;
+        const structBefore = tempDiv.querySelectorAll(STRUCTURAL_SEL).length;
+        const structAfter = probe.querySelectorAll(STRUCTURAL_SEL).length;
+        const imgBefore = tempDiv.querySelectorAll('img').length;
+        const imgAfter = probe.querySelectorAll('img').length;
+
+        const textRemovedPct = textBefore > 0 ? (textBefore - textAfter) / textBefore : 0;
+        const structRemovedPct = structBefore > 0 ? (structBefore - structAfter) / structBefore : 0;
+        const wipesAllImages = imgBefore > 0 && imgAfter === 0;
+
+        // Threshold calibrated against the real Kalshi reproduction: the actual over-broad
+        // selector from the bug (matches 27 elements, deletes every percentage in the card)
+        // removes 29% of the card's total text -- the structural clause gives zero protection
+        // here because this card is pure Tailwind divs, no li/tr/article at all. 30% would have
+        // let the literal reproduced bug through. 20% catches it with margin.
+        const overTextBudget = textBefore > 0 && textRemovedPct > 0.2;
+        const overStructBudget = structBefore > 0 && structRemovedPct > 0.4;
+
+        if (overTextBudget || overStructBudget || wipesAllImages) {
+          console.warn(
+            `🚨 SKIPPING exclusion selector that exceeds its removal budget: "${selector}" ` +
+            `(matches=${matchCountBefore}, text -${Math.round(textRemovedPct * 100)}%, structural -${Math.round(structRemovedPct * 100)}%, ` +
+            `wipesAllImages=${wipesAllImages})`
+          );
+          return; // Skip -- do not commit this selector's removal
+        }
+      }
+
+      // Within budget (or a single precise match, which is always trusted) -- commit
+      tempDiv.querySelectorAll(selector).forEach(el => el.remove());
     } catch (e) {
       console.warn('  ⚠️ Could not remove excluded element:', selector, e);
     }
   });
-  
+
   return tempDiv.innerHTML;
+}
+
+/**
+ * Detect catastrophic content loss between a cached card and a fresh refresh result.
+ * The output-side guard: refresh has ~8 input-side guards (skeleton, drift, fingerprint,
+ * proxy) but none of them inspect what actually got stored. This is the one that does.
+ *
+ * Fires on:
+ * - Primary (emptiness): near-zero text AND zero structural/media nodes in the new result --
+ *   but only when the cache proves the card is capable of more than that (cached text >= 30
+ *   chars or the cache had a media/structural node). A card that has always been a bare short
+ *   value (e.g. Kalshi's "54%") is exempt -- otherwise every legitimate refresh of a tiny card
+ *   would be rejected forever.
+ * - Structural regression: cached had real structural content (li/tr/article), new has none.
+ *
+ * Deliberately NOT a ratio (e.g. "<25% of cached text") -- sites like yr.no legitimately
+ * shrink to ~40% of baseline at end-of-day and must not be flagged. Absolute emptiness is
+ * unambiguous; a card with zero real content is never a valid refresh result.
+ *
+ * `img` is supporting evidence only, never a sole trigger -- an image-heavy card can
+ * legitimately lose all images to lazy-load timing, a blocked CDN, or an IO gate that
+ * didn't fire. That's a degraded refresh (handled by the existing expectedLargeImgCount
+ * escalation), not a destroyed one.
+ *
+ * @param newHtml - The freshly refreshed HTML about to be stored
+ * @param cachedHtml - The previously stored html_cache for this component
+ * @returns true if the new content represents catastrophic loss vs. the cache
+ */
+export function isContentLost(newHtml: string, cachedHtml?: string): boolean {
+  if (!newHtml) return true;
+
+  const STRUCTURAL_SEL = 'li, tr, article';
+
+  const newDiv = document.createElement('div');
+  newDiv.innerHTML = newHtml;
+  const newText = (newDiv.textContent || '').trim();
+  const newMediaCount = newDiv.querySelectorAll(`${STRUCTURAL_SEL}, img, svg`).length;
+  const newStructCount = newDiv.querySelectorAll(STRUCTURAL_SEL).length;
+  const newIsEmpty = newText.length < 30 && newMediaCount === 0;
+
+  if (!cachedHtml) {
+    // No cache to compare against (first-ever refresh with no baseline). Fall back to
+    // absolute emptiness only -- there's nothing to be "less than".
+    return newIsEmpty;
+  }
+
+  const cachedDiv = document.createElement('div');
+  cachedDiv.innerHTML = cachedHtml;
+  const cachedText = (cachedDiv.textContent || '').trim();
+  const cachedMediaCount = cachedDiv.querySelectorAll(`${STRUCTURAL_SEL}, img, svg`).length;
+  const cachedStructCount = cachedDiv.querySelectorAll(STRUCTURAL_SEL).length;
+
+  // Primary: new is empty AND the cache demonstrates this card can have real content.
+  // Relative to the cache, not absolute -- a card whose valid content has always been a
+  // single short price/percentage/score (e.g. Kalshi "54%") has cachedText.length < 30 and
+  // zero structural/media nodes too. Flagging it on the same absolute floor the empty-shell
+  // case uses would reject every legitimate refresh of a tiny card, forever. Only flag when
+  // the cache proves the card is capable of more than near-nothing and the new result fell
+  // below that floor.
+  const cacheHadContent = cachedText.length >= 30 || cachedMediaCount >= 1;
+  if (newIsEmpty && cacheHadContent) {
+    return true;
+  }
+
+  // Structural regression: cache had real structural content, new result has none.
+  if (cachedStructCount >= 3 && newStructCount === 0) {
+    return true;
+  }
+
+  return false;
 }
 
 // ─── Responsive Card Dedup Helpers ───────────────────────────────────────────

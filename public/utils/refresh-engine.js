@@ -61,6 +61,9 @@ function classifyError(errorString) {
   if (errorLower.includes('drift') || errorLower.includes('baseline') || errorLower.includes('proxy check')) {
     return 'content_drift';   // Content size changed significantly
   }
+  if (errorLower.includes('empty content') || errorLower.includes('content lost')) {
+    return 'content_lost';    // Output-side guard: refresh result was effectively empty
+  }
   return 'unknown';     // Fallback
 }
 
@@ -73,6 +76,7 @@ function getErrorLabel(errorCode) {
     'network': "Network error",
     'layout_changed': "Site layout changed",
     'content_drift': "Content changed significantly",
+    'content_lost': "Card came back empty",
     'unknown': "Refresh failed"
   };
   return labels[errorCode] || "Refresh failed";
@@ -416,20 +420,157 @@ function requiresVisibleTab(url) {
 }
 
 /**
- * Build a successful tab-refresh result object. Includes requiresActiveFocus:true if the
- * refresh escalated to the focused active popup (site requires compositor focus to render).
- * @param {boolean} activeFocusNeeded - per-call value returned from tabBasedRefresh (no global state)
+ * Sole constructor of a successful refresh result within refreshComponent. Runs the
+ * output-side content-loss guard (isContentLost, from dom-cleanup.ts / window global) before
+ * ever building a success object -- a card that came back effectively empty is rejected here
+ * rather than silently stored. On rejection, no rawCaptureLength is attached, so a bad
+ * extract can never poison the drift baseline.
+ *
+ * All success paths in refreshComponent MUST go through this function -- see
+ * `_buildTabSuccessResult` (thin wrapper for the 9 tab-refresh call sites) and the two
+ * remaining inline call sites (drift graceful fallback, direct-fetch final return).
+ *
+ * @param {string} sanitizedHtml - fully sanitized HTML about to be stored
+ * @param {object} component - the component being refreshed (needs .html_cache for comparison)
+ * @param {object} [extras] - { requiresActiveFocus?: boolean, rawCaptureLength?: number }
+ * @returns {object} success result, or { success:false, error:'Refresh returned empty content', keepOriginal:true }
  */
-function _buildTabSuccessResult(sanitizedHtml, activeFocusNeeded = false) {
+function _finalizeSuccess(sanitizedHtml, component, extras = {}) {
+  if (typeof isContentLost === 'function' && isContentLost(sanitizedHtml, component && component.html_cache)) {
+    console.warn(`[SB-REFRESH] Content-loss guard rejected refresh for ${component && component.name}: result is effectively empty vs. cache`);
+    return {
+      success: false,
+      error: 'Refresh returned empty content',
+      keepOriginal: true
+    };
+  }
   const r = {
     success: true,
     html_cache: sanitizedHtml,
     last_refresh: new Date().toISOString(),
     status: 'active'
   };
-  if (activeFocusNeeded) r.requiresActiveFocus = true;
+  if (extras.requiresActiveFocus) r.requiresActiveFocus = true;
+  if (extras.rawCaptureLength) r.rawCaptureLength = extras.rawCaptureLength;
   return r;
 }
+
+/**
+ * Build a successful tab-refresh result object. Includes requiresActiveFocus:true if the
+ * refresh escalated to the focused active popup (site requires compositor focus to render).
+ * Thin wrapper over _finalizeSuccess -- the single validation gate.
+ * @param {boolean} activeFocusNeeded - per-call value returned from tabBasedRefresh (no global state)
+ */
+function _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded = false) {
+  return _finalizeSuccess(sanitizedHtml, component, { requiresActiveFocus: activeFocusNeeded });
+}
+
+/**
+ * Content-drift guard for the direct-fetch path -- hoisted so it runs for EVERY
+ * extractedHtml the direct-fetch path can produce, not only when the CSS selector
+ * matched directly. Previously this lived only inside `if (matches.length > 0)`, so the
+ * heading-fallback branch (matches.length === 0) had zero drift protection -- exactly
+ * the class of bug that let the Kalshi '54%' card's page-shell extract through unchecked.
+ *
+ * @returns a result object the caller should `return` immediately, or `null` meaning
+ *          "no drift detected, proceed with extractedHtml as normal"
+ */
+async function _runDriftGuard(extractedHtml, component, originalImgCount, originalLargeImgCount) {
+  // CONTENT DRIFT GUARD: Direct-fetch returns raw server HTML which may contain
+  // CSS-hidden sections (e.g. Tailwind's wb:hidden) that the live page hides.
+  // DOMParser has no CSS engine, so hidden sections bloat the extracted HTML.
+  // If the raw extracted HTML is significantly larger than the raw capture baseline,
+  // fall back to tab-based refresh where CSS is active and hidden elements are removed.
+  // rawCaptureLength is stored at capture time (pre-cleanupDuplicates) for a true raw-to-raw
+  // comparison — avoids false-positives on sites like Guardian, yr.no, Zoopla where
+  // cleanupDuplicates shrinks stored HTML 2-4x vs the raw fetch.
+  const driftBaseline = component.rawCaptureLength || null;
+  if (!driftBaseline) {
+    // No raw baseline yet (capture pre-dates rawCaptureLength field, or very first refresh).
+    // Proxy check: raw direct-fetch should not be substantially smaller than stored cleaned HTML
+    // (raw HTML is always ≥ cleaned HTML in normal cases).
+    // If it is < 50% of html_cache, the direct-fetch resolved the wrong DOM section.
+    const _nbCacheLen = (component.html_cache || '').length;
+    if (_nbCacheLen > 500 && extractedHtml.length < _nbCacheLen * 0.5) {
+      console.log(`[SB-REFRESH] No raw baseline: proxy check failed (raw=${extractedHtml.length} < 50% of cache=${_nbCacheLen}) → tab fallback (will not poison baseline)`);
+      const _nbFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
+      const { html: _nbTabHtml, activeFocusNeeded: _nbActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, _nbFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+      if (_nbTabHtml) {
+        const _nbSanitized = applySanitizationPipeline(_nbTabHtml, component);
+        return _buildTabSuccessResult(_nbSanitized, component, _nbActiveFocusNeeded);
+      }
+      return { success: false, error: 'No-baseline proxy check failed and tab refresh failed', keepOriginal: true };
+    }
+    // Proxy check passed — record raw length for future refreshes
+    component.rawCaptureLength = extractedHtml.length;
+  } else if (driftBaseline > 500 && (extractedHtml.length > driftBaseline * 1.5 || extractedHtml.length < driftBaseline * 0.3)) {
+    console.log(`[SB-REFRESH] Content drift detected: raw=${extractedHtml.length} vs rawBaseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x, ${extractedHtml.length > driftBaseline ? 'expanded' : 'shrunk'}) → falling back to tab-based refresh`);
+    const driftFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
+    const { html: tabHtml, activeFocusNeeded: driftActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+    if (tabHtml) {
+      // Skip fingerprint check for position-based captures
+      if (!component.positionBased && driftFingerprint && !tabHtml.toLowerCase().includes(driftFingerprint.toLowerCase())) {
+        console.warn('[Content Drift] Tab refresh fingerprint mismatch - keeping original');
+        logStructureFingerprint('drift-cached-original', component.html_cache);
+        logStructureFingerprint('drift-tab-refresh-result', tabHtml);
+        // Feed fallback: fingerprint mismatch on a feed just means content rotated
+        // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
+        const dominantTag = getDominantTag(component.html_cache);
+        if (dominantTag && dominantTag.tag !== 'a') {
+          const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
+          const newCount = tabDoc.querySelectorAll(dominantTag.tag).length;
+          if (newCount >= 3) {
+            console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
+            const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+            const newFingerprint = extractFingerprint(sanitizedHtml);
+            if (newFingerprint) component.headingFingerprint = newFingerprint;
+            return _buildTabSuccessResult(sanitizedHtml, component, driftActiveFocusNeeded);
+          }
+        }
+        return {
+          success: false,
+          error: 'Content drift: tab refresh returned different element',
+          keepOriginal: true
+        };
+      }
+      const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+      const _driftTabResult = _buildTabSuccessResult(sanitizedHtml, component, driftActiveFocusNeeded);
+      _driftTabResult.rawCaptureLength = tabHtml.length;
+      return _driftTabResult;
+    }
+    // Tab fallback failed — check if direct-fetch content is substantial AND structurally
+    // compatible with the cached card (guards against accepting CSS-hidden sections like
+    // Cricbuzz "Featured Videos" which has real text but is a completely different section).
+    // Drift may have fired due to natural content growth (e.g. weather table shows more
+    // hours than at capture time), not CSS-hidden sections. If so, use the direct-fetch
+    // result and reset the drift baseline so future refreshes don't re-trigger.
+    const _driftCheckDiv = document.createElement('div');
+    _driftCheckDiv.innerHTML = extractedHtml;
+    const _driftTextLen = _driftCheckDiv.textContent.trim().length;
+    const _cachedStructDiv = document.createElement('div');
+    _cachedStructDiv.innerHTML = component.html_cache || '';
+    const _cachedItems = _cachedStructDiv.querySelectorAll('article, li, tr').length;
+    const _newItems = _driftCheckDiv.querySelectorAll('article, li, tr').length;
+    // Structurally compatible: both non-feed (≤2 items), or item count within 4x
+    const _structurallyCompatible = (
+      (_cachedItems <= 2 && _newItems <= 2) ||
+      (_newItems >= _cachedItems * 0.25 && _newItems <= _cachedItems * 4)
+    );
+    if (_driftTextLen > 30 && _newItems >= 1) {
+      console.log(`[SB-REFRESH] Drift tab fallback failed but direct-fetch has real content (textLen=${_driftTextLen}, htmlLen=${extractedHtml.length}, cachedItems=${_cachedItems}, newItems=${_newItems}) — using direct-fetch and resetting baseline`);
+      const _driftSanitized = applySanitizationPipeline(extractedHtml, component);
+      return _finalizeSuccess(_driftSanitized, component, { rawCaptureLength: extractedHtml.length });
+    }
+    return {
+      success: false,
+      error: 'Content drift detected but tab refresh failed',
+      keepOriginal: true
+    };
+  }
+
+  return null; // no drift -- proceed with extractedHtml normally
+}
+
 
 /**
  * Tab-based refresh for JS-heavy sites
@@ -1638,7 +1779,7 @@ async function refreshComponent(component) {
 
         // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
         const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-        return _buildTabSuccessResult(sanitizedHtml, activeFocusNeeded);
+        return _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded);
       } else {
         return {
           success: false,
@@ -1691,7 +1832,7 @@ async function refreshComponent(component) {
 
         if (DEBUG) console.log(`🔧 [Fetch Fallback] Tab refresh succeeded for ${component.name}`);
         const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-        return _buildTabSuccessResult(sanitizedHtml, activeFocusNeeded);
+        return _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded);
       }
       
       // Both fetch and tab failed
@@ -1889,7 +2030,7 @@ async function refreshComponent(component) {
                   const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
                   const newFingerprint = extractFingerprint(sanitizedHtml);
                   if (newFingerprint) component.headingFingerprint = newFingerprint;
-                  return _buildTabSuccessResult(sanitizedHtml, activeFocusNeeded);
+                  return _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded);
                 }
               }
               return {
@@ -1903,7 +2044,7 @@ async function refreshComponent(component) {
             // Tab refresh worked and verified!
             // BATCH 3: Preserve capture-time classifications, then fill gaps with heuristics
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-            return _buildTabSuccessResult(sanitizedHtml, activeFocusNeeded);
+            return _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded);
           }
 
           // Tab refresh also failed - keep original
@@ -1914,103 +2055,6 @@ async function refreshComponent(component) {
           };
         }
 
-        // CONTENT DRIFT GUARD: Direct-fetch returns raw server HTML which may contain
-        // CSS-hidden sections (e.g. Tailwind's wb:hidden) that the live page hides.
-        // DOMParser has no CSS engine, so hidden sections bloat the extracted HTML.
-        // If the raw extracted HTML is significantly larger than the raw capture baseline,
-        // fall back to tab-based refresh where CSS is active and hidden elements are removed.
-        // rawCaptureLength is stored at capture time (pre-cleanupDuplicates) for a true raw-to-raw
-        // comparison — avoids false-positives on sites like Guardian, yr.no, Zoopla where
-        // cleanupDuplicates shrinks stored HTML 2-4x vs the raw fetch.
-        const driftBaseline = component.rawCaptureLength || null;
-        if (!driftBaseline) {
-          // No raw baseline yet (capture pre-dates rawCaptureLength field, or very first refresh).
-          // Proxy check: raw direct-fetch should not be substantially smaller than stored cleaned HTML
-          // (raw HTML is always ≥ cleaned HTML in normal cases).
-          // If it is < 50% of html_cache, the direct-fetch resolved the wrong DOM section.
-          const _nbCacheLen = (component.html_cache || '').length;
-          if (_nbCacheLen > 500 && extractedHtml.length < _nbCacheLen * 0.5) {
-            console.log(`[SB-REFRESH] No raw baseline: proxy check failed (raw=${extractedHtml.length} < 50% of cache=${_nbCacheLen}) → tab fallback (will not poison baseline)`);
-            const _nbFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
-            const { html: _nbTabHtml, activeFocusNeeded: _nbActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, _nbFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
-            if (_nbTabHtml) {
-              const _nbSanitized = applySanitizationPipeline(_nbTabHtml, component);
-              return _buildTabSuccessResult(_nbSanitized, _nbActiveFocusNeeded);
-            }
-            return { success: false, error: 'No-baseline proxy check failed and tab refresh failed', keepOriginal: true };
-          }
-          // Proxy check passed — record raw length for future refreshes
-          component.rawCaptureLength = extractedHtml.length;
-        } else if (driftBaseline > 500 && (extractedHtml.length > driftBaseline * 1.5 || extractedHtml.length < driftBaseline * 0.3)) {
-          console.log(`[SB-REFRESH] Content drift detected: raw=${extractedHtml.length} vs rawBaseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x, ${extractedHtml.length > driftBaseline ? 'expanded' : 'shrunk'}) → falling back to tab-based refresh`);
-          const driftFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
-          const { html: tabHtml, activeFocusNeeded: driftActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
-          if (tabHtml) {
-            // Skip fingerprint check for position-based captures
-            if (!component.positionBased && driftFingerprint && !tabHtml.toLowerCase().includes(driftFingerprint.toLowerCase())) {
-              console.warn('[Content Drift] Tab refresh fingerprint mismatch - keeping original');
-              logStructureFingerprint('drift-cached-original', component.html_cache);
-              logStructureFingerprint('drift-tab-refresh-result', tabHtml);
-              // Feed fallback: fingerprint mismatch on a feed just means content rotated
-              // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
-              const dominantTag = getDominantTag(component.html_cache);
-              if (dominantTag && dominantTag.tag !== 'a') {
-                const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
-                const newCount = tabDoc.querySelectorAll(dominantTag.tag).length;
-                if (newCount >= 3) {
-                  console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
-                  const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-                  const newFingerprint = extractFingerprint(sanitizedHtml);
-                  if (newFingerprint) component.headingFingerprint = newFingerprint;
-                  return _buildTabSuccessResult(sanitizedHtml, driftActiveFocusNeeded);
-                }
-              }
-              return {
-                success: false,
-                error: 'Content drift: tab refresh returned different element',
-                keepOriginal: true
-              };
-            }
-            const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-            const _driftTabResult = _buildTabSuccessResult(sanitizedHtml, driftActiveFocusNeeded);
-            _driftTabResult.rawCaptureLength = tabHtml.length;
-            return _driftTabResult;
-          }
-          // Tab fallback failed — check if direct-fetch content is substantial AND structurally
-          // compatible with the cached card (guards against accepting CSS-hidden sections like
-          // Cricbuzz "Featured Videos" which has real text but is a completely different section).
-          // Drift may have fired due to natural content growth (e.g. weather table shows more
-          // hours than at capture time), not CSS-hidden sections. If so, use the direct-fetch
-          // result and reset the drift baseline so future refreshes don't re-trigger.
-          const _driftCheckDiv = document.createElement('div');
-          _driftCheckDiv.innerHTML = extractedHtml;
-          const _driftTextLen = _driftCheckDiv.textContent.trim().length;
-          const _cachedStructDiv = document.createElement('div');
-          _cachedStructDiv.innerHTML = component.html_cache || '';
-          const _cachedItems = _cachedStructDiv.querySelectorAll('article, li, tr').length;
-          const _newItems = _driftCheckDiv.querySelectorAll('article, li, tr').length;
-          // Structurally compatible: both non-feed (≤2 items), or item count within 4x
-          const _structurallyCompatible = (
-            (_cachedItems <= 2 && _newItems <= 2) ||
-            (_newItems >= _cachedItems * 0.25 && _newItems <= _cachedItems * 4)
-          );
-          if (_driftTextLen > 30 && _newItems >= 1) {
-            console.log(`[SB-REFRESH] Drift tab fallback failed but direct-fetch has real content (textLen=${_driftTextLen}, htmlLen=${extractedHtml.length}, cachedItems=${_cachedItems}, newItems=${_newItems}) — using direct-fetch and resetting baseline`);
-            const _driftSanitized = applySanitizationPipeline(extractedHtml, component);
-            return {
-              success: true,
-              html_cache: _driftSanitized,
-              last_refresh: new Date().toISOString(),
-              rawCaptureLength: extractedHtml.length,
-              status: 'active'
-            };
-          }
-          return {
-            success: false,
-            error: 'Content drift detected but tab refresh failed',
-            keepOriginal: true
-          };
-        }
       } else {
         // Selector not found in fetched HTML
 
@@ -2076,6 +2120,13 @@ async function refreshComponent(component) {
             }
           }
           
+          // A heading-fallback container must never resolve to the page shell itself.
+          // Reproduced bug: on Kalshi, the "parent 3 levels up" fallback below climbed all
+          // the way to <body> (471K chars of nav/footer) and it was stored as the card.
+          // Reject BODY/HTML/HEAD at every stage of this block; leaving extractedHtml null
+          // falls through to tabBasedRefresh a few lines down, which is the correct outcome.
+          const _isPageShell = (el) => !el || el.tagName === 'BODY' || el.tagName === 'HTML' || el.tagName === 'HEAD';
+
           if (targetHeading) {
             // Traverse up to find the card container
             let current = targetHeading;
@@ -2085,7 +2136,8 @@ async function refreshComponent(component) {
             for (let i = 0; i < 5; i++) {
               if (!current.parentElement) break;
               current = current.parentElement;
-              
+              if (_isPageShell(current)) break; // never climb past the page shell
+
               // Check if this looks like a card container
               const hasDataAttr = current.hasAttribute('data-card-metrics-id') || 
                                   current.hasAttribute('data-testid') ||
@@ -2104,7 +2156,8 @@ async function refreshComponent(component) {
             }
             
             // If no specific container found, use parent 3 levels up
-            if (!container && targetHeading.parentElement?.parentElement?.parentElement) {
+            if (!container && targetHeading.parentElement?.parentElement?.parentElement
+                && !_isPageShell(targetHeading.parentElement.parentElement.parentElement)) {
               container = targetHeading.parentElement.parentElement.parentElement;
               // Using default parent (3 levels up)
             }
@@ -2117,12 +2170,12 @@ async function refreshComponent(component) {
                 // Container too small, searching higher
                 
                 let largerContainer = container.parentElement;
-                while (largerContainer && largerContainer.outerHTML.length < 2000 && largerContainer.parentElement) {
+                while (largerContainer && !_isPageShell(largerContainer) && largerContainer.outerHTML.length < 2000 && largerContainer.parentElement) {
                   // Climbing up DOM tree
                   largerContainer = largerContainer.parentElement;
                 }
                 
-                if (largerContainer && largerContainer.outerHTML.length > extractedHtml.length) {
+                if (largerContainer && !_isPageShell(largerContainer) && largerContainer.outerHTML.length > extractedHtml.length) {
                   const largerHtml = largerContainer.outerHTML;
                   // Found larger container
                   container = largerContainer;
@@ -2136,6 +2189,17 @@ async function refreshComponent(component) {
             }
           } else {
             // Heading not found - will use skeleton fallback
+          }
+
+          // Final safety net: never let a page-shell element escape this block as extractedHtml.
+          if (extractedHtml) {
+            const _shellCheckDiv = document.createElement('div');
+            _shellCheckDiv.innerHTML = extractedHtml;
+            const _rootTag = _shellCheckDiv.firstElementChild && _shellCheckDiv.firstElementChild.tagName;
+            if (_rootTag === 'BODY' || _rootTag === 'HTML' || _rootTag === 'HEAD') {
+              console.warn('[SB-REFRESH] Heading fallback resolved to page shell (<' + _rootTag + '>) — rejecting, falling through to tab refresh');
+              extractedHtml = null;
+            }
           }
         }
         
@@ -2159,7 +2223,7 @@ async function refreshComponent(component) {
                   const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
                   const newFingerprint = extractFingerprint(sanitizedHtml);
                   if (newFingerprint) component.headingFingerprint = newFingerprint;
-                  return _buildTabSuccessResult(sanitizedHtml, selectorTabActiveFocus);
+                  return _buildTabSuccessResult(sanitizedHtml, component, selectorTabActiveFocus);
                 }
               }
               return {
@@ -2173,14 +2237,24 @@ async function refreshComponent(component) {
             if (DEBUG) console.log(`   1. Tab HTML: ${tabHtml.length} chars`);
 
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-            return _buildTabSuccessResult(sanitizedHtml, selectorTabActiveFocus);
+            return _buildTabSuccessResult(sanitizedHtml, component, selectorTabActiveFocus);
           }
         }
       }
     } else {
       // Generic selector - skip extraction but still try heading-based fallback
     }
-    
+
+    // CONTENT DRIFT GUARD -- hoisted here so it runs for extractedHtml from EITHER branch
+    // above (direct selector match OR heading fallback), not just the direct-match happy
+    // path it used to live inside. The heading-fallback branch previously had zero drift
+    // protection even though its extractedHtml is the same raw fetched HTML the drift guard
+    // exists to police.
+    if (extractedHtml) {
+      const _driftResult = await _runDriftGuard(extractedHtml, component, originalImgCount, originalLargeImgCount);
+      if (_driftResult) return _driftResult;
+    }
+
     // If extraction failed, DON'T use the full page - keep original HTML
     if (!extractedHtml) {
       console.error(`❌ SILENT FAIL: ${component.name}`);
@@ -2211,14 +2285,11 @@ async function refreshComponent(component) {
       console.error(`⚠️ SUSPICIOUSLY SHORT HTML (${sanitizedHtml.length} chars):`);
       console.error(`   Content:`, sanitizedHtml);
     }
-    
-    return {
-      success: true,
-      html_cache: sanitizedHtml,
-      last_refresh: new Date().toISOString(),
-      rawCaptureLength: extractedHtml.length, // Self-updating baseline — prevents drift false-positives on sites with naturally varying content size (weather, scores, stocks)
-      status: 'active'
-    };
+
+    // Self-updating baseline — prevents drift false-positives on sites with naturally varying
+    // content size (weather, scores, stocks). Only attached on the success branch inside
+    // _finalizeSuccess — a rejected (content-lost) result never touches rawCaptureLength.
+    return _finalizeSuccess(sanitizedHtml, component, { rawCaptureLength: extractedHtml.length });
     
   } catch (error) {
     console.error(`❌ Failed to refresh ${component.name}:`, error);

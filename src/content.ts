@@ -178,6 +178,76 @@ function generateSelector(element: HTMLElement): string {
   return baseSelector;
 }
 
+/**
+ * Generate a selector for an EXCLUDED element -- distinct from generateSelector's job of
+ * finding the card container. generateSelector's documented last resort is "return the base
+ * selector (fingerprint will catch mismatches)" -- true for the card itself (it has a
+ * headingFingerprint tiebreaker at refresh time), but FALSE for exclusions, which have no
+ * fingerprint and are applied via querySelectorAll(selector) -> remove ALL matches.
+ *
+ * Reproduced bug: clicking 2 elements to exclude (Yes/No buttons) generated the selector
+ * "div.flex.gap-1.items-center", which matched 27 elements inside the captured card
+ * (including every percentage cell and the "Chance" header) -- refresh deleted all of them.
+ *
+ * This wrapper verifies uniqueness WITHIN the capture root (not the whole page -- an
+ * exclusion selector is re-applied against the card's own HTML at refresh time, so that's
+ * the only scope that matters). If generateSelector's result isn't unique in that scope, it
+ * escalates to an ancestor path, then to a positional (:nth-child chain) fallback -- never
+ * silently stores a selector that over-matches.
+ *
+ * @param el - the element the user clicked to exclude
+ * @param root - the capture root (the element being captured as a card)
+ * @returns a selector that matches exactly one element within `root`
+ */
+function generateExclusionSelector(el: HTMLElement, root: HTMLElement): string {
+  const candidate = generateSelector(el);
+
+  try {
+    if (root.querySelectorAll(candidate).length === 1) {
+      return candidate;
+    }
+  } catch (e) {
+    log('⚠️ Exclusion candidate selector invalid, escalating:', candidate, e);
+  }
+
+  // Escalate: unique ancestor path (same mechanism generateSelector itself uses)
+  const baseSelector = buildBaseSelector(el);
+  const pathSelector = buildPathFromUniqueAncestor(el, baseSelector);
+  if (pathSelector) {
+    try {
+      if (root.querySelectorAll(pathSelector).length === 1) {
+        log('🎯 Exclusion selector escalated to ancestor path:', pathSelector);
+        return pathSelector;
+      }
+    } catch (e) {
+      // fall through to positional
+    }
+  }
+
+  // Last resort: positional path (:nth-child chain) from the capture root. Always unique
+  // by construction -- never generalises beyond the single element the user clicked.
+  const positional = buildPositionalPath(el, root);
+  log('🎯 Exclusion selector using positional fallback:', positional);
+  return positional;
+}
+
+/** Build a :nth-child chain from `root` down to `el`. Always uniquely identifies `el`
+ *  within `root`'s subtree, at the cost of brittleness to markup changes (acceptable for
+ *  exclusions -- a stale positional exclusion just leaves extra content visible, which is
+ *  a far safer failure mode than an over-broad class selector deleting real content). */
+function buildPositionalPath(el: HTMLElement, root: HTMLElement): string {
+  const parts: string[] = [];
+  let current: HTMLElement | null = el;
+  while (current && current !== root) {
+    const parent: HTMLElement | null = current.parentElement;
+    if (!parent) break;
+    const index = Array.from(parent.children).indexOf(current) + 1;
+    parts.unshift(`${current.tagName.toLowerCase()}:nth-child(${index})`);
+    current = parent;
+  }
+  return parts.join(' > ');
+}
+
 // Helper: Escape special characters in CSS class names (for Tailwind etc.)
 function escapeCSSClass(className: string): string {
   // Escape special characters that are invalid in CSS selectors
@@ -1632,9 +1702,12 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         console.debug('[sb-capture] confirm timeout fired. getIsOnboardingMode()=', getIsOnboardingMode(), 'wasOnboarding=', wasOnboarding);
 
         // 🎯 BATCH 1: Generate selectors for excluded elements
+        // Uses generateExclusionSelector (not generateSelector directly) -- exclusions need
+        // uniqueness verified within the capture root, since they're applied via
+        // querySelectorAll(selector) at refresh time and have no fingerprint tiebreaker.
         const excludedSelectors: string[] = [];
         excludedElements.forEach(el => {
-          const selector = generateSelector(el);
+          const selector = generateExclusionSelector(el, target);
           excludedSelectors.push(selector);
         });
         console.log('🎯 Generated', excludedSelectors.length, 'exclusion selectors');
