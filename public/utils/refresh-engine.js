@@ -40,6 +40,43 @@ const DEBUG_IO_SPOOF = false;
 // escalation to offscreen/active-tab. See LEARNINGS.md §XX (HotUKDeals post-unification regression).
 const LARGE_IMG_RE = /data-scale-context="(?:medium|preview)"/gi;
 
+// A fingerprint that is just a number/price/percent (leading or trailing symbol) is the
+// tracked VALUE, not a stable identity — it can never re-match once the value moves (e.g.
+// Kalshi odds "54%" -> "53%"). Validated against live Kalshi heading candidates: catches
+// "53%", "47%", "$0" (leading-symbol prices); leaves "Republican Party" etc. untouched.
+// See LEARNINGS.md REF-16 / STUDY-kalshi-charts.md Phase 2 item 8.
+const VOLATILE_FINGERPRINT_RE = /^[+-]?[$€£¢]?\s*[\d,]+(\.\d+)?\s*[%¢$]?\s*(k|m|b|pts?|p)?$/i;
+
+/**
+ * Heading-candidate query with a Tailwind arbitrary-value guard.
+ *
+ * `[class*="header"]` (and title/heading) test the raw class ATTRIBUTE STRING for the
+ * substring, not individual class tokens — so a Tailwind arbitrary-value class like
+ * `min-h-[calc(100dvh-var(--header-height))]` false-matches purely because "header" appears
+ * inside the bracketed value. Reproduced live on Kalshi: 5 of 16 candidates on the page are
+ * exactly this false positive. Strip bracketed segments before re-testing with a word-ish
+ * boundary so only genuine class-name tokens count. Real tag matches (h1-h4, caption) and
+ * data-testid matches pass through unfiltered — the bracket-substring risk doesn't apply to
+ * them. See LEARNINGS.md REF-13 / STUDY-kalshi-charts.md Phase 2 item 6.
+ */
+function _hasGenuineHeadingClass(el) {
+  if (!el.className || typeof el.className !== 'string') return false;
+  const stripped = el.className.replace(/\[[^\]]*\]/g, '');
+  return /(^|[-_\s])(heading|title|header)([-_\s]|$)/i.test(stripped);
+}
+
+function _queryHeadingCandidates(root) {
+  const raw = root.querySelectorAll(
+    'h1,h2,h3,h4,caption,[class*="heading"],[class*="title"],[class*="header"],[data-testid*="heading"],[data-testid*="title"]'
+  );
+  return Array.from(raw).filter(el => {
+    const tag = el.tagName;
+    if (tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'CAPTION') return true;
+    if (el.hasAttribute('data-testid')) return true;
+    return _hasGenuineHeadingClass(el);
+  });
+}
+
 /**
  * Error classification helper - converts raw error strings into friendly user-facing labels
  * Returns enum error code ('skeleton', 'network', 'layout_changed', 'unknown')
@@ -2003,10 +2040,21 @@ async function refreshComponent(component) {
           });
         }
         
-        // Skeleton check triggers: skeleton class, empty container, missing images, wrapper skeleton
+        // MODERN-FRAMEWORK PATTERN: React 18 streaming Suspense boundary. The above heuristics
+        // are all keyed to 2023-era class-name conventions (skeleton, Wrapper, content) and miss
+        // this entirely — reproduced on Kalshi's "Begins" card, whose fetched HTML contains an
+        // unresolved <template id="B:5"> boundary and a shimmer placeholder div instead of the
+        // real content. BAILOUT_TO_CLIENT_SIDE_RENDERING is a page-level React marker (checked
+        // against the full fetched page, not just this element, since it's not scoped to one
+        // container). See STUDY-kalshi-charts.md Phase 2 item 5.
+        const hasSuspenseBoundary = /<template id="[BS]:/.test(extractedHtml) ||
+                                     /animate-[\w-]*(shimmer|pulse|skeleton)/i.test(extractedHtml);
+        const isBailoutPage = fullHtml.includes('BAILOUT_TO_CLIENT_SIDE_RENDERING');
 
+        // Skeleton check triggers: skeleton class, empty container, missing images, wrapper skeleton,
+        // Suspense boundary, React client-side-rendering bailout
 
-        if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing) {
+        if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing || hasSuspenseBoundary || isBailoutPage) {
           // Extract fingerprint FIRST to pass to tab refresh
           const originalFingerprint = extractFingerprint(component.html_cache);
 
@@ -2065,12 +2113,11 @@ async function refreshComponent(component) {
           
           const tempDiv = document.createElement('div');
           tempDiv.innerHTML = component.html_cache || '';
-          const cachedHeading = tempDiv.querySelector(`
-            h1, h2, h3, h4, caption,
-            [class*="heading"], [class*="title"], [class*="header"],
-            [data-testid*="heading"], [data-testid*="title"]
-          `);
-          
+          // Skip volatile candidates (a bare value like "54%" is not a stable identity — see
+          // VOLATILE_FINGERPRINT_RE) and Tailwind-bracket false positives (_queryHeadingCandidates).
+          const cachedHeading = _queryHeadingCandidates(tempDiv)
+            .find(el => !VOLATILE_FINGERPRINT_RE.test((el.textContent || '').trim()));
+
           if (cachedHeading) {
             const headingText = cachedHeading.textContent.trim();
             if (DEBUG) console.log(`✅ [Self-Healing] Generated headingFingerprint: "${headingText}"`);
@@ -2096,11 +2143,11 @@ async function refreshComponent(component) {
         if (!component.positionBased && component.headingFingerprint) {
           // Trying heading-based detection
           
-          const allHeadings = doc.querySelectorAll(`
-            h1, h2, h3, h4, caption,
-            [class*="heading"], [class*="title"], [class*="header"],
-            [data-testid*="heading"], [data-testid*="title"]
-          `);
+          // _queryHeadingCandidates strips Tailwind arbitrary-value bracket segments before
+          // testing [class*="header"] etc. — reproduced on Kalshi: 5 of 16 raw matches on the
+          // live page are false positives like min-h-[calc(100dvh-var(--header-height))], one
+          // of which is exactly what made this fallback previously climb to <body>.
+          const allHeadings = _queryHeadingCandidates(doc);
           let targetHeading = null;
           
           for (const heading of allHeadings) {

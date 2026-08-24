@@ -7,6 +7,13 @@ import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlayg
 const DEBUG = false;
 const log = (...args: any[]) => DEBUG && console.log(...args);
 
+// A fingerprint that is just a number/price/percent (leading or trailing symbol) is the
+// tracked VALUE, not a stable identity — it can never re-match once the value moves (e.g.
+// Kalshi odds "54%" -> "53%"). Shared with the same-named constant in refresh-engine.js
+// (separate runtime, kept in sync manually — single regex, not worth a shared module).
+// See LEARNINGS.md REF-16 / STUDY-kalshi-charts.md Phase 2 item 8.
+const VOLATILE_FINGERPRINT_RE = /^[+-]?[$€£¢]?\s*[\d,]+(\.\d+)?\s*[%¢$]?\s*(k|m|b|pts?|p)?$/i;
+
 let isCapturing = false;
 let lockedElement: HTMLElement | null = null; // Track element waiting for confirmation
 let excludedElements: HTMLElement[] = []; // Track child elements marked for exclusion (red)
@@ -1360,12 +1367,14 @@ function handleClick(event: MouseEvent) {
   let heading: Element | null = null;
   for (const h of searchRoot.querySelectorAll(headingSels)) {
     const r = h.getBoundingClientRect();
-    if (r.width > 0 || r.height > 0) { heading = h; break; }
+    // Skip hidden AND volatile (a bare value like "54%" is not a stable identity) candidates —
+    // keep looking rather than accepting the first match.
+    if ((r.width > 0 || r.height > 0) && !VOLATILE_FINGERPRINT_RE.test((h.textContent || '').trim())) { heading = h; break; }
   }
   if (!heading && searchRoot !== target) {
     for (const h of target.querySelectorAll(headingSels)) {
       const r = h.getBoundingClientRect();
-      if (r.width > 0 || r.height > 0) { heading = h; break; }
+      if ((r.width > 0 || r.height > 0) && !VOLATILE_FINGERPRINT_RE.test((h.textContent || '').trim())) { heading = h; break; }
     }
   }
   const rawHeading = heading?.textContent?.trim() || null;
@@ -1743,12 +1752,14 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         let fpHeading: Element | null = null;
         for (const h of fpRoot.querySelectorAll(fpHeadingSels)) {
           const r = h.getBoundingClientRect();
-          if (r.width > 0 || r.height > 0) { fpHeading = h; break; }
+          // Skip volatile candidates (a bare value like "54%" is not a stable identity) — keep
+          // looking rather than storing the tracked value itself as the fingerprint.
+          if ((r.width > 0 || r.height > 0) && !VOLATILE_FINGERPRINT_RE.test((h.textContent || '').trim())) { fpHeading = h; break; }
         }
         if (!fpHeading && fpRoot !== target) {
           for (const h of target.querySelectorAll(fpHeadingSels)) {
             const r = h.getBoundingClientRect();
-            if (r.width > 0 || r.height > 0) { fpHeading = h; break; }
+            if ((r.width > 0 || r.height > 0) && !VOLATILE_FINGERPRINT_RE.test((h.textContent || '').trim())) { fpHeading = h; break; }
           }
         }
         // Limit to 100 chars to avoid exceeding sync storage quota (8KB per item)
