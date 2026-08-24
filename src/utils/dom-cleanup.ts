@@ -622,9 +622,18 @@ export function cleanupDuplicates(html: string): string {
   // Tests if SVG can render properly at 25px using heuristics
   let svgsRemoved = 0;
   temp.querySelectorAll('svg').forEach(svg => {
-    if (!isSVGRenderable(svg as SVGSVGElement)) {
+    const svgEl = svg as SVGSVGElement;
+    if (!isSVGRenderable(svgEl)) {
       svgsRemoved++;
       svg.remove();
+      return;
+    }
+    // 🎯 CHART CLASSIFICATION: stamp top-level data-vis SVGs so CSS can scope the 24px icon
+    // cap away from them. Nested <svg> (axis labels) are left unstamped — they ride along via
+    // the `svg[data-sb-svg="chart"] svg` CSS descendant selector, not individual stamping.
+    if (!svgEl.ownerSVGElement && isChartSVG(svgEl)) {
+      svgEl.setAttribute('data-sb-svg', 'chart');
+      synthesizeChartViewBox(svgEl);
     }
   });
   
@@ -732,49 +741,128 @@ export function cleanupDuplicates(html: string): string {
  */
 export function isSVGRenderable(svg: SVGSVGElement): boolean {
   try {
-    // CHECK 1: Must have dimensions (viewBox OR width/height)
+    // CHECK 1: Must have dimensions (viewBox OR width/height) — UNLESS this is a
+    // dimensionless nested <svg> containing <text>. This is a deliberate narrow exception,
+    // not general "axis-label detection": we are not proving the element IS an axis label,
+    // only that "nested + has text + no own dims" is common enough (and safe enough, since
+    // it inherits its parent <svg>'s coordinate system) to exempt from CHECK 1. Do not widen
+    // this condition without a concrete new case.
     const viewBox = svg.getAttribute('viewBox');
     const width = svg.getAttribute('width');
     const height = svg.getAttribute('height');
-    
+
     if (!viewBox && !width && !height) {
-      return false; // Can't scale without dimensions
+      const isNestedWithText = svg.ownerSVGElement !== null && svg.querySelector('text') !== null;
+      if (!isNestedWithText) {
+        return false; // Can't scale without dimensions
+      }
     }
-    
-    // CHECK 2: Must have visible styling (fill/stroke/color)
-    // SVGs without explicit styling rely on external CSS = broken when extracted
+
+    // CHECK 2: Must have visible styling (fill/stroke/color) — HARD GATE, no exceptions.
+    // SVGs without explicit styling rely on external CSS = broken when extracted. This is
+    // what catches the original Guardian-sprite case; it is never bypassed by chart
+    // classification below (that only runs on SVGs that already passed this gate).
     const hasFill = svg.querySelector('[fill]:not([fill="none"]):not([fill=""])');
     const hasStroke = svg.querySelector('[stroke]:not([stroke="none"]):not([stroke=""])');
     const hasVisibleStyle = svg.querySelector('[style*="fill"],[style*="stroke"],[style*="color"]');
-    
+
     // Exception: Allow SVGs with currentColor (inherit from text color)
     const hasCurrentColor = svg.querySelector('[fill="currentColor"],[stroke="currentColor"]');
-    
+
     if (!hasFill && !hasStroke && !hasVisibleStyle && !hasCurrentColor) {
       return false; // No visible content = broken
     }
-    
-    // CHECK 3: Path complexity check (overly complex = likely broken)
-    const paths = svg.querySelectorAll('path');
-    for (const path of paths) {
-      const d = path.getAttribute('d');
-      if (d && d.length > 1000) {
-        return false; // Guardian-style broken path data
-      }
-    }
-    
-    // CHECK 4: Must have actual content (not just empty container)
+
+    // CHECK 3: Must have actual content (not just empty container).
+    // (Former CHECK 3 — `d.length > 1000` "broken path" rejection — removed. Long path data
+    // is the definitional signature of a chart, not a defect; see isChartSVG() below and
+    // STUDY-kalshi-charts.md Phase 3 item 9. Complex-but-broken SVGs are still caught by
+    // CHECK 2 above.)
     const hasContent = svg.querySelector('path, circle, rect, polygon, line, polyline, ellipse, text, image');
     if (!hasContent) {
       return false; // Empty SVG
     }
-    
+
     return true;
-    
+
   } catch (error) {
     console.error('  ❌ SVG validation error:', error);
     return false; // If validation fails, assume broken
   }
+}
+
+const CHART_MIN_DIMENSION_PX = 200;
+
+/**
+ * Classifies an already-renderable, top-level SVG as chart/data-vis for CSS-cap-scoping and
+ * viewBox synthesis. Three strong signals, any one sufficient. `d.length` is deliberately NOT
+ * a signal here — a complex decorative/broken SVG can also carry a long path, so path length
+ * alone must never promote or demote a classification (STUDY-kalshi-charts.md Phase 3 item 9).
+ *
+ * @param svg - The SVG element to classify (already passed isSVGRenderable)
+ * @returns true if this looks like a chart/data-visualization
+ */
+function isChartSVG(svg: SVGSVGElement): boolean {
+  // Signal A: explicit pixel width/height attribute >= ~200px in either dimension. When
+  // present, these are authoritative for actual display size — take precedence over viewBox
+  // and skip Signal B entirely. A logo drawn on a large internal artboard (e.g. Kalshi's
+  // wordmark: width="55" height="16" but viewBox="0 0 772 226") is still small on screen;
+  // checking viewBox size independently via OR logic previously misclassified it as a chart
+  // (reproduced live: the wordmark grew with card size instead of staying icon-capped).
+  const widthAttr = svg.getAttribute('width');
+  const heightAttr = svg.getAttribute('height');
+  const w = parseFloat(widthAttr || '');
+  const h = parseFloat(heightAttr || '');
+  const hasPixelDims = Number.isFinite(w) && Number.isFinite(h) &&
+    !(widthAttr || '').includes('%') && !(heightAttr || '').includes('%');
+
+  if (hasPixelDims) {
+    if (w >= CHART_MIN_DIMENSION_PX || h >= CHART_MIN_DIMENSION_PX) return true;
+  } else {
+    // Signal B: no (or non-pixel) width/height — viewBox is the only sizing signal
+    // available, as with responsive charting libs that set only viewBox and let CSS size
+    // it. A small viewBox (e.g. a 24x24 icon) does NOT qualify — only a sized one does.
+    const viewBox = svg.getAttribute('viewBox');
+    if (viewBox) {
+      const parts = viewBox.trim().split(/[\s,]+/).map(Number);
+      if (parts.length === 4 && parts.every(Number.isFinite) &&
+          (parts[2] >= CHART_MIN_DIMENSION_PX || parts[3] >= CHART_MIN_DIMENSION_PX)) {
+        return true;
+      }
+    }
+  }
+
+  // Signal C: contains a <text> element (axis labels/legend) — a defining feature of
+  // data-vis SVGs that plain icons/logos essentially never have.
+  if (svg.querySelector('text')) return true;
+
+  return false;
+}
+
+/**
+ * Synthesizes a viewBox for a chart SVG that has numeric width/height but no viewBox, so it
+ * scales into a card instead of clipping at its intrinsic pixel size. A targeted
+ * transformation, not general SVG normalization — only fires when width/height are valid
+ * positive numeric pixel values and no viewBox already exists.
+ * STUDY-kalshi-charts.md Phase 3 item 10.
+ *
+ * @param svg - Chart-classified SVG element to mutate in place
+ */
+function synthesizeChartViewBox(svg: SVGSVGElement): void {
+  if (svg.hasAttribute('viewBox')) return;
+
+  const wAttr = svg.getAttribute('width') || '';
+  const hAttr = svg.getAttribute('height') || '';
+  if (wAttr.includes('%') || hAttr.includes('%')) return; // not pixel dims, nothing to derive
+
+  const w = parseFloat(wAttr);
+  const h = parseFloat(hAttr);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
+
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('width', '100%');
+  svg.removeAttribute('height');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 }
 
 /**

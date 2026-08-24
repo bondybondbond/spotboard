@@ -1445,6 +1445,23 @@ function getPreviewCSS(): string {
       vertical-align: middle;
       overflow: hidden;
     }
+    /* Chart/data-vis SVGs (stamped data-sb-svg="chart" by cleanupDuplicates) scale to full
+       card width instead of being capped at icon size. Covers nested <svg> axis labels too —
+       they inherit the parent's coordinate system and are never stamped individually.
+       align-self: flex-start is required — chart wrapper divs frequently carry inline
+       flex styles from the source site (e.g. Kalshi's display:flex, height:100% chart
+       container), and default flex align-items:stretch overrides height:auto, stretching
+       the svg to fill the flex parent instead of scaling via its viewBox aspect ratio. */
+    svg[data-sb-svg="chart"],
+    svg[data-sb-svg="chart"] svg {
+      display: block !important;
+      max-width: 100% !important;
+      max-height: none !important;
+      width: 100% !important;
+      height: auto !important;
+      align-self: flex-start !important;
+      overflow: visible;
+    }
 
     /* Font normalization */
     body, li, li span, li p, div, p {
