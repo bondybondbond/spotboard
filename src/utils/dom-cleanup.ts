@@ -628,6 +628,8 @@ export function cleanupDuplicates(html: string): string {
       svg.remove();
       return;
     }
+    // 🎯 ISSUE #3: strip fallback-less `var()` fill/stroke that renders black off-site
+    neutralizeUnresolvableSvgPaint(svgEl);
     // 🎯 CHART CLASSIFICATION: stamp top-level data-vis SVGs so CSS can scope the 24px icon
     // cap away from them. Nested <svg> (axis labels) are left unstamped — they ride along via
     // the `svg[data-sb-svg="chart"] svg` CSS descendant selector, not individual stamping.
@@ -733,9 +735,55 @@ export function cleanupDuplicates(html: string): string {
 }
 
 /**
+ * Neutralises SVG `fill`/`stroke` paint that is a bare CSS custom property with no fallback
+ * (e.g. `var(--surface-x10)`). Outside the source site nothing defines that property, so the
+ * declaration is invalid at computed-value time and the browser falls back to the property's
+ * *initial* value — `black` for `fill`. That is what paints a solid black box behind captured
+ * charts (GitHub issue #3, STUDY-kalshi-charts.md item 11).
+ *
+ * Only the single-argument form is touched. `var(--x, <fallback>)` degrades gracefully and is
+ * exactly what makes chart data-series lines render correctly, so it is left alone — as are
+ * `currentColor`, `url(#…)`, and any literal colour.
+ *
+ * Accepted trade-off: a data-series stroke that genuinely used a bare fallback-less var would
+ * now render transparent instead of black. It was already broken off-site (black on black);
+ * transparent is no worse. Real series lines use `rgba()` / two-arg vars in practice.
+ *
+ * @param svg - Renderable SVG element to mutate in place (called for every SVG kept by
+ *              `isSVGRenderable`, chart or not)
+ */
+export function neutralizeUnresolvableSvgPaint(svg: SVGSVGElement): void {
+  // Bare `var(--name)` with no fallback: no comma, nothing but the reference.
+  const BARE_VAR = /^\s*var\(\s*--[A-Za-z0-9_-]+\s*\)\s*$/;
+  const NEUTRAL = { fill: 'none', stroke: 'transparent' } as const;
+
+  const elements: Element[] = [svg, ...Array.from(svg.querySelectorAll('*'))];
+  for (const el of elements) {
+    (['fill', 'stroke'] as const).forEach(prop => {
+      // Presentation attribute
+      const attr = el.getAttribute(prop);
+      if (attr && BARE_VAR.test(attr)) {
+        el.setAttribute(prop, NEUTRAL[prop]);
+      }
+
+      // Inline style — rewrite via CSSOM so unrelated declarations and `!important` survive
+      // (CSSOM may normalise the style attribute's formatting, but no other declaration's
+      // meaning changes).
+      const style = (el as SVGElement | HTMLElement).style;
+      if (style) {
+        const val = style.getPropertyValue(prop);
+        if (val && BARE_VAR.test(val)) {
+          style.setProperty(prop, NEUTRAL[prop], style.getPropertyPriority(prop));
+        }
+      }
+    });
+  }
+}
+
+/**
  * Test if an SVG can render properly at 25px
  * Uses heuristics to detect broken/unscalable SVGs without canvas rendering
- * 
+ *
  * @param svg - The SVG element to test
  * @returns true if renderable, false if broken
  */
