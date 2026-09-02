@@ -62,8 +62,7 @@ When adding HTML enrichment (data attributes, classes), apply it in **all three 
 
 ## Tool Preferences
 
-- Use **Serena MCP tools** (`read_file`, `replace_content`, `find_symbol`, etc.) for file operations — more efficient than native tools
-- **Exception**: Use native `Edit` tool for multi-line inserts — Serena `replace_content` regex mode inserts literal `\n` instead of newlines
+- Use native `Read` / `Edit` / `Grep` / `Glob` tools for file operations
 - **Browser/DOM debugging**: Use `evaluate_script` on specific elements, not full-page `take_snapshot`
 
 ---
