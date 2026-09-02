@@ -1703,21 +1703,63 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           refreshSingleBtn.disabled = true;
           refreshSingleBtn.classList.add('spinning');
 
+          const isRetry = refreshSingleBtn.dataset.retry === '1';
+          delete refreshSingleBtn.dataset.retry;
+
           try {
             const result = await refreshComponent(component);
-            const attemptTimestamp = new Date().toISOString();
 
-            if (result.success && result.html_cache && result.html_cache.length >= 50) {
-              // Update in-memory component
-              component.html_cache = result.html_cache;
-              component.last_refresh = result.last_refresh;
-              component.lastAttemptAt = attemptTimestamp;
-              component.lastSuccessAt = attemptTimestamp;
-              component.lastOutcome = 'success';
-              component.lastErrorCode = null;
-              component.lastErrorAt = null;
+            // Shared safe apply path — same helper refreshAll() uses. Enforces
+            // "a failed refresh never overwrites last-known-good html_cache".
+            const { syncEntry, localEntry, committed } = applyRefreshResult(component, result);
 
-              // Update card content in DOM (no full page reload)
+            // Mirror persisted state into the in-memory component
+            component.html_cache = localEntry.html_cache;
+            component.last_refresh = localEntry.last_refresh;
+            if (localEntry.rawCaptureLength) component.rawCaptureLength = localEntry.rawCaptureLength;
+            component.lastAttemptAt = syncEntry.lastAttemptAt;
+            component.lastSuccessAt = syncEntry.lastSuccessAt;
+            component.lastOutcome = syncEntry.lastOutcome;
+            component.lastErrorCode = syncEntry.lastErrorCode;
+            component.lastErrorAt = syncEntry.lastErrorAt;
+            if (result.requiresActiveFocus) component.requiresActiveFocus = true;
+
+            const attemptTimestamp = syncEntry.lastAttemptAt;
+            const errorCode = syncEntry.lastErrorCode;
+
+            // Persist — one write path for every outcome. Sync gets caller-owned metadata
+            // merged with the refresh-owned syncEntry; local gets the (possibly unchanged) html.
+            chrome.storage.sync.set({
+              [`comp-${component.id}`]: {
+                id: component.id,
+                name: component.name,
+                url: component.url,
+                favicon: component.favicon,
+                customLabel: component.customLabel,
+                headingFingerprint: component.headingFingerprint,
+                selector: component.selector,
+                excludedSelectors: component.excludedSelectors || [],
+                positionBased: component.positionBased || false,
+                refreshPaused: component.refreshPaused || false,
+                cardSize: component.cardSize || '1x1',
+                ...syncEntry,
+                ...(component.requiresActiveFocus ? { requiresActiveFocus: true } : {}),
+                ...(component.board ? { board: component.board } : {})
+              }
+            }, () => {
+              if (chrome.runtime.lastError) console.warn('Sync write error:', chrome.runtime.lastError);
+            });
+
+            chrome.storage.local.get(['componentsData'], (res) => {
+              const localData = res.componentsData || {};
+              localData[component.id] = localEntry;
+              chrome.storage.local.set({ componentsData: localData }, () => {
+                if (chrome.runtime.lastError) console.warn('Local write error:', chrome.runtime.lastError);
+              });
+            });
+
+            if (committed) {
+              // ---- SUCCESS UI ----
               const contentDiv = card.querySelector('.component-content');
               contentDiv.innerHTML = cleanupDuplicates(result.html_cache);
               fixRelativeUrls(contentDiv, component.url);
@@ -1737,130 +1779,17 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 `;
               }
 
-              // Update in-memory component so the clock modal reads the fresh time on next open
-              component.last_refresh = result.last_refresh;
-
-              // Persist self-learned active-focus requirement so next refresh skips background+offscreen
-              if (result.requiresActiveFocus) component.requiresActiveFocus = true;
-
               // Update clock tooltip with new timestamp
               const clockTooltip = card.querySelector('.custom-tooltip');
               if (clockTooltip) {
                 clockTooltip.textContent = 'Last refresh: just now';
               }
 
-              // Persist to storage — direct write, no read-then-write race
-              chrome.storage.sync.set({
-                [`comp-${component.id}`]: {
-                  id: component.id,
-                  name: component.name,
-                  url: component.url,
-                  favicon: component.favicon,
-                  customLabel: component.customLabel,
-                  headingFingerprint: component.headingFingerprint,
-                  selector: component.selector,
-                  excludedSelectors: component.excludedSelectors || [],
-                  positionBased: component.positionBased || false,
-                  refreshPaused: component.refreshPaused || false,
-                  last_refresh: result.last_refresh,
-                  cardSize: component.cardSize || '1x1',
-                  lastAttemptAt: attemptTimestamp,
-                  lastSuccessAt: attemptTimestamp,
-                  lastOutcome: 'success',
-                  lastErrorCode: null,
-                  lastErrorAt: null,
-                  ...(component.requiresActiveFocus ? { requiresActiveFocus: true } : {}),
-                  ...(component.board ? { board: component.board } : {})
-                }
-              }, () => {
-                if (chrome.runtime.lastError) console.warn('Sync write error:', chrome.runtime.lastError);
-              });
-
-              // Local storage — html_cache stays local (not sync)
-              chrome.storage.local.get(['componentsData'], (res) => {
-                const localData = res.componentsData || {};
-                const localEntry = {
-                  selector: component.selector,
-                  html_cache: result.html_cache,
-                  last_refresh: result.last_refresh,
-                  excludedSelectors: component.excludedSelectors || []
-                };
-                if (component.originalCaptureLength) localEntry.originalCaptureLength = component.originalCaptureLength;
-                const _newRawCapture = result.rawCaptureLength || component.rawCaptureLength;
-                if (_newRawCapture) localEntry.rawCaptureLength = _newRawCapture;
-                localData[component.id] = localEntry;
-                chrome.storage.local.set({ componentsData: localData }, () => {
-                  if (chrome.runtime.lastError) console.warn('Local write error:', chrome.runtime.lastError);
-                });
-              });
-
               showToast(`"${displayName}" refreshed`);
-            } else if (result.success) {
-              // Empty content case - treat as failure
-              const errorCode = classifyError('empty content');
-              component.lastAttemptAt = attemptTimestamp;
-              component.lastOutcome = 'failed';
-              component.lastErrorCode = errorCode;
-              component.lastErrorAt = attemptTimestamp;
+            } else if (!result.success) {
+              // ---- FAILURE UI ---- (refreshComponent said failure; content-loss lands here too)
+              trackRefreshFailure(component, result, isRetry);
 
-              // Update storage with failure state
-              chrome.storage.sync.set({
-                [`comp-${component.id}`]: {
-                  id: component.id,
-                  name: component.name,
-                  url: component.url,
-                  favicon: component.favicon,
-                  customLabel: component.customLabel,
-                  headingFingerprint: component.headingFingerprint,
-                  selector: component.selector,
-                  excludedSelectors: component.excludedSelectors || [],
-                  positionBased: component.positionBased || false,
-                  refreshPaused: component.refreshPaused || false,
-                  last_refresh: component.last_refresh,
-                  cardSize: component.cardSize || '1x1',
-                  lastAttemptAt: attemptTimestamp,
-                  lastSuccessAt: component.lastSuccessAt,
-                  lastOutcome: 'failed',
-                  lastErrorCode: errorCode,
-                  lastErrorAt: attemptTimestamp,
-                  ...(component.board ? { board: component.board } : {})
-                }
-              });
-
-              showToast(`"${displayName}" returned empty content`);
-            } else {
-              // Failure case
-              const errorCode = classifyError(result.error);
-              component.lastAttemptAt = attemptTimestamp;
-              component.lastOutcome = 'failed';
-              component.lastErrorCode = errorCode;
-              component.lastErrorAt = attemptTimestamp;
-
-              // Update storage with failure state
-              chrome.storage.sync.set({
-                [`comp-${component.id}`]: {
-                  id: component.id,
-                  name: component.name,
-                  url: component.url,
-                  favicon: component.favicon,
-                  customLabel: component.customLabel,
-                  headingFingerprint: component.headingFingerprint,
-                  selector: component.selector,
-                  excludedSelectors: component.excludedSelectors || [],
-                  positionBased: component.positionBased || false,
-                  refreshPaused: component.refreshPaused || false,
-                  last_refresh: component.last_refresh,
-                  cardSize: component.cardSize || '1x1',
-                  lastAttemptAt: attemptTimestamp,
-                  lastSuccessAt: component.lastSuccessAt,
-                  lastOutcome: 'failed',
-                  lastErrorCode: errorCode,
-                  lastErrorAt: attemptTimestamp,
-                  ...(component.board ? { board: component.board } : {})
-                }
-              });
-
-              // Update UI to show error state
               // 1. Replace clock icon with warning triangle
               const clockBtn = card.querySelector('.clock-btn');
               if (clockBtn) {
@@ -1906,8 +1835,14 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 const retryBtn = errorBanner.querySelector('.error-retry-btn');
                 retryBtn.addEventListener('click', (e) => {
                   e.stopPropagation();
+                  refreshSingleBtn.dataset.retry = '1';
                   refreshSingleBtn.click();
                 });
+              } else if (existingBanner) {
+                // Banner already up from a prior failure — refresh its label so a new
+                // failure category (e.g. content_lost) isn't hidden behind a stale message.
+                const label = existingBanner.querySelector('.error-message strong');
+                if (label) label.textContent = getErrorLabel(errorCode);
               }
 
               // Improved toast with error details (4-second auto-dismiss, non-actionable)
@@ -1917,6 +1852,11 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
               if (existingToast) existingToast.remove();
 
               showToast(`"${displayName}" didn't refresh`, `${getErrorLabel(errorCode)}. See the card to retry.`, 'warning', 4000, toastId);
+            } else {
+              // ---- INVARIANT ANOMALY ---- (result.success === true but html too thin to commit)
+              // applyRefreshResult() already console.error'd. Keep old content, no fabricated
+              // failure telemetry, no scary banner — lastOutcome stayed 'success'.
+              showToast(`"${displayName}" couldn't be updated`);
             }
           } catch (err) {
             console.error('Single card refresh error:', err);
@@ -1935,7 +1875,10 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           e.stopPropagation();
           // Trigger single card refresh by simulating click on refresh button
           const refreshBtn = card.querySelector('.refresh-single-btn');
-          if (refreshBtn) refreshBtn.click();
+          if (refreshBtn) {
+            refreshBtn.dataset.retry = '1';
+            refreshBtn.click();
+          }
         });
       }
 

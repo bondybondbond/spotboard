@@ -503,6 +503,145 @@ function _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded = fa
 }
 
 /**
+ * Minimum plausible length for a non-empty refreshed card. Single shared constant so every
+ * apply path uses the same floor (previously an ad-hoc `< 50` in dashboard.js and `< 50` /
+ * `< 100` literals here). This is NOT a content-loss classifier -- `_finalizeSuccess()` /
+ * `isContentLost()` inside refreshComponent() own that. It is only an invariant backstop in
+ * applyRefreshResult() against a malformed success object.
+ */
+const MIN_VALID_HTML_LEN = 50;
+
+/**
+ * The single safe way to turn a refreshComponent() result into the { syncEntry, localEntry }
+ * a caller persists. Shared by refreshAll()'s per-card apply loop and dashboard.js's
+ * single-card handler so the "a failed refresh never destroys last-known-good content" rule
+ * has exactly one implementation.
+ *
+ * Contract:
+ * - refreshComponent() is the SOLE authority on success/failure. This helper reads
+ *   `result.success` and never re-runs isContentLost() or re-classifies.
+ * - success  -> localEntry carries the new html_cache/last_refresh (+ rawCaptureLength only
+ *   if the result provided one); syncEntry: lastOutcome 'success', lastSuccessAt bumped,
+ *   error fields cleared.
+ * - not success (any reason) -> localEntry copies html_cache/last_refresh/*CaptureLength
+ *   UNCHANGED from the component; syncEntry: lastOutcome 'failed',
+ *   lastErrorCode = classifyError(result.error), lastErrorAt set, lastSuccessAt preserved.
+ * - INVARIANT backstop: success === true but html_cache missing/shorter than
+ *   MIN_VALID_HTML_LEN is a refreshComponent() contract violation. Preserve the old content
+ *   and console.error loudly -- but do NOT fabricate a 'failed'/'content_lost' outcome.
+ *   Outcome fields follow `result.success` as before; the loud log is the anomaly signal.
+ *
+ * syncEntry contains only the refresh-owned fields -- the caller merges them into its own
+ * full comp-metadata object (id/name/url/board/requiresActiveFocus/... stay caller-owned).
+ *
+ * @param {object} component - component being refreshed (needs html_cache, last_refresh,
+ *   selector, excludedSelectors, and the prior last-outcome / capture-length fields)
+ * @param {object} result - return value of refreshComponent()
+ * @returns {{ syncEntry: object, localEntry: object, committed: boolean, attemptTimestamp: string }}
+ */
+function applyRefreshResult(component, result) {
+  const attemptTimestamp = new Date().toISOString();
+  const success = !!(result && result.success === true);
+  const invariantViolated = success && (!result.html_cache || result.html_cache.length < MIN_VALID_HTML_LEN);
+  if (invariantViolated) {
+    console.error(
+      `[SB-REFRESH] INVARIANT: success result with empty/thin html_cache for "${component && component.name}" ` +
+      `(len=${result.html_cache ? result.html_cache.length : 0}) — refreshComponent bug; preserving previous content`
+    );
+  }
+  const committed = success && !invariantViolated;
+
+  const localEntry = {
+    selector: component.selector,
+    html_cache: committed ? result.html_cache : component.html_cache,
+    last_refresh: committed ? result.last_refresh : component.last_refresh,
+    excludedSelectors: component.excludedSelectors || []
+  };
+  // rawCaptureLength baseline: only advance it on a real commit that supplied a new value.
+  // A rejected/failed refresh must never poison the drift baseline (see REF-11).
+  const rawCapture = committed
+    ? (result.rawCaptureLength || component.rawCaptureLength)
+    : component.rawCaptureLength;
+  if (rawCapture) localEntry.rawCaptureLength = rawCapture;
+  if (component.originalCaptureLength) localEntry.originalCaptureLength = component.originalCaptureLength;
+
+  const syncEntry = {
+    last_refresh: localEntry.last_refresh,
+    lastAttemptAt: attemptTimestamp,
+    // Outcome fields follow result.success (matches pre-existing refreshAll semantics).
+    // On an invariant violation we still write 'success' here so telemetry isn't fabricated;
+    // the console.error above is the signal that refreshComponent needs fixing.
+    lastSuccessAt: success ? attemptTimestamp : (component.lastSuccessAt || null),
+    lastOutcome: success ? 'success' : 'failed',
+    lastErrorCode: success ? null : classifyError(result && result.error),
+    lastErrorAt: success ? null : attemptTimestamp
+  };
+
+  return { syncEntry, localEntry, committed, attemptTimestamp };
+}
+
+/**
+ * GA4 failure telemetry -- the single place a `refresh_failed` event is built, so every
+ * failed attempt (refreshAll card, single-card refresh, retry) is recorded once and
+ * categorised the same way. classifyError() is the single internal source of truth; its
+ * result is then mapped to the EXISTING GA4 `error_type` label names for backward
+ * compatibility with saved reports / dashboards / historical rows. The only new label
+ * values are 'content_lost' and 'content_drift' -- previously these collapsed to 'unknown'.
+ *
+ * @param {object} component - the component whose refresh failed
+ * @param {object} result - the failed refreshComponent() result
+ * @param {boolean} [isRetry=false] - true only when triggered by the card error-banner Retry
+ */
+// classifyError() enum -> pre-existing GA4 error_type label (unchanged names).
+const _GA4_ERROR_LABEL = {
+  skeleton: 'skeleton_content',
+  network: 'network_error',
+  layout_changed: 'selector_not_found',
+  content_drift: 'content_drift', // NEW (was 'unknown' before)
+  content_lost: 'content_lost',   // NEW (was 'unknown' before)
+  unknown: 'unknown'
+};
+
+function trackRefreshFailure(component, result, isRetry = false) {
+  try {
+    const errorCode = classifyError(result && result.error); // single internal taxonomy
+    const errorMsg = (result && result.error ? String(result.error) : '').toLowerCase();
+
+    let errorType = _GA4_ERROR_LABEL[errorCode] || 'unknown';
+    // Backward-compat shim ONLY: recover the two finer GA4 buckets that classifyError folds
+    // into a parent. Not a second classifier -- errorCode above is still the decision; this
+    // just preserves the historical label granularity for 'timeout' / 'fingerprint_mismatch'.
+    if ((errorType === 'network_error' || errorType === 'unknown') &&
+        (errorMsg.includes('timeout') || errorMsg.includes('timed out'))) {
+      errorType = 'timeout';
+    } else if ((errorType === 'selector_not_found' || errorType === 'unknown') &&
+        (errorMsg.includes('different element') || errorMsg.includes('fingerprint'))) {
+      errorType = 'fingerprint_mismatch';
+    }
+
+    // fallback_used stays a keyword guess (pre-existing; out of scope to improve here).
+    let fallbackUsed = 'direct';
+    if (errorMsg.includes('tab') || errorMsg.includes('background') || errorMsg.includes('active')) {
+      fallbackUsed = 'all_exhausted';
+    }
+    chrome.runtime.sendMessage({
+      type: 'GA4_EVENT',
+      eventName: 'refresh_failed',
+      params: {
+        url_domain: new URL(component.url).hostname,
+        error_type: errorType,
+        selector_type: component.positionBased ? 'position' : 'selector',
+        has_exclusions: !!(component.excludedSelectors && component.excludedSelectors.length > 0),
+        fallback_used: fallbackUsed,
+        ...(isRetry ? { is_retry: true } : {})
+      }
+    });
+  } catch (ga4Error) {
+    console.warn('GA4 tracking error:', ga4Error);
+  }
+}
+
+/**
  * Content-drift guard for the direct-fetch path -- hoisted so it runs for EVERY
  * extractedHtml the direct-fetch path can produce, not only when the CSS selector
  * matched directly. Previously this lived only inside `if (matches.length > 0)`, so the
@@ -2482,51 +2621,11 @@ async function refreshAll(allowedIds = null) {
       results.push(refreshResult);
       componentRefreshMap.set(comp.id, refreshResult);
 
-      // 🎯 BATCH 5: Track individual refresh failures
+      // 🎯 BATCH 5: Track individual refresh failures (one refresh_failed event per failing card).
+      // Shared taxonomy + event builder — see trackRefreshFailure() / classifyError().
       if (!refreshResult.success) {
-        // Classify error using new helper function
-        const errorCode = classifyError(refreshResult.error);
-
-        // Record failure for toast display
-        toastManager.recordFailure(displayName, errorCode);
-
-        try {
-          const errorMsg = refreshResult.error?.toLowerCase() || '';
-          let errorType = 'unknown';
-
-          // Classify error from result
-          if (errorMsg.includes('skeleton') || errorMsg.includes('empty container')) {
-            errorType = 'skeleton_content';
-          } else if (errorMsg.includes('timeout') || errorMsg.includes('timed out')) {
-            errorType = 'timeout';
-          } else if (errorMsg.includes('http') || errorMsg.includes('fetch') || errorMsg.includes('network')) {
-            errorType = 'network_error';
-          } else if (errorMsg.includes('not found') || errorMsg.includes('selector')) {
-            errorType = 'selector_not_found';
-          } else if (errorMsg.includes('different element') || errorMsg.includes('fingerprint')) {
-            errorType = 'fingerprint_mismatch';
-          }
-
-          // Determine which fallback was attempted
-          let fallbackUsed = 'direct'; // Default assumption
-          if (errorMsg.includes('tab') || errorMsg.includes('background') || errorMsg.includes('active')) {
-            fallbackUsed = 'all_exhausted';
-          }
-
-          chrome.runtime.sendMessage({
-            type: 'GA4_EVENT',
-            eventName: 'refresh_failed',
-            params: {
-              url_domain: new URL(comp.url).hostname,
-              error_type: errorType,
-              selector_type: comp.positionBased ? 'position' : 'selector',
-              has_exclusions: (comp.excludedSelectors && comp.excludedSelectors.length > 0),
-              fallback_used: fallbackUsed
-            }
-          });
-        } catch (ga4Error) {
-          console.warn('GA4 tracking error:', ga4Error);
-        }
+        toastManager.recordFailure(displayName, classifyError(refreshResult.error));
+        trackRefreshFailure(comp, refreshResult, false);
       }
 
       // Mark this component as complete
@@ -2593,9 +2692,11 @@ async function refreshAll(allowedIds = null) {
         if (comp.rawCaptureLength) pausedEntry.rawCaptureLength = comp.rawCaptureLength;
         updatedLocalData[comp.id] = pausedEntry;
       } else {
-        // Component was refreshed - update with new data
-        const attemptTimestamp = new Date().toISOString();
-        const errorCode = result.success ? null : classifyError(result.error);
+        // Component was refreshed — persist via the shared safe apply path. applyRefreshResult()
+        // enforces "a failed refresh never overwrites last-known-good html_cache" and owns the
+        // last*/rawCaptureLength bookkeeping; this block only supplies the caller-owned
+        // comp-metadata fields (id/name/url/board/...).
+        const { syncEntry, localEntry } = applyRefreshResult(comp, result);
 
         // If this refresh required the active focused popup, persist the flag so future
         // refreshes skip background+offscreen and go straight to tryActiveTab.
@@ -2612,55 +2713,13 @@ async function refreshAll(allowedIds = null) {
           excludedSelectors: comp.excludedSelectors || [],
           positionBased: comp.positionBased || false, // 🎯 BATCH 5 FIX: Preserve capture method
           refreshPaused: comp.refreshPaused, // Preserve state
-          last_refresh: result.success ? result.last_refresh : comp.last_refresh,
           cardSize: comp.cardSize || '1x1', // 🔧 FIX: Preserve card size on refresh
-          // New error tracking fields
-          lastAttemptAt: attemptTimestamp,
-          lastSuccessAt: result.success ? attemptTimestamp : comp.lastSuccessAt,
-          lastOutcome: result.success ? 'success' : 'failed',
-          lastErrorCode: errorCode,
-          lastErrorAt: result.success ? null : attemptTimestamp,
+          ...syncEntry, // last_refresh + lastAttemptAt/lastSuccessAt/lastOutcome/lastErrorCode/lastErrorAt
           ...(updatedActiveFocus ? { requiresActiveFocus: true } : {}),
           ...(comp.board ? { board: comp.board } : {})
         };
 
-        // Save full data to local (including HTML)
-        if (result.success) {
-          // Validate HTML is not empty before marking as success
-          if (!result.html_cache || result.html_cache.length < 50) {
-            console.error(`⚠️ Empty HTML detected for ${comp.name} - keeping original`);
-            const emptyEntry = {
-              selector: comp.selector,
-              html_cache: comp.html_cache,
-              last_refresh: comp.last_refresh,
-              excludedSelectors: comp.excludedSelectors || []
-            };
-            if (comp.rawCaptureLength) emptyEntry.rawCaptureLength = comp.rawCaptureLength;
-            updatedLocalData[comp.id] = emptyEntry;
-          } else {
-            const successEntry = {
-              selector: comp.selector,
-              html_cache: result.html_cache,
-              last_refresh: result.last_refresh,
-              excludedSelectors: comp.excludedSelectors || []
-            };
-            // Use result.rawCaptureLength if the refresh provided an updated baseline (direct-fetch success or drift graceful fallback)
-            // Otherwise preserve the existing baseline
-            const _newRawCapture = result.rawCaptureLength || comp.rawCaptureLength;
-            if (_newRawCapture) successEntry.rawCaptureLength = _newRawCapture;
-            updatedLocalData[comp.id] = successEntry;
-          }
-        } else {
-          // Keep existing data if refresh failed
-          const failedEntry = {
-            selector: comp.selector,
-            html_cache: comp.html_cache,
-            last_refresh: comp.last_refresh,
-            excludedSelectors: comp.excludedSelectors || []
-          };
-          if (comp.rawCaptureLength) failedEntry.rawCaptureLength = comp.rawCaptureLength;
-          updatedLocalData[comp.id] = failedEntry;
-        }
+        updatedLocalData[comp.id] = localEntry;
       }
     });
     
