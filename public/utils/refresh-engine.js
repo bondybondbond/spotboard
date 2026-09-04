@@ -949,22 +949,58 @@ async function handleConsentDialog(tabId) {
   }
 }
 
+// Reliability guarantee (GitHub issue #10): a page that arms a native `beforeunload`
+// dialog hangs chrome.tabs.remove()/chrome.windows.remove() indefinitely, which in turn
+// hangs the whole Promise.all-based refreshAll() batch. beforeunload suppression (injected
+// per-tab below) is a best-effort prevention layer, NOT the guarantee — it can fail to land
+// before a site's own registration. These two helpers are the actual guarantee: they cap
+// how long we ever wait on a close call, so one hostile page can never freeze the pipeline,
+// suppression success or not. On timeout the tab/window is deliberately left orphaned rather
+// than awaited further — an acceptable rare cost against a frozen dashboard.
+const CLOSE_TIMEOUT_MS = 3000;
+
+async function closeTabSafely(tabId, timeoutMs = CLOSE_TIMEOUT_MS) {
+  let timedOut = false;
+  const timeout = new Promise(resolve => setTimeout(() => { timedOut = true; resolve(); }, timeoutMs));
+  try {
+    await Promise.race([chrome.tabs.remove(tabId), timeout]);
+  } catch (e) {
+    // chrome.tabs.remove rejected (already closed, etc.) — not the freeze case, ignore.
+  }
+  if (timedOut) {
+    console.warn(`[SB-REFRESH] closeTabSafely: tab ${tabId} did not close within ${timeoutMs}ms — abandoning (likely beforeunload dialog), tab left orphaned`);
+  }
+}
+
+async function closeWindowSafely(windowId, timeoutMs = CLOSE_TIMEOUT_MS) {
+  let timedOut = false;
+  const timeout = new Promise(resolve => setTimeout(() => { timedOut = true; resolve(); }, timeoutMs));
+  try {
+    await Promise.race([chrome.windows.remove(windowId), timeout]);
+  } catch (e) {
+    // chrome.windows.remove rejected (already closed, etc.) — not the freeze case, ignore.
+  }
+  if (timedOut) {
+    console.warn(`[SB-REFRESH] closeWindowSafely: window ${windowId} did not close within ${timeoutMs}ms — abandoning (likely beforeunload dialog), window left orphaned`);
+  }
+}
+
 /**
  * Try background tab refresh with visibility spoof
  * Seamless refresh (no tab flash) but may fail for sites detecting background tabs
- * 
+ *
  * @param {string} url - URL to load
  * @param {string} selector - CSS selector to extract
  * @returns {Promise<string|null>} - Extracted HTML or null if failed
- * 
+ *
  * Technique:
  * - Opens background tab (active: false)
  * - Injects visibility spoof at document_start (BEFORE site scripts run)
  * - Overrides document.hidden and document.visibilityState
  * - Waits 2s initial + 3s post-consent + 3s for JS = 8s total
- * 
+ *
  * Success rate: ~85-90% of sites (fails for Page Visibility API detection)
- * 
+ *
  * Used in: tabBasedRefresh() as first attempt before active tab fallback
  */
 async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
@@ -999,6 +1035,12 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
         window.dispatchEvent(new Event('focus'));
         window.dispatchEvent(new Event('scroll'));
         window.dispatchEvent(new Event('resize'));
+
+        // Prevention layer (issue #10): suppress beforeunload arming so a page never gets
+        // to show the native "Leave site?" dialog, which would otherwise hang tab-close calls.
+        // Best-effort only — closeTabSafely()'s timeout is the actual guarantee if this misses.
+        window.addEventListener('beforeunload', e => { e.stopImmediatePropagation(); }, true);
+        Object.defineProperty(window, 'onbeforeunload', { get: () => null, set: () => {}, configurable: true });
       }
     });
 
@@ -1268,13 +1310,13 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
 
     const html = results[0]?.result;
 
-    await chrome.tabs.remove(tab.id);
+    await closeTabSafely(tab.id);
     if (DEBUG) console.log('[SB-REFRESH] tryBackgroundWithSpoof EXIT elapsed=', Date.now() - _bgStart + 'ms');
     return html;
 
   } catch (error) {
     console.error(`❌ [Background] Error:`, error);
-    try { await chrome.tabs.remove(tab.id); } catch (e) {}
+    await closeTabSafely(tab.id);
     return null;
   }
 }
@@ -1333,6 +1375,10 @@ async function tryOffscreenWindow(url, selector, fingerprint = null) {
         window.dispatchEvent(new Event('focus'));
         window.dispatchEvent(new Event('scroll'));
         window.dispatchEvent(new Event('resize'));
+
+        // Prevention layer (issue #10) — see tryBackgroundWithSpoof for rationale.
+        window.addEventListener('beforeunload', e => { e.stopImmediatePropagation(); }, true);
+        Object.defineProperty(window, 'onbeforeunload', { get: () => null, set: () => {}, configurable: true });
       }
     });
 
@@ -1606,7 +1652,7 @@ async function tryOffscreenWindow(url, selector, fingerprint = null) {
     if (DEBUG) console.error('[SB-OFFSCREEN] Error:', err);
     return null;
   } finally {
-    if (win?.id) try { await chrome.windows.remove(win.id); } catch (_) {}
+    if (win?.id) await closeWindowSafely(win.id);
   }
 }
 
@@ -1651,6 +1697,18 @@ async function tryActiveTab(url, selector, fingerprint = null) {
   const atTabId = win.tabs[0].id;
 
   try {
+    // Prevention layer (issue #10) — see tryBackgroundWithSpoof for rationale. tryActiveTab
+    // had no document_start injection before; adding one here closes that gap.
+    await chrome.scripting.executeScript({
+      target: { tabId: atTabId },
+      world: 'MAIN',
+      injectImmediately: true,
+      func: () => {
+        window.addEventListener('beforeunload', e => { e.stopImmediatePropagation(); }, true);
+        Object.defineProperty(window, 'onbeforeunload', { get: () => null, set: () => {}, configurable: true });
+      }
+    });
+
     // Wait 2s for initial page load
     await new Promise(r => setTimeout(r, 2000));
     
@@ -1880,7 +1938,7 @@ async function tryActiveTab(url, selector, fingerprint = null) {
     const html = results[0]?.result;
 
     // Close popup and restore focus to user's window
-    try { await chrome.windows.remove(win.id); } catch (_) {}
+    await closeWindowSafely(win.id);
     if (mainWindow?.id) {
       try { await chrome.windows.update(mainWindow.id, { focused: true }); } catch (_) {}
     }
@@ -1890,7 +1948,7 @@ async function tryActiveTab(url, selector, fingerprint = null) {
 
   } catch (error) {
     console.error(`❌ [Active Tab] Error:`, error);
-    try { await chrome.windows.remove(win.id); } catch (_) {}
+    await closeWindowSafely(win.id);
     if (mainWindow?.id) {
       try { await chrome.windows.update(mainWindow.id, { focused: true }); } catch (_) {}
     }
