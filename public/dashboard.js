@@ -2225,6 +2225,24 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       }
     });
 
+    // Issue #12: if the last Refresh All had failures, its toast was deferred to here so
+    // the successfully-refreshed cards could render without waiting out a 10s delay.
+    // Re-show it now, layered over the fresh board. Single source of truth: this hook,
+    // not a pre-reload toast.
+    try {
+      const { pendingRefreshFailureToast } = await chrome.storage.session.get('pendingRefreshFailureToast');
+      await chrome.storage.session.remove('pendingRefreshFailureToast');
+      if (pendingRefreshFailureToast
+          && Array.isArray(pendingRefreshFailureToast.failed)
+          && pendingRefreshFailureToast.failed.length
+          && Date.now() - (pendingRefreshFailureToast.ts || 0) < 60000
+          && typeof showRefreshFailureToast === 'function') {
+        showRefreshFailureToast(pendingRefreshFailureToast.failed, pendingRefreshFailureToast.successCount);
+      }
+    } catch (e) {
+      console.warn('Pending refresh-failure toast restore failed:', e);
+    }
+
   } catch (error) {
     console.error('❌ Error loading components:', error);
     container.innerHTML = `

@@ -187,6 +187,77 @@ function getDominantTag(html) {
 }
 
 /**
+ * How long refreshAll() waits before reloading the dashboard to show fresh content.
+ * ONE timing for every outcome — a failed card no longer changes it (issue #12).
+ * Kept at the historical all-success delay so the normal Refresh All feel is unchanged.
+ */
+const REFRESH_RELOAD_DELAY_MS = 3500;
+
+/** chrome.storage.session key: hands the failure list across refreshAll()'s reload. */
+const PENDING_FAILURE_TOAST_KEY = 'pendingRefreshFailureToast';
+
+/**
+ * Render the persistent "some cards couldn't refresh" toast (bottom-right).
+ * Standalone (not bound to the RefreshToastManager instance) so it can be re-shown
+ * after refreshAll()'s reload from the persisted list — see issue #12. The manager's
+ * showFailureToast() method delegates here so there is exactly one implementation.
+ *
+ * @param {Array<{name:string, errorCode:string}>} failedComponents
+ * @param {number|null} [successCount] - cards that DID refresh, for the mixed-outcome line
+ */
+function showRefreshFailureToast(failedComponents, successCount = null) {
+  if (!Array.isArray(failedComponents) || failedComponents.length === 0) return;
+
+  // Never stack two failure toasts (reload race, double retry)
+  document.querySelectorAll('.refresh-toast--warning[data-persistent="true"]').forEach(t => t.remove());
+
+  const n = failedComponents.length;
+  const failureList = failedComponents.map(f =>
+    `<li><strong>${f.name}</strong> — ${getErrorLabel(f.errorCode)}</li>`
+  ).join('');
+
+  const title = (successCount && successCount > 0)
+    ? `${successCount} card${successCount !== 1 ? 's' : ''} refreshed · ${n} couldn't be refreshed`
+    : `${n} card${n !== 1 ? 's' : ''} couldn't be refreshed`;
+
+  const failureToast = document.createElement('div');
+  failureToast.className = 'refresh-toast refresh-toast--warning';
+  failureToast.setAttribute('data-persistent', 'true');
+  failureToast.innerHTML = `
+    <div class="refresh-toast__content">
+      <div class="refresh-toast__text">
+        <div class="refresh-toast__title">${title}</div>
+        <div class="toast-failure-list">
+          <strong>Failed (${n}):</strong>
+          <ul style="margin: 4px 0 8px 0; padding-left: 20px; list-style: disc;">
+            ${failureList}
+          </ul>
+        </div>
+        <button class="toast-retry-btn" data-action="retry-failed">
+          Retry failed card${n !== 1 ? 's' : ''}
+        </button>
+      </div>
+      <button class="refresh-toast__close" aria-label="Close">✕</button>
+    </div>
+  `;
+
+  document.body.appendChild(failureToast);
+
+  failureToast.querySelector('.refresh-toast__close').addEventListener('click', () => {
+    failureToast.classList.add('refresh-toast--hiding');
+    setTimeout(() => failureToast.remove(), 400);
+  });
+
+  failureToast.querySelector('.toast-retry-btn').addEventListener('click', () => {
+    failureToast.classList.add('refresh-toast--hiding');
+    setTimeout(() => failureToast.remove(), 400);
+    if (typeof retryFailedComponents === 'function') {
+      retryFailedComponents(failedComponents);
+    }
+  });
+}
+
+/**
  * Toast notification manager for refresh feedback
  * Single toast with progress summary + current action
  */
@@ -267,7 +338,9 @@ class RefreshToastManager {
     // Add small delay to ensure progress toast is hidden first
     setTimeout(() => {
       if (this.failedComponents.length > 0) {
-        this.showFailureToast(pausedCount);
+        // Issue #12: the failure toast is shown AFTER refreshAll()'s reload, from the
+        // persisted list, so successfully-refreshed cards aren't held behind it.
+        // Nothing to show here.
       } else {
         this.showSuccessToast(pausedCount);
       }
@@ -351,52 +424,9 @@ class RefreshToastManager {
    * Show persistent failure toast with list of failed components and retry action
    */
   showFailureToast(pausedCount = 0) {
-    const failureToast = document.createElement('div');
-    failureToast.className = 'refresh-toast refresh-toast--warning';
-    failureToast.setAttribute('data-persistent', 'true');
-
-    const failureList = this.failedComponents.map(f =>
-      `<li><strong>${f.name}</strong> — ${getErrorLabel(f.errorCode)}</li>`
-    ).join('');
-
-    failureToast.innerHTML = `
-      <div class="refresh-toast__content">
-        <div class="refresh-toast__text">
-          <div class="refresh-toast__title">Some cards failed to refresh</div>
-          <div class="toast-failure-list">
-            <strong>Failed (${this.failedComponents.length}):</strong>
-            <ul style="margin: 4px 0 8px 0; padding-left: 20px; list-style: disc;">
-              ${failureList}
-            </ul>
-          </div>
-          <button class="toast-retry-btn" data-action="retry-failed">
-            Retry failed cards
-          </button>
-        </div>
-        <button class="refresh-toast__close" aria-label="Close">✕</button>
-      </div>
-    `;
-
-    document.body.appendChild(failureToast);
-
-    // Close button handler
-    failureToast.querySelector('.refresh-toast__close').addEventListener('click', () => {
-      failureToast.classList.add('refresh-toast--hiding');
-      setTimeout(() => failureToast.remove(), 400);
-    });
-
-    // Retry button handler
-    failureToast.querySelector('.toast-retry-btn').addEventListener('click', async () => {
-      // Hide the failure toast
-      failureToast.classList.add('refresh-toast--hiding');
-      setTimeout(() => failureToast.remove(), 400);
-
-      // Trigger retry of failed components
-      // This calls the global retryFailedComponents function defined below
-      if (typeof retryFailedComponents === 'function') {
-        retryFailedComponents(this.failedComponents);
-      }
-    });
+    // Delegates to the standalone so the same toast can be rebuilt after
+    // refreshAll()'s reload from the persisted failure list (issue #12).
+    showRefreshFailureToast(this.failedComponents, this.successCount);
   }
 }
 
@@ -2836,23 +2866,28 @@ async function refreshAll(allowedIds = null) {
     btn.textContent = `✅ Done`;
     btn.style.background = '#28a745';
 
-    // Only auto-reload if there are NO failures
-    // If there are failures, let the persistent toast stay visible with retry button
+    // Issue #12: reload on ONE timing regardless of outcome — a failed card no longer
+    // holds the successfully-refreshed cards behind a 10s delay. On failure, stash the
+    // list first so its toast can be re-shown over the freshly reloaded board (see
+    // showRefreshFailureToast + the dashboard load hook).
     const failCount = results.filter(r => !r.success).length;
-    if (failCount === 0) {
-      // Auto-reload after success toast displays
-      setTimeout(() => {
-        sessionStorage.setItem('reloadFromRefresh', 'true'); // Flag to skip board_opened tracking
-        location.reload();
-      }, 3500);
-    } else {
-      // Failures present - reload page to show error states properly
-      // Longer delay (10s) to give user time to see the failure toast and click retry if desired
-      setTimeout(() => {
-        sessionStorage.setItem('reloadFromRefresh', 'true');
-        location.reload();
-      }, 10000); // 10 seconds - enough time to read failures and click retry
+    if (failCount > 0) {
+      try {
+        await chrome.storage.session.set({
+          [PENDING_FAILURE_TOAST_KEY]: {
+            failed: toastManager.failedComponents.map(f => ({ name: f.name, errorCode: f.errorCode })),
+            successCount: results.filter(r => r.success).length,
+            ts: Date.now()
+          }
+        });
+      } catch (e) {
+        console.warn('[SB-REFRESH] could not stash failure-toast payload:', e);
+      }
     }
+    setTimeout(() => {
+      sessionStorage.setItem('reloadFromRefresh', 'true'); // Flag to skip board_opened tracking
+      location.reload();
+    }, REFRESH_RELOAD_DELAY_MS);
     
   } catch (error) {
     console.error('❌ Refresh failed:', error);
