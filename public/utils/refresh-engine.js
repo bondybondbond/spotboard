@@ -196,6 +196,9 @@ const REFRESH_RELOAD_DELAY_MS = 3500;
 /** chrome.storage.session key: hands the failure list across refreshAll()'s reload. */
 const PENDING_FAILURE_TOAST_KEY = 'pendingRefreshFailureToast';
 
+/** How long the re-shown failure toast stays before auto-dismissing (pauses on hover). */
+const REFRESH_FAILURE_TOAST_TTL_MS = 10000;
+
 /**
  * Render the persistent "some cards couldn't refresh" toast (bottom-right).
  * Standalone (not bound to the RefreshToastManager instance) so it can be re-shown
@@ -243,14 +246,28 @@ function showRefreshFailureToast(failedComponents, successCount = null) {
 
   document.body.appendChild(failureToast);
 
-  failureToast.querySelector('.refresh-toast__close').addEventListener('click', () => {
+  const dismiss = () => {
     failureToast.classList.add('refresh-toast--hiding');
     setTimeout(() => failureToast.remove(), 400);
+  };
+
+  // Auto-dismiss so the toast clears itself (issue #12: before the reload timing
+  // was unified it was the 10s reload that removed it; now it needs its own timer).
+  // Pause while the pointer is over it so it can't vanish mid-read / mid-Retry-reach.
+  let dismissTimer = setTimeout(dismiss, REFRESH_FAILURE_TOAST_TTL_MS);
+  failureToast.addEventListener('mouseenter', () => clearTimeout(dismissTimer));
+  failureToast.addEventListener('mouseleave', () => {
+    dismissTimer = setTimeout(dismiss, REFRESH_FAILURE_TOAST_TTL_MS);
+  });
+
+  failureToast.querySelector('.refresh-toast__close').addEventListener('click', () => {
+    clearTimeout(dismissTimer);
+    dismiss();
   });
 
   failureToast.querySelector('.toast-retry-btn').addEventListener('click', () => {
-    failureToast.classList.add('refresh-toast--hiding');
-    setTimeout(() => failureToast.remove(), 400);
+    clearTimeout(dismissTimer);
+    dismiss();
     if (typeof retryFailedComponents === 'function') {
       retryFailedComponents(failedComponents);
     }
