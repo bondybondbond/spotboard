@@ -1743,7 +1743,12 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         const rawCaptureLength = target.innerHTML.length; // pristine baseline for drift guard (raw-to-raw); light DOM is the consistent source after slot flattening
         const cleanedHTML = sanitizeHTML(target, excludedElements);
         log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
-        
+
+        // #9: Output-side emptiness guard. The whole save path below is wrapped in
+        // commitCapture() so it can be gated behind a "capture anyway?" warning when the
+        // sanitized result is unambiguously empty. commitCapture() IS the unchanged save
+        // path — non-empty captures call it immediately and behave exactly as before.
+        const commitCapture = (bypassedEmptyWarning = false) => {
         // 🎯 BATCH 2: Extract first heading for self-healing fallback
         // 🔧 FIX: Extract from LIVE DOM, not sanitized HTML
         // Skip hidden/SEO headings (0×0 rect = display:none, not rendered)
@@ -1986,7 +1991,8 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                       params: {
                         url_domain: new URL(window.location.href).hostname,
                         capture_mode: finalPositionBased ? 'position' : 'selector',
-                        has_exclusions: excludedSelectors.length > 0
+                        has_exclusions: excludedSelectors.length > 0,
+                        empty_warning_bypassed: bypassedEmptyWarning
                       }
                     });
 
@@ -2010,6 +2016,124 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
               });
             });
           });
+        }; // end commitCapture()
+
+        // #9: warn only when essentially NOTHING was captured. Principle: SpotBoard does
+        // not decide whether short content is worth tracking -- "0 results", "N/A", "No new
+        // messages", "52%" are all legitimate things a user may intentionally capture, so
+        // length alone never condemns a capture. We intervene only when the output is
+        // structurally empty: near-zero text AND zero structural/media nodes.
+        //
+        // Deliberately NOT isContentLost() -- that guard's job is refresh safety (compare a
+        // fresh result against a known-good cache). A first capture has no baseline, so the
+        // only thing we can assert with high confidence is "structurally empty". A lone
+        // "Loading..." capture passes this rule by design; we don't special-case loading
+        // strings, and the confirmation preview already shows the user what they're saving.
+        //
+        //  - VOLATILE_FINGERPRINT_RE exemption: a bare single-digit value ("0", "5" -- a
+        //    count or score) is a valid tiny card, not garbage. Anchored regex.
+        //  - Onboarding / playground are guided flows on controlled pages -> never warn.
+        const capBody = new DOMParser().parseFromString(cleanedHTML, 'text/html').body;
+        const capText = (capBody.textContent || '').trim();
+        const looksEmpty = !wasOnboarding && !getIsPlaygroundPage()
+          && capText.replace(/\s/g, '').length < 2
+          && capBody.querySelectorAll('li, tr, article, img, svg').length === 0
+          && !VOLATILE_FINGERPRINT_RE.test(capText);
+
+        if (!looksEmpty) {
+          commitCapture();
+          return;
+        }
+
+        log('⚠️ Capture looks empty — warning before save. text:', JSON.stringify(capText.slice(0, 40)));
+
+        // Tear capture mode down before showing the decision modal. Capture-mode's
+        // document-level hover handlers (handleHover/handleExit) call
+        // style.removeProperty('background'/'outline') on whatever the cursor leaves --
+        // which strips this modal's own background to transparent when the user mouses
+        // over it. commitCapture() and the Cancel handler below don't need capture mode
+        // active (they use closure state), and both call toggleCapture(false) again
+        // harmlessly. This also clears the locked element's green page outline.
+        toggleCapture(false);
+
+        const warnOverlay = document.createElement('div');
+        warnOverlay.id = 'spotboard-empty-capture-warning';
+        warnOverlay.style.cssText = `
+          position: fixed !important; top: 0 !important; left: 0 !important;
+          right: 0 !important; bottom: 0 !important;
+          background: rgba(0, 0, 0, 0.5) !important;
+          display: flex !important; justify-content: center !important; align-items: center !important;
+          z-index: 2147483647 !important; isolation: isolate !important;
+        `;
+        const warnBox = document.createElement('div');
+        warnBox.style.cssText = `
+          background: #742a2a !important; color: white !important; padding: 24px !important;
+          border-radius: 8px !important; max-width: 400px !important; width: 90% !important;
+          text-align: center !important; position: relative !important; z-index: 2147483647 !important;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+        `;
+        const warnMsg = document.createElement('div');
+        warnMsg.style.cssText = `font-size: 15px !important; line-height: 1.5 !important; margin-bottom: 20px !important; font-family: inherit !important;`;
+        warnMsg.textContent = '⚠️ This spot looks empty — there’s almost nothing to save. Capture it anyway?';
+        const warnRow = document.createElement('div');
+        warnRow.style.cssText = `display: flex !important; gap: 12px !important; font-family: inherit !important;`;
+        const warnProceed = document.createElement('button');
+        warnProceed.textContent = 'Capture anyway';
+        warnProceed.style.cssText = `flex: 1 !important; padding: 12px !important; background: #48bb78 !important; color: white !important; border: none !important; border-radius: 4px !important; cursor: pointer !important; font-size: 14px !important; font-weight: 600 !important; font-family: inherit !important; text-transform: none !important;`;
+        const warnCancel = document.createElement('button');
+        warnCancel.textContent = 'Cancel';
+        warnCancel.style.cssText = `flex: 1 !important; padding: 12px !important; background: #f56565 !important; color: white !important; border: none !important; border-radius: 4px !important; cursor: pointer !important; font-size: 14px !important; font-weight: 600 !important; font-family: inherit !important; text-transform: none !important;`;
+
+        const closeWarn = () => {
+          warnOverlay.remove();
+          document.removeEventListener('keydown', warnKeyHandler, true);
+        };
+        const proceedAnyway = (e?: Event) => {
+          if (e) { e.stopPropagation(); e.preventDefault(); }
+          closeWarn();
+          commitCapture(true);
+        };
+        const cancelCapture = (e?: Event) => {
+          if (e) { e.stopPropagation(); e.preventDefault(); }
+          closeWarn();
+          target.style.outline = '';
+          target.style.cursor = '';
+          lockedElement = null;
+          resetExclusions();
+          chrome.runtime.sendMessage({
+            type: 'GA4_EVENT',
+            eventName: 'capture_cancelled',
+            params: {
+              url_domain: new URL(window.location.href).hostname,
+              stage: 'empty_warning',
+              method: 'button',
+              had_preview: true,
+              had_exclusions: excludedElements.length > 0
+            }
+          });
+          toggleCapture(false);
+        };
+        const warnKeyHandler = (e: KeyboardEvent) => {
+          if (e.key === 'Escape') cancelCapture(e);
+        };
+
+        warnProceed.addEventListener('click', proceedAnyway, true);
+        warnCancel.addEventListener('click', cancelCapture, true);
+        document.addEventListener('keydown', warnKeyHandler, true);
+
+        warnRow.appendChild(warnProceed);
+        warnRow.appendChild(warnCancel);
+        warnBox.appendChild(warnMsg);
+        warnBox.appendChild(warnRow);
+        warnOverlay.appendChild(warnBox);
+        document.body.appendChild(warnOverlay);
+        warnCancel.focus();
+
+        chrome.runtime.sendMessage({
+          type: 'GA4_EVENT',
+          eventName: 'capture_empty_warning',
+          params: { url_domain: new URL(window.location.href).hostname }
+        });
       }, 2000);
     }, true); // Use capture phase
   }
