@@ -2569,7 +2569,8 @@ async function runWithConcurrency(items, fn, limit) {
 }
 
 /**
- * Refresh all components in parallel (limit=3 for normal cards, serial for focus-required)
+ * Refresh all components in parallel (limit=3 for normal cards, limit=3 for focus-required,
+ * normal pool runs first — see issue #11 for the live-test evidence behind concurrent focus)
  */
 async function refreshAll(allowedIds = null) {
   const btn = document.getElementById('refresh-all-btn');
@@ -2646,13 +2647,18 @@ async function refreshAll(allowedIds = null) {
       : `${activeComponents.length} components`;
     toastManager.startRefresh(activeComponents.length, toastMessage);
     
-    // Refresh active components in parallel (normal cards: limit=3, focus-required: serial)
+    // Refresh active components in parallel (normal cards: limit=3, focus-required: limit=3)
     const results = [];
     const componentRefreshMap = new Map(); // Track which components were refreshed
 
-    // Split into two pools:
+    // Split into two pools, run after each other (focus lane still starts only once the
+    // normal pool has fully drained — the barrier itself was not removed by this change):
     // - normalCards: background/offscreen refresh — safe to run concurrently
-    // - focusCards: requiresActiveFocus (focused popup) — must be serial (one popup at a time)
+    // - focusCards: requiresActiveFocus (focused popup) — validated safe to run concurrently
+    //   too, up to 3 at once, via live-tested concurrency (issue #11): 9/9 runs at
+    //   concurrency=3 showed genuine overlap with zero cross-contamination, ~36% faster
+    //   than the previous one-at-a-time loop. Concurrency isn't tied to the current count
+    //   of 3 focus cards — it's a worker-pool limit that simply caps out when the queue is smaller.
     const focusCards = activeComponents.filter(c => c.requiresActiveFocus || requiresVisibleTab(c.url));
     const normalCards = activeComponents
       .filter(c => !c.requiresActiveFocus && !requiresVisibleTab(c.url))
@@ -2664,7 +2670,7 @@ async function refreshAll(allowedIds = null) {
       });
 
     if (DEBUG) console.log('[SB-PARALLEL] refreshAll start:', activeComponents.length, 'cards at', new Date().toISOString());
-    if (DEBUG) console.log('[SB-PARALLEL] pools: normal=' + normalCards.length + ' (limit=3) focus=' + focusCards.length + ' (serial)');
+    if (DEBUG) console.log('[SB-PARALLEL] pools: normal=' + normalCards.length + ' (limit=3) focus=' + focusCards.length + ' (limit=3)');
 
     // Single card toast message for parallel mode
     toastManager.updateProgress('Refreshing ' + activeComponents.length + ' card' + (activeComponents.length !== 1 ? 's' : '') + '…', false);
@@ -2693,8 +2699,9 @@ async function refreshAll(allowedIds = null) {
 
     // Run normal cards concurrently (up to 3 at once)
     await runWithConcurrency(normalCards, processCard, 3);
-    // Run focus-required cards serially after (one focused popup at a time)
-    for (const comp of focusCards) await processCard(comp);
+    // Run focus-required cards after the normal pool drains — concurrently (up to 3 at once),
+    // reusing the same runWithConcurrency worker pool. See issue #11 for the live-test evidence.
+    await runWithConcurrency(focusCards, processCard, 3);
 
     if (DEBUG) console.log('[SB-PARALLEL] refreshAll complete elapsed=' + (Date.now() - refreshStartTime) + 'ms');
     
