@@ -1147,24 +1147,20 @@ function renderDashboardTour() {
     body.appendChild(deleteWrapper);
     body.appendChild(document.createTextNode(' button.'));
     body.appendChild(document.createElement('br'));
-    body.appendChild(document.createTextNode('Try that now. Continue when you are ready.'));
+    body.appendChild(document.createTextNode('You can remove any card later with this button.'));
     tourCard.appendChild(body);
     const skipBtn = document.createElement('button');
     skipBtn.className = 'dashboard-tour-btn';
     skipBtn.textContent = 'Continue →';
     skipBtn.addEventListener('click', () => {
+      // DATA-SAFETY INVARIANT (dev plan 16 / GitHub #16): this step is instructional only.
+      // It must never click .delete-btn or delete a card. Deletion happens solely from a
+      // real user click that passes confirm().
       document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
-      const firstDeleteBtn = document.querySelector('.delete-btn');
-      if (firstDeleteBtn) {
-        // Auto-delete so the user always sees the empty board state
-        firstDeleteBtn.click();
-      } else {
-        // No cards left (already deleted manually) — just complete
-        const cont = document.getElementById('components-container');
-        chrome.storage.local.set({ dashboardTourShown: true }, () => {
-          showDashboardTourCompletion(cont);
-        });
-      }
+      const cont = document.getElementById('components-container');
+      chrome.storage.local.set({ dashboardTourShown: true }, () => {
+        showDashboardTourCompletion(cont);
+      });
     });
     tourCard.appendChild(skipBtn);
     document.querySelectorAll('.delete-btn').forEach(el => el.classList.add('tour-highlight-btn'));
@@ -1357,7 +1353,7 @@ function showDashboardTourCompletion(container) {
   btn.className = 'dashboard-tour-btn';
   btn.textContent = "Let's go →";
   btn.addEventListener('click', () => {
-    location.reload(); // dashboardTourShown already written at delete time
+    location.reload(); // dashboardTourShown already written when the tour started
   });
   card.appendChild(btn);
   overlay.appendChild(card);
@@ -2135,15 +2131,17 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       // Delete functionality
       const deleteBtn = card.querySelector('.delete-btn');
       deleteBtn.addEventListener('click', () => {
-        const onStep2 = document.getElementById('sb-dashboard-tour')?.dataset.step === '2';
-        const shouldDelete = onStep2 || confirm(`Delete "${component.customLabel || component.name}"? This cannot be undone.`);
+        // DATA-SAFETY INVARIANT (dev plan 16 / GitHub #16): deletion may only originate
+        // from a real user delete action and must pass confirm(). No programmatic caller
+        // (tour, onboarding, load, refresh, migration) may reach this branch.
+        const shouldDelete = confirm(`Delete "${component.customLabel || component.name}"? This cannot be undone.`);
         if (shouldDelete) {
           // GA4: Track component deletion
           const cardAgeDays = Math.floor((Date.now() - new Date(component.created_at || component.last_refresh || Date.now()).getTime()) / (1000 * 60 * 60 * 24));
           sendEvent('component_deleted', {
             url_domain: new URL(component.url).hostname,
             card_age_days: cardAgeDays,
-            source: onStep2 ? 'tour' : 'user'
+            source: 'user'
           }, getEngagementTime());
           
           // Remove from in-memory array FIRST so subsequent deletes work correctly
@@ -2483,6 +2481,11 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
         return;
       }
       if (onboardingCompleted && !dashboardTourShown && components.length > 0) {
+        // "start == shown" (dev plan 16 / GitHub #16): persist immediately so a mid-tour
+        // reload — manual extension reload, or the storage.onChanged reload path when
+        // hasExistingCards is falsy — cannot re-arm the tour on a board of real cards.
+        // Data safety outranks tour completion.
+        chrome.storage.local.set({ dashboardTourShown: true });
         renderDashboardTour();
       }
     });
