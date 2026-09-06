@@ -480,7 +480,7 @@ function handleExit(event: MouseEvent) {
 // 3. Click Handler (The Save)
 // Sanitize captured HTML - remove capture artifacts
 // Show styled notification modal instead of alert
-function showStyledNotification(message: string, type: 'success' | 'error' = 'success') {
+function showStyledNotification(message: string, type: 'success' | 'error' = 'success', cardId?: string) {
   const modal = document.createElement('div');
   modal.style.cssText = `
     position: fixed !important;
@@ -533,17 +533,17 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
   const viewBtn = modal.querySelector('#viewBoardBtn');
   if (viewBtn) {
     viewBtn.addEventListener('click', () => {
-      const dashboardUrl = chrome.runtime.getURL('dashboard.html');
-      
-      // Check if dashboard already open
-      chrome.runtime.sendMessage({ action: 'focusDashboard' }, (response) => {
+      // #19: hand the just-captured card's id to the dashboard so it can scroll to
+      // + briefly highlight it. background.ts stashes it in chrome.storage.session
+      // (a content script can't write session storage itself).
+      chrome.runtime.sendMessage({ action: 'focusDashboard', highlightCardId: cardId }, (response) => {
         if (!response || !response.found) {
           // Dashboard not open, create new tab
-          chrome.runtime.sendMessage({ action: 'openDashboard' });
+          chrome.runtime.sendMessage({ action: 'openDashboard', highlightCardId: cardId });
         }
-        // If found, background script already focused it
+        // If found, background script already focused it (and reloads it when highlighting)
       });
-      
+
       modal.remove();
     });
   }
@@ -2006,7 +2006,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                     resetExclusions();
 
                     if (!wasOnboarding) {
-                      showStyledNotification(`✅ Spotted: ${name}`, 'success');
+                      showStyledNotification(`✅ Spotted: ${name}`, 'success', component.id);
                       toggleCapture(false);
                     } else {
                       console.debug('[sb-onboarding] wasOnboarding=true — skipping showStyledNotification and extra toggleCapture');

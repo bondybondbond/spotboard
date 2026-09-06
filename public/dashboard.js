@@ -2545,7 +2545,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
 
     // Boards: store live reference and render tab tray, then restore active board from sessionStorage
     allComponents = components;
-    Promise.all([loadBoards(), loadCardOrder()]).then(([boards, cardOrder]) => {
+    Promise.all([loadBoards(), loadCardOrder()]).then(async ([boards, cardOrder]) => {
       cardOrderCache = cardOrder; // issue #17: seed before any filterCardsToBoard() → reorderGridDom()
       renderTabTray(boards, allComponents);
       let restored = false;
@@ -2559,6 +2559,42 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       // issue #17: when the active view is All, setActiveBoard() isn't called — apply the
       // master order on first paint so a saved All arrangement shows immediately.
       if (!restored) reorderGridDom(grid, 'all');
+
+      // #19: "View on SpotBoard" handoff — scroll to + briefly glow the just-captured card.
+      try {
+        const { pendingHighlightCard } = await chrome.storage.session.get('pendingHighlightCard');
+        await chrome.storage.session.remove('pendingHighlightCard'); // consume once, no retries
+        if (pendingHighlightCard && pendingHighlightCard.id
+            && Date.now() - (pendingHighlightCard.ts || 0) < 60000) {
+          // filterCardsToBoard only hides off-board cards (display:none), never removes them —
+          // so this finds the card whatever view is active. A stale/deleted id → no match → no-op.
+          const target = grid.querySelector(
+            `.component-card[data-card-id="${CSS.escape(pendingHighlightCard.id)}"]`);
+          if (target) {
+            // a fresh capture is unassigned → make it visible before we scroll to it
+            setActiveBoard('all');
+            await new Promise(r => requestAnimationFrame(r)); // let the view switch settle
+            const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+            target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+            // Start the glow only once the scroll has settled — otherwise a long smooth
+            // scroll eats most of the 1.5s animation while the card is still off-screen.
+            if (!reduce) {
+              let lastY = window.scrollY, stable = 0;
+              const t0 = performance.now();
+              while (performance.now() - t0 < 1500) {
+                await new Promise(r => requestAnimationFrame(r));
+                const y = window.scrollY;
+                if (Math.abs(y - lastY) < 1) { if (++stable >= 3) break; } else { stable = 0; }
+                lastY = y;
+              }
+            }
+            target.classList.add('sb-just-captured');
+            setTimeout(() => target.classList.remove('sb-just-captured'), 5000); // match the 5s glow
+          }
+        }
+      } catch (e) {
+        console.warn('highlight-new-card failed:', e);
+      }
     });
 
     // Post-first-capture nudge: ghost cards fill empty grid slots up to 3 total

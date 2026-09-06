@@ -324,28 +324,58 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Dashboard focus handler (for "View on SpotBoard" button)
   if (request.action === 'focusDashboard') {
     const dashboardUrl = chrome.runtime.getURL('dashboard.html');
-    
-    chrome.tabs.query({}, (tabs) => {
-      const dashboardTab = tabs.find(tab => tab.url === dashboardUrl);
-      
+    const highlightCardId: string | undefined = request.highlightCardId;
+
+    (async () => {
+      // #19: stash the just-captured card id for the dashboard render to consume.
+      // Written here (trusted context) — a content script can't write storage.session.
+      if (highlightCardId) {
+        try {
+          await chrome.storage.session.set({
+            pendingHighlightCard: { id: highlightCardId, ts: Date.now() }
+          });
+        } catch (e) {
+          console.warn('pendingHighlightCard set failed:', e);
+        }
+      }
+
+      const tabs = await chrome.tabs.query({});
+      // tolerant match: a dashboard tab carrying a hash/query still counts
+      const dashboardTab = tabs.find(tab => !!tab.url && tab.url.split(/[?#]/)[0] === dashboardUrl);
+
       if (dashboardTab && dashboardTab.id) {
-        chrome.tabs.update(dashboardTab.id, { active: true });
+        await chrome.tabs.update(dashboardTab.id, { active: true });
         chrome.windows.update(dashboardTab.windowId!, { focused: true });
+        // #19: re-run the render so an already-open board shows the new card and
+        // picks up the highlight. Only when we're actually highlighting.
+        if (highlightCardId) chrome.tabs.reload(dashboardTab.id);
         sendResponse({ found: true });
       } else {
         sendResponse({ found: false });
       }
-    });
-    
+    })();
+
     return true;
   }
-  
+
   // Dashboard open handler
   if (request.action === 'openDashboard') {
-    chrome.tabs.create({
-      url: chrome.runtime.getURL('dashboard.html')
-    });
-    sendResponse({ opened: true });
+    const highlightCardId: string | undefined = request.highlightCardId;
+
+    (async () => {
+      if (highlightCardId) {
+        try {
+          await chrome.storage.session.set({
+            pendingHighlightCard: { id: highlightCardId, ts: Date.now() }
+          });
+        } catch (e) {
+          console.warn('pendingHighlightCard set failed:', e);
+        }
+      }
+      chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+      sendResponse({ opened: true });
+    })();
+
     return true;
   }
 });
