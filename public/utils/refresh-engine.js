@@ -2792,7 +2792,8 @@ async function refreshAll(allowedIds = null) {
           lastErrorCode: comp.lastErrorCode,
           lastErrorAt: comp.lastErrorAt,
           ...(comp.requiresActiveFocus ? { requiresActiveFocus: true } : {}),
-          ...(comp.board ? { board: comp.board } : {})
+          ...(comp.board ? { board: comp.board } : {}),
+          ...(comp.created_at ? { created_at: comp.created_at } : {}) // issue #18: preserve capture-order key
         };
 
         const pausedEntry = {
@@ -2828,7 +2829,8 @@ async function refreshAll(allowedIds = null) {
           cardSize: comp.cardSize || '1x1', // 🔧 FIX: Preserve card size on refresh
           ...syncEntry, // last_refresh + lastAttemptAt/lastSuccessAt/lastOutcome/lastErrorCode/lastErrorAt
           ...(updatedActiveFocus ? { requiresActiveFocus: true } : {}),
-          ...(comp.board ? { board: comp.board } : {})
+          ...(comp.board ? { board: comp.board } : {}),
+          ...(comp.created_at ? { created_at: comp.created_at } : {}) // issue #18: preserve capture-order key
         };
 
         updatedLocalData[comp.id] = localEntry;

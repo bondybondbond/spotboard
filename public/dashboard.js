@@ -1685,6 +1685,23 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
     ...localData[meta.id] // Add html_cache from local storage
   }));
 
+  // issue #18: capture order is an explicit concept, not an accident of sync-key
+  // enumeration (Chrome does not guarantee that order). Sort the "library" order by
+  // created_at ascending so a newly captured card — which always carries the newest
+  // created_at — is always the last tile in the All view, and stays there across
+  // reloads and Refresh All. Legacy cards with no valid created_at keep their existing
+  // relative order but sit before all timestamped cards, so the "newest is last"
+  // guarantee holds with no exception. Stable via an original-index tiebreak.
+  components
+    .map((c, i) => [c, i])
+    .sort(([a, ai], [b, bi]) => {
+      const at = Date.parse(a.created_at); const bt = Date.parse(b.created_at);
+      const ak = Number.isNaN(at) ? -Infinity : at;
+      const bk = Number.isNaN(bt) ? -Infinity : bt;
+      return (ak - bk) || (ai - bi);
+    })
+    .forEach(([c], i) => { components[i] = c; });
+
     // 📊 GA4: Track board opened/refreshed with intelligent detection
   const isReloadFromRefresh = sessionStorage.getItem('reloadFromRefresh');
   sessionStorage.removeItem('reloadFromRefresh'); // Clear flag immediately
