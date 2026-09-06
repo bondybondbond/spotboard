@@ -1079,9 +1079,44 @@ function renderDashboardTour() {
   tourCard.id = 'sb-dashboard-tour';
   tourCard.className = 'dashboard-tour-card';
 
+  // GitHub #21: an obvious, immediate exit from any step (visible ✕ + Esc).
+  // DATA-SAFETY INVARIANT (LEARNINGS UI-12 / GitHub #16): this only removes the
+  // overlay DOM and sets a boolean flag — it never touches componentsData and
+  // never clicks .delete-btn. Nothing in onboarding/tour may delete user content.
+  function exitTour(reason) {
+    document.removeEventListener('keydown', onKeydown);
+    document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
+    const step = tourCard.dataset.step;
+    tourCard.remove();
+    // "start == shown" is already written at render time (#16); re-write defensively
+    // so the legacy hasExistingCards path also stays covered. No location.reload() —
+    // the board is already rendered underneath.
+    chrome.storage.local.set({ dashboardTourShown: true });
+    if (window.GA4 && window.GA4.sendEvent) {
+      window.GA4.sendEvent('dashboard_tour_dismissed', { step, reason });
+    }
+  }
+
+  function onKeydown(e) {
+    if (e.key === 'Escape') exitTour('esc');
+  }
+
+  // Present on every step. The card is rebuilt per step (tourCard.textContent = ''),
+  // so each buildStepN() re-adds this.
+  function appendCloseButton() {
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'dashboard-tour-close';
+    closeBtn.setAttribute('aria-label', 'Close tour');
+    closeBtn.textContent = '✕';
+    closeBtn.addEventListener('click', () => exitTour('close'));
+    tourCard.appendChild(closeBtn);
+  }
+
   function buildStep1() {
     tourCard.textContent = '';
     tourCard.dataset.step = '1';
+    appendCloseButton();
     const title = document.createElement('p');
     title.className = 'dashboard-tour-title';
     title.textContent = '💡 Refreshing your spots';
@@ -1124,6 +1159,7 @@ function renderDashboardTour() {
     document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
     tourCard.textContent = '';
     tourCard.dataset.step = '2';
+    appendCloseButton();
     const title = document.createElement('p');
     title.className = 'dashboard-tour-title';
     title.textContent = 'Changed your mind?';
@@ -1157,6 +1193,7 @@ function renderDashboardTour() {
       // It must never click .delete-btn or delete a card. Deletion happens solely from a
       // real user click that passes confirm().
       document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
+      document.removeEventListener('keydown', onKeydown); // #21: tour is ending — drop the Esc listener
       const cont = document.getElementById('components-container');
       chrome.storage.local.set({ dashboardTourShown: true }, () => {
         showDashboardTourCompletion(cont);
@@ -1169,6 +1206,7 @@ function renderDashboardTour() {
   function buildStep0() {
     tourCard.textContent = '';
     tourCard.dataset.step = '0';
+    appendCloseButton();
     const title = document.createElement('p');
     title.className = 'dashboard-tour-title';
     title.textContent = 'Nice one!';
@@ -1186,6 +1224,7 @@ function renderDashboardTour() {
 
   buildStep0();
   document.body.appendChild(tourCard);
+  document.addEventListener('keydown', onKeydown); // GitHub #21: Esc exits from any step
 }
 
 // ===== POST-FIRST-CAPTURE NUDGE: Ghost cards + site picker modal =====
@@ -1645,7 +1684,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
     ...meta,
     ...localData[meta.id] // Add html_cache from local storage
   }));
-  
+
     // 📊 GA4: Track board opened/refreshed with intelligent detection
   const isReloadFromRefresh = sessionStorage.getItem('reloadFromRefresh');
   sessionStorage.removeItem('reloadFromRefresh'); // Clear flag immediately
