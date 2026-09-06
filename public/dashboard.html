@@ -30,7 +30,22 @@
       grid-auto-rows: 370px; /* Fixed row height */
       gap: 20px;
       align-content: start;
+      position: relative; /* containing block for the reorder insertion caret (overlay only — not a grid item) */
     }
+
+    /* Reorder insertion caret — absolute overlay, never a grid item, never affects layout.
+       left/top/height are set inline by JS; visibility toggled via .visible. */
+    .sb-drop-caret {
+      position: absolute;
+      width: 3px;
+      background: #667eea;
+      border-radius: 2px;
+      pointer-events: none;
+      z-index: 5;
+      display: none;
+    }
+    .sb-drop-caret.visible { display: block; }
+    .components-grid.sb-reordering .component-card { cursor: grabbing; }
     .component-card {
       background: white;
       padding: 0;

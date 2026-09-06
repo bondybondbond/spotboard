@@ -147,6 +147,227 @@ function saveBoards(arr) {
   return new Promise(r => chrome.storage.sync.set({ boards: arr }, r));
 }
 
+// ── Card ordering within a board (issue #17) ──────────────────────────────
+// Persisted as a single sync key `cardOrder` = { "<boardId>": [id,…], "__none__": [id,…] }.
+// A standalone key — NOT a field on comp-* — because refreshAll() rebuilds each comp-*
+// from a fixed allowlist and would silently drop an unknown `order` field.
+// `cardOrderCache` mirrors the stored value so the per-board DOM reorder can run
+// synchronously (no storage round-trip → no flash of natural order on board switch).
+const CARD_ORDER_NONE = '__none__';
+let cardOrderCache = {};
+
+function orderKey(boardId) { return boardId || CARD_ORDER_NONE; }
+
+function loadCardOrder() {
+  return new Promise(r => chrome.storage.sync.get(['cardOrder'], d => r(d.cardOrder || {})));
+}
+
+// Prune ids with no live component (sync QUOTA_BYTES_PER_ITEM = 8KB) and drop empty
+// lists, then persist. Also refreshes cardOrderCache to the cleaned value.
+function saveCardOrder(order) {
+  const liveIds = new Set(allComponents.map(c => c.id));
+  const cleaned = {};
+  for (const key of Object.keys(order || {})) {
+    const list = (order[key] || []).filter(id => liveIds.has(id));
+    if (list.length) cleaned[key] = list;
+  }
+  cardOrderCache = cleaned;
+  return new Promise(r => chrome.storage.sync.set({ cardOrder: cleaned }, r));
+}
+
+// Reorder the .component-card DOM nodes in `grid` to match the desired order for `boardId`.
+// DOM nodes are physically moved (not CSS `order`) so tab/focus order tracks visual order.
+// 'all' → restore natural capture order (data-natural-index). A board with no stored
+// order → leave nodes untouched (natural order). Ghost cards + empty message stay trailing.
+function reorderGridDom(grid, boardId) {
+  if (!grid) return;
+  const cardEls = Array.from(grid.querySelectorAll('.component-card'));
+  if (cardEls.length < 2) return;
+  const byId = new Map(cardEls.map(el => [el.dataset.cardId, el]));
+  let desiredIds;
+
+  if (boardId === 'all') {
+    desiredIds = cardEls.slice()
+      .sort((a, b) => (parseInt(a.dataset.naturalIndex, 10) || 0) - (parseInt(b.dataset.naturalIndex, 10) || 0))
+      .map(el => el.dataset.cardId);
+  } else {
+    const memberEls = cardEls.filter(el => (el.dataset.boardId || '') === boardId);
+    if (memberEls.length < 2) return;
+    const memberIds = memberEls.map(el => el.dataset.cardId);
+    const stored = (cardOrderCache[orderKey(boardId)] || []).filter(id => memberIds.includes(id));
+    if (!stored.length) return; // no custom order for this board — keep natural order
+    const rest = memberIds.filter(id => !stored.includes(id));
+    const orderedMemberIds = stored.concat(rest);
+    // Walk existing DOM order; at each member slot substitute the next ordered member id.
+    // Non-member cards keep their ordinal positions.
+    const memberSet = new Set(memberIds);
+    let mi = 0;
+    desiredIds = cardEls.map(el =>
+      memberSet.has(el.dataset.cardId) ? orderedMemberIds[mi++] : el.dataset.cardId
+    );
+  }
+
+  desiredIds.forEach(id => { const el = byId.get(id); if (el) grid.appendChild(el); });
+  grid.querySelectorAll('.ghost-card, .sb-board-empty').forEach(el => grid.appendChild(el));
+}
+
+// ── Drag-to-reorder within a board (issue #17) ───────────────────────────
+// Attached once per full render to the grid element. Reorder is only active when a
+// specific board is selected ('all' is a non-sortable library view). The insertion
+// caret is an absolute overlay child of the grid — hit-testing reads .component-card
+// rects ONLY, so the caret can never perturb the geometry it describes.
+function setupGridReorder(grid) {
+  if (!grid || grid.dataset.reorderWired === '1') return;
+  grid.dataset.reorderWired = '1';
+
+  let caret = grid.querySelector('.sb-drop-caret');
+  if (!caret) {
+    caret = document.createElement('div');
+    caret.className = 'sb-drop-caret';
+    caret.setAttribute('aria-hidden', 'true');
+    grid.appendChild(caret);
+  }
+
+  let draggingId = null;
+  let pendingDropIndex = null; // insertion index into the visible-member list (incl. dragged card), or null
+  let rafPending = false;
+
+  const visibleMembers = () =>
+    Array.from(grid.querySelectorAll('.component-card')).filter(el =>
+      el.style.display !== 'none' && activeBoard !== 'all' && (el.dataset.boardId || '') === activeBoard
+    );
+
+  function computeIndex(px, py, members) {
+    if (!members.length) return 0;
+    const rects = members.map(el => el.getBoundingClientRect());
+    // Bucket cards into visual rows by top edge (tolerance covers sub-pixel drift).
+    const rows = [];
+    rects.forEach((r, i) => {
+      let row = rows.find(ro => Math.abs(ro.top - r.top) < 12);
+      if (!row) { row = { top: r.top, bottom: r.bottom, items: [] }; rows.push(row); }
+      row.bottom = Math.max(row.bottom, r.bottom);
+      row.items.push({ i, r });
+    });
+    rows.sort((a, b) => a.top - b.top);
+    let row = rows.find(ro => py >= ro.top && py <= ro.bottom);
+    if (!row) {
+      if (py < rows[0].top) return 0;
+      return members.length; // below the last row
+    }
+    for (const it of row.items) {
+      if (px < it.r.left + it.r.width / 2) return it.i;
+    }
+    return row.items[row.items.length - 1].i + 1;
+  }
+
+  function positionCaret(members, index) {
+    const CARET_HALF = 1.5;
+    let left, top, height;
+    if (index < members.length) {
+      const el = members[index];
+      left = el.offsetLeft - 10 - CARET_HALF;
+      top = el.offsetTop;
+      height = el.offsetHeight;
+    } else {
+      const el = members[members.length - 1];
+      left = el.offsetLeft + el.offsetWidth + 10 - CARET_HALF;
+      top = el.offsetTop;
+      height = el.offsetHeight;
+    }
+    caret.style.left = left + 'px';
+    caret.style.top = top + 'px';
+    caret.style.height = height + 'px';
+    caret.classList.add('visible');
+  }
+
+  function hideCaret() {
+    caret.classList.remove('visible');
+    pendingDropIndex = null;
+  }
+
+  function cleanup() {
+    hideCaret();
+    grid.classList.remove('sb-reordering');
+    draggingId = null;
+  }
+
+  grid.addEventListener('dragstart', e => {
+    const card = e.target.closest && e.target.closest('.component-card');
+    if (!card || activeBoard === 'all') return;
+    draggingId = card.dataset.cardId;
+    grid.classList.add('sb-reordering');
+  });
+
+  grid.addEventListener('dragover', e => {
+    if (!draggingId || activeBoard === 'all') return;
+    e.preventDefault();
+    if (rafPending) return;
+    rafPending = true;
+    const px = e.clientX, py = e.clientY;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      if (!draggingId) return;
+      const members = visibleMembers();
+      if (!members.length) { hideCaret(); return; }
+      const idx = computeIndex(px, py, members);
+      const curIdx = members.findIndex(el => el.dataset.cardId === draggingId);
+      // Dropping into the dragged card's own slot is a no-op — suppress the caret.
+      if (idx === curIdx || idx === curIdx + 1) { hideCaret(); return; }
+      if (idx === pendingDropIndex) return;
+      pendingDropIndex = idx;
+      positionCaret(members, idx);
+    });
+  });
+
+  grid.addEventListener('dragleave', e => {
+    if (e.relatedTarget && grid.contains(e.relatedTarget)) return;
+    hideCaret();
+  });
+
+  grid.addEventListener('drop', e => {
+    if (!draggingId || activeBoard === 'all') { cleanup(); return; }
+    e.preventDefault();
+    const idx = pendingDropIndex;
+    const id = draggingId;
+    cleanup();
+    if (idx === null) return; // marker never showed → no change
+    applyReorder(id, activeBoard, idx);
+  });
+
+  grid.addEventListener('dragend', cleanup);
+}
+
+// Commit a reorder: `targetIndex` is the insertion index within the visible-member
+// list INCLUDING the dragged card (as computed during dragover). Persist to cardOrder
+// and re-apply the DOM order. No-op if the resulting order is unchanged.
+async function applyReorder(cardId, boardId, targetIndex) {
+  const grid = document.querySelector('#components-container .components-grid');
+  if (!grid || boardId === 'all') return;
+  const memberIds = Array.from(grid.querySelectorAll('.component-card'))
+    .filter(el => (el.dataset.boardId || '') === boardId && el.style.display !== 'none')
+    .map(el => el.dataset.cardId);
+  const fromIndex = memberIds.indexOf(cardId);
+  if (fromIndex === -1) return;
+
+  const without = memberIds.filter(id => id !== cardId);
+  let insertAt = targetIndex > fromIndex ? targetIndex - 1 : targetIndex;
+  insertAt = Math.max(0, Math.min(insertAt, without.length));
+  without.splice(insertAt, 0, cardId);
+  if (without.join(' ') === memberIds.join(' ')) return; // unchanged
+
+  await saveCardOrder({ ...cardOrderCache, [orderKey(boardId)]: without });
+  reorderGridDom(grid, boardId);
+
+  if (window.GA4 && window.GA4.sendEvent) {
+    window.GA4.sendEvent('card_reordered', {
+      board_id: boardId,
+      from_index: fromIndex,
+      to_index: insertAt,
+      card_count: memberIds.length
+    });
+  }
+}
+
 function setBoardOnCard(componentId, boardId) {
   return new Promise(resolve => {
     chrome.storage.sync.get(`comp-${componentId}`, result => {
@@ -272,6 +493,9 @@ function filterCardsToBoard(boardId) {
   } else if (emptyMsg) {
     emptyMsg.style.display = 'none';
   }
+
+  // issue #17: apply the per-board card order (or restore natural order for 'all')
+  reorderGridDom(grid, boardId);
 }
 
 async function handleTabDrop(e, boardId) {
@@ -287,6 +511,23 @@ async function handleTabDrop(e, boardId) {
   // Update DOM card attribute
   const card = document.querySelector(`.component-card[data-card-id="${cardId}"]`);
   if (card) card.dataset.boardId = newBoard || '';
+
+  // issue #17: maintain per-board order — drop the card from every list, then append it
+  // to the END of the destination board's order (seeding that board's list from its
+  // current members so a first-time reassignment doesn't jump the card to the front).
+  const destKey = orderKey(newBoard);
+  const nextOrder = {};
+  for (const k of Object.keys(cardOrderCache)) {
+    nextOrder[k] = cardOrderCache[k].filter(id => id !== cardId);
+  }
+  const destMemberIds = allComponents
+    .filter(c => (c.board || '') === (newBoard || '') && c.id !== cardId)
+    .map(c => c.id);
+  const destStored = (nextOrder[destKey] || []).filter(id => destMemberIds.includes(id));
+  const destRest = destMemberIds.filter(id => !destStored.includes(id));
+  nextOrder[destKey] = destStored.concat(destRest, cardId);
+  await saveCardOrder(nextOrder);
+
   filterCardsToBoard(activeBoard);
   loadBoards().then(boards => renderTabTray(boards, allComponents));
 }
@@ -444,6 +685,13 @@ async function deleteBoard(boardId) {
 
   const updated = boards.filter(b => b.id !== boardId);
   await saveBoards(updated);
+
+  // issue #17: drop this board's order list (its cards fall back to All / natural order)
+  if (cardOrderCache[boardId]) {
+    const nextOrder = { ...cardOrderCache };
+    delete nextOrder[boardId];
+    await saveCardOrder(nextOrder);
+  }
 
   if (activeBoard === boardId) activeBoard = 'all';
   renderTabTray(updated, allComponents);
@@ -1468,7 +1716,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
     // Build grid
     container.innerHTML = '<div class="components-grid"></div>';
     const grid = container.querySelector('.components-grid');
-  
+    setupGridReorder(grid); // issue #17: drag-to-reorder within a board
+
     // Global Escape handler for clock tooltips (registered once)
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -1488,6 +1737,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       card.className = `component-card size-${cardSize}${component.refreshPaused ? ' paused' : ''}`;
       card.dataset.boardId = component.board || '';
       card.dataset.cardId = component.id;
+      card.dataset.naturalIndex = index; // issue #17: stable "library" order for the All view
       card.setAttribute('draggable', 'true');
       card.addEventListener('dragstart', e => {
         e.dataTransfer.setData('cardId', component.id);
@@ -1906,7 +2156,18 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           
           // Delete from sync storage (remove the component's key)
           chrome.storage.sync.remove(`comp-${componentId}`);
-          
+
+          // issue #17: drop the deleted id from every per-board order list
+          // (components[] is already mutated above, so saveCardOrder's live-id prune covers it too)
+          {
+            const nextOrder = {};
+            for (const k of Object.keys(cardOrderCache)) {
+              const list = cardOrderCache[k].filter(id => id !== componentId);
+              if (list.length) nextOrder[k] = list;
+            }
+            saveCardOrder(nextOrder);
+          }
+
           // Update local storage (remove HTML data)
           chrome.storage.local.get(['componentsData'], (result) => {
             const localData = result.componentsData || {};
@@ -2200,7 +2461,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
 
     // Boards: store live reference and render tab tray, then restore active board from sessionStorage
     allComponents = components;
-    loadBoards().then(boards => {
+    Promise.all([loadBoards(), loadCardOrder()]).then(([boards, cardOrder]) => {
+      cardOrderCache = cardOrder; // issue #17: seed before any filterCardsToBoard() → reorderGridDom()
       renderTabTray(boards, allComponents);
       try {
         const savedBoard = sessionStorage.getItem('sb_activeBoard');
