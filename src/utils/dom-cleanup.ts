@@ -24,14 +24,54 @@
  *
  * Used in: Direct fetch refresh, tab-based refresh, skeleton fallback
  */
-export function applyExclusions(html: string, excludedSelectors?: string[]): string {
+export function applyExclusions(html: string, excludedSelectors?: string[], cardSelector?: string): string {
   if (!html || !excludedSelectors || excludedSelectors.length === 0) {
     return html;
   }
 
+  const container = document.createElement('div');
+  container.innerHTML = html;
 
-  const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = html;
+  // 🎯 SCOPE PARITY (issue #14): generateExclusionSelector() validates each stored selector
+  // with `cardRoot.querySelectorAll(sel).length === 1`, where cardRoot is the captured card
+  // ELEMENT sitting in the live page. querySelectorAll only requires the SUBJECT to be inside
+  // cardRoot, so a selector whose leading segments are cardRoot's own ANCESTORS (the usual
+  // generateSelector output -- a path from a page-unique ancestor down through the card root)
+  // still validates as a single match at capture. Every refresh tier then hands us ONLY
+  // cardRoot's OUTER HTML: those ancestor segments are gone, the selector matches nothing, and
+  // the region the user deliberately excluded silently reappears on every refresh.
+  // Confirmed repro: a BBC "video playlist" card whose two exclusions were
+  //   `div.<wrapper> > div.<container=cardRoot> > ... > h2` / `... > p`
+  // -- both matched 0 on refresh because `div.<wrapper>` (cardRoot's parent) is not in the
+  // extracted fragment.
+  const queryRoot: HTMLElement =
+    container.children.length === 1 && container.firstElementChild
+      ? (container.firstElementChild as HTMLElement)
+      : container;
+  const haveRealRoot = queryRoot !== container;
+
+  // Re-anchor a stored selector to the refreshed card root so refresh-time scope matches
+  // capture-time scope:
+  //  1. Card-selector prefix -- the stored selector begins with the card's own `selector`
+  //     (its terminal element IS queryRoot). Swap that exact prefix for `:scope`. Not a
+  //     heuristic: the card selector by definition identifies queryRoot.
+  //  2. Pure positional `:nth-child` chain (buildPositionalPath fallback -- a path from a
+  //     DIRECT CHILD of the card root). Anchor with `:scope >`.
+  //  3. Otherwise leave verbatim -- class / attribute selectors already resolved within the
+  //     card at capture time.
+  const POSITIONAL_CHAIN = /^[a-z][a-z0-9-]*:nth-child\(\d+\)( > [a-z][a-z0-9-]*:nth-child\(\d+\))*$/i;
+  const cs = (cardSelector || '').trim();
+  const scopedFor = (selector: string): string => {
+    const s = selector.trim();
+    if (!haveRealRoot) return selector;
+    if (cs) {
+      for (const combo of [' > ', ' ']) {
+        if (s.startsWith(cs + combo)) return ':scope' + combo + s.slice((cs + combo).length);
+      }
+    }
+    if (POSITIONAL_CHAIN.test(s)) return `:scope > ${s}`;
+    return selector;
+  };
 
   const STRUCTURAL_SEL = 'li, tr, article';
 
@@ -44,6 +84,8 @@ export function applyExclusions(html: string, excludedSelectors?: string[]): str
         console.warn(`🚨 SKIPPING ultra-generic selector that would remove too much: "${selector}"`);
         return; // Skip this selector entirely
       }
+
+      const effectiveSelector = scopedFor(selector);
 
       // 🎯 EXCLUSION BUDGET: refresh-time removal is querySelectorAll-based (all matches),
       // not the exact element references the user clicked at capture time. A 3-class selector
@@ -58,21 +100,30 @@ export function applyExclusions(html: string, excludedSelectors?: string[]): str
       // guarantees this), yet legitimate exclusions were being skipped because that one element
       // was 24-67% of the card's text. Match count -- not size -- is the actual signal for
       // "did this selector generalize beyond what the user clicked".
-      const matchCountBefore = tempDiv.querySelectorAll(selector).length;
+      const matchCountBefore = queryRoot.querySelectorAll(effectiveSelector).length;
+
+      if (matchCountBefore === 0) {
+        // Selector no longer resolves against the refreshed markup (dynamic classes, changed
+        // SSR structure, or a stale positional path). Safe failure mode -- the excluded region
+        // simply stays visible rather than risking a wrong removal -- but log it so residual
+        // markup-drift misses are visible during testing (issue #14).
+        console.warn('  \u26a0\ufe0f Exclusion selector matched nothing on refresh (left visible):', selector);
+        return;
+      }
 
       if (matchCountBefore > 1) {
         // Measure by construction (clone -> remove -> compare) so nested matches can't be
         // double-counted -- the DOM can only remove a subtree once. Evaluated sequentially
-        // against the CURRENT state of tempDiv, so a chain of individually-modest exclusions
+        // against the CURRENT state of queryRoot, so a chain of individually-modest exclusions
         // can't silently compound into total erasure.
-        const probe = tempDiv.cloneNode(true) as HTMLElement;
-        probe.querySelectorAll(selector).forEach(el => el.remove());
+        const probe = queryRoot.cloneNode(true) as HTMLElement;
+        probe.querySelectorAll(effectiveSelector).forEach(el => el.remove());
 
-        const textBefore = (tempDiv.textContent || '').trim().length;
+        const textBefore = (queryRoot.textContent || '').trim().length;
         const textAfter = (probe.textContent || '').trim().length;
-        const structBefore = tempDiv.querySelectorAll(STRUCTURAL_SEL).length;
+        const structBefore = queryRoot.querySelectorAll(STRUCTURAL_SEL).length;
         const structAfter = probe.querySelectorAll(STRUCTURAL_SEL).length;
-        const imgBefore = tempDiv.querySelectorAll('img').length;
+        const imgBefore = queryRoot.querySelectorAll('img').length;
         const imgAfter = probe.querySelectorAll('img').length;
 
         const textRemovedPct = textBefore > 0 ? (textBefore - textAfter) / textBefore : 0;
@@ -98,13 +149,15 @@ export function applyExclusions(html: string, excludedSelectors?: string[]): str
       }
 
       // Within budget (or a single precise match, which is always trusted) -- commit
-      tempDiv.querySelectorAll(selector).forEach(el => el.remove());
+      queryRoot.querySelectorAll(effectiveSelector).forEach(el => el.remove());
     } catch (e) {
-      console.warn('  ⚠️ Could not remove excluded element:', selector, e);
+      console.warn('  \u26a0\ufe0f Could not remove excluded element:', selector, e);
     }
   });
 
-  return tempDiv.innerHTML;
+  // Single-element input -> queryRoot IS that element; its outerHTML is byte-equivalent to the
+  // old `container.innerHTML`. Multi-root fragment -> unchanged behaviour.
+  return queryRoot === container ? container.innerHTML : queryRoot.outerHTML;
 }
 
 /**
@@ -1855,6 +1908,7 @@ function extractBackgroundImages(html: string): string {
 interface SanitizationComponent {
   excludedSelectors?: string[];
   html_cache?: string;
+  selector?: string;
 }
 
 /**
@@ -1865,11 +1919,11 @@ interface SanitizationComponent {
  * Pipeline: applyExclusions → extractBackgroundImages → preserveImageClassifications → classifyImagesForRefresh → cleanupDuplicates
  *
  * @param inputHtml - The raw HTML from a refresh (fetch, background tab, or active tab)
- * @param component - The component metadata object (needs .excludedSelectors and .html_cache)
+ * @param component - The component metadata object (needs .excludedSelectors, .html_cache, .selector)
  * @returns Sanitized HTML ready for storage and display
  */
 export function applySanitizationPipeline(inputHtml: string, component: SanitizationComponent): string {
-  const withExclusions = applyExclusions(inputHtml, component.excludedSelectors);
+  const withExclusions = applyExclusions(inputHtml, component.excludedSelectors, component.selector);
   const withBgImages = extractBackgroundImages(withExclusions);
   const withPreserved = preserveImageClassifications(withBgImages, component.html_cache || '');
   const withImageClassification = classifyImagesForRefresh(withPreserved);
