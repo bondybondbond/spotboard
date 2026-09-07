@@ -129,7 +129,7 @@ SpotBoard requires the following Chrome permissions to function:
 - **`activeTab`**: Allows the extension to capture content from the webpage you're currently viewing when you click the capture button
 - **`storage`**: Enables saving your captured components locally on your device
 - **`scripting`**: Required to inject the capture interface onto webpages
-- **`tabs`**: Allows the extension to refresh component content from source websites
+- **`tabs`**: Allows the extension to open a background tab to refresh component content from source websites. Chrome displays this permission as "Read your browsing history" in the install dialog — SpotBoard only uses tab access for refresh and never reads, stores, or transmits your browsing history.
 - **`<all_urls>`**: Enables capturing content from any website you choose to visit
 
 These permissions are used **only** for the stated functionality and nothing else.
