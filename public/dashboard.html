@@ -1,25 +1,291 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- #22 dark mode: MUST be the first element in <head> and parser-blocking
+       (no defer/async) so the stored theme is applied before first paint. -->
+  <script src="theme-init.js"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SpotBoard Dashboard</title>
   <style>
+    /* =====================================================================
+       THEME TOKENS  (issue #22 — dark mode, v1 = "option B")
+       :root                       → light theme (values unchanged from pre-#22)
+       :root[data-theme="dark"]    → explicit dark (toggle)
+       @media (prefers-color-scheme: dark) :root:not([data-theme])
+                                   → dark for first-load users who haven't toggled
+       The two dark blocks are identical — KEEP IN SYNC.
+       Captured content stays on a light well (--surface-content: #ffffff in BOTH
+       themes) with UA-default text/link colours untouched: dark mode themes
+       SpotBoard chrome only, never the evidence. --text-on-content / --link-content
+       are RESERVED for a future "option C" and are not wired in v1.
+       ===================================================================== */
+    :root {
+      color-scheme: var(--color-scheme);
+      /* surfaces */
+      --bg-page: #e3f2fd;
+      --surface-card: #ffffff;
+      --surface-raised: #EEEEEE;      /* card header strip */
+      --surface-menu: #ffffff;        /* dropdowns, pickers, resize menu, modals-in-scope */
+      --surface-inset: #f8f9fa;       /* empty-state cards, menu hover fill */
+      --surface-content: #ffffff;     /* captured-content well — SAME in both themes */
+      /* #22: the white evidence panel is inset from the SpotBoard-owned card shell.
+         Light = flush (0 inset) so nothing changes; dark = a visible dark frame
+         around the white "paper" so a full board still reads as a dark workspace. */
+      --content-inset: 0;
+      --content-inset-top: 0;
+      --content-radius: 0 0 6px 6px;
+      --content-shadow: none;
+      --paused-header: #FCD1DE;
+      --paused-shell: var(--surface-card);   /* light: no shell change; dark: warm plum cast */
+      /* borders */
+      --border-card: #000000;
+      --border-subtle: #e2e2ea;
+      --border-hairline: #e0e0e0;
+      /* text */
+      --text-primary: #1a1a2e;
+      --text-heading: #1a1a1a;
+      --text-muted: #5f6368;
+      --text-faint: #888888;
+      --text-on-content: #1a1a1a;     /* RESERVED (not wired in v1) — captured text keeps the UA default; option C only */
+      --link-content: #1a56db;        /* RESERVED (not wired in v1) — captured links keep the UA default; option C only */
+      /* accent / links */
+      --accent: #667eea;
+      --accent-strong: #4F46E5;       /* focus rings */
+      --accent-text: #ffffff;         /* text/!icon on an --accent fill */
+      --accent-tint: rgba(102,126,234,0.06);
+      --link-chrome: #1a73e8;
+      /* semantic */
+      --danger: #e04040;
+      --danger-tint: #fff0f0;
+      --warn-accent: #FF9800;
+      --warn-accent-hover: #F57C00;
+      --warn-accent-text: #ffffff;    /* text on a --warn-accent fill (dark theme flips to ink for legibility) */
+      --warn-banner-bg: #FFEECC;
+      --warn-banner-text: #5D4037;
+      --warn-open-bg: #FFF3E0;
+      /* header */
+      --header-grad-a: #667eea;
+      --header-grad-b: #764ba2;
+      --header-shadow: rgba(102,126,234,0.3);
+      /* tooltip (contrasts the surface it floats over) */
+      --tooltip-bg: #333333;
+      --tooltip-text: #ffffff;
+      /* board pills */
+      --pill-inactive: #CFCBE5;
+      --pill-inactive-hover: #bdb8d8;
+      --pill-inactive-text: #1a1a2e;
+      --pill-active: #FFCC67;
+      --pill-active-text: #1a1a2e;
+      --pill-active-glow: rgba(255,204,103,0.45);
+      --pill-count-bg: #ffffff;
+      --pill-add-border: #bbbbd0;
+      --pill-add-text: #aaaabc;
+      --pill-add-hover: #9b8cd4;
+      /* elevation / misc */
+      --card-shadow: rgba(0,0,0,0.1);
+      --card-shadow-hover: rgba(0,0,0,0.15);
+      --scrollbar-thumb: rgba(0,0,0,0.2);
+      --scrollbar-thumb-hover: rgba(0,0,0,0.3);
+      --scrollbar-track: transparent;
+      --color-scheme: light;
+      --iconbtn-bg: rgba(255,255,255,0.76);
+      --iconbtn-border: rgba(15,23,42,0.14);
+      --iconbtn-border-hover: rgba(15,23,42,0.25);
+      --iconbtn-hover-bg: rgba(0,0,0,0.06);
+      --iconbtn-ink: #000000;          /* icon glyph colour */
+      --ghost-border: rgba(0,0,0,0.18);
+      --ghost-border-hover: rgba(0,0,0,0.35);
+      --ghost-bg: rgba(0,0,0,0.02);
+      --ghost-bg-hover: rgba(0,0,0,0.05);
+      --ghost-plus: rgba(0,0,0,0.25);
+      --ghost-label: rgba(0,0,0,0.4);
+    }
+
+    /* --- dark: explicit toggle --- (KEEP IN SYNC with the @media block below) */
+    :root[data-theme="dark"] {
+      --bg-page: #14141c;
+      --surface-card: #2b2b3a;
+      --surface-raised: #3a3a4f;
+      --surface-menu: #26263a;
+      --surface-inset: #26263a;
+      --surface-content: #161621;     /* unchanged — evidence stays on a light well */
+      --content-inset: 0;
+      --content-inset-top: 0;
+      --content-radius: 0 0 6px 6px;
+      --content-shadow: none;
+      --paused-header: #5e2a39;
+      --paused-shell: #1e1e2a;
+      --border-card: #44445f;
+      --border-subtle: #33334a;
+      --border-hairline: #33334a;
+      --text-on-content: #cfcfda;   /* #22 C-lite: dark content well */
+      --link-content: #7db3f7;      /* #22 C-lite: dark content well */
+      --media-well: #f7f7f5;        /* #22 C-lite: dark content well */
+      --text-primary: #e5e7eb;
+      --text-heading: #f3f4f6;
+      --text-muted: #adb4c0;
+      --text-faint: #8b8b99;
+      --accent: #818cf8;
+      --accent-strong: #818cf8;
+      --accent-text: #14141c;
+      --accent-tint: rgba(129,140,248,0.14);
+      --link-chrome: #60a5fa;
+      --danger: #f87171;
+      --danger-tint: rgba(248,113,113,0.12);
+      --warn-accent: #fbbf24;
+      --warn-accent-hover: #f59e0b;
+      --warn-accent-text: #1a1a1a;
+      --warn-banner-bg: rgba(251,191,36,0.12);
+      --warn-banner-text: #e6d6b8;
+      --warn-open-bg: rgba(251,191,36,0.16);
+      --header-grad-a: #4a4f9e;
+      --header-grad-b: #5a3f80;
+      --header-shadow: rgba(0,0,0,0.45);
+      --tooltip-bg: #e5e7eb;
+      --tooltip-text: #1a1a1a;
+      --pill-inactive: #2f2f42;
+      --pill-inactive-hover: #3a3a52;
+      --pill-inactive-text: #c7c7d4;
+      --pill-active: #f0b429;
+      --pill-active-text: #1a1a1a;
+      --pill-active-glow: rgba(240,180,41,0.32);
+      --pill-count-bg: #1e1e28;
+      --pill-add-border: #3a3a52;
+      --pill-add-text: #6b6b80;
+      --pill-add-hover: #818cf8;
+      --card-shadow: rgba(0,0,0,0.4);
+      --card-shadow-hover: rgba(0,0,0,0.55);
+      --scrollbar-thumb: rgba(255,255,255,0.26);
+      --scrollbar-thumb-hover: rgba(255,255,255,0.42);
+      --scrollbar-track: rgba(255,255,255,0.05);
+      --color-scheme: dark;
+      --iconbtn-bg: rgba(255,255,255,0.08);
+      --iconbtn-border: rgba(255,255,255,0.16);
+      --iconbtn-border-hover: rgba(255,255,255,0.28);
+      --iconbtn-hover-bg: rgba(255,255,255,0.12);
+      --iconbtn-ink: #d4d4dc;
+      --ghost-border: rgba(255,255,255,0.18);
+      --ghost-border-hover: rgba(255,255,255,0.35);
+      --ghost-bg: rgba(255,255,255,0.02);
+      --ghost-bg-hover: rgba(255,255,255,0.05);
+      --ghost-plus: rgba(255,255,255,0.3);
+      --ghost-label: rgba(255,255,255,0.45);
+    }
+
+    /* --- dark: first-load default before any toggle --- (KEEP IN SYNC with the block above) */
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme]) {
+        --bg-page: #14141c;
+        --surface-card: #2b2b3a;
+        --surface-raised: #3a3a4f;
+        --surface-menu: #26263a;
+        --surface-inset: #26263a;
+        --surface-content: #161621;
+        --content-inset: 0;
+        --content-inset-top: 0;
+        --content-radius: 0 0 6px 6px;
+        --content-shadow: none;
+        --paused-header: #5e2a39;
+        --paused-shell: #1e1e2a;
+        --border-card: #44445f;
+        --border-subtle: #33334a;
+        --border-hairline: #33334a;
+        --text-on-content: #cfcfda;   /* #22 C-lite: dark content well */
+        --link-content: #7db3f7;      /* #22 C-lite: dark content well */
+        --media-well: #f7f7f5;        /* #22 C-lite: dark content well */
+        --text-primary: #e5e7eb;
+        --text-heading: #f3f4f6;
+        --text-muted: #adb4c0;
+        --text-faint: #8b8b99;
+        --accent: #818cf8;
+        --accent-strong: #818cf8;
+        --accent-text: #14141c;
+        --accent-tint: rgba(129,140,248,0.14);
+        --link-chrome: #60a5fa;
+        --danger: #f87171;
+        --danger-tint: rgba(248,113,113,0.12);
+        --warn-accent: #fbbf24;
+        --warn-accent-hover: #f59e0b;
+        --warn-accent-text: #1a1a1a;
+        --warn-banner-bg: rgba(251,191,36,0.12);
+        --warn-banner-text: #e6d6b8;
+        --warn-open-bg: rgba(251,191,36,0.16);
+        --header-grad-a: #4a4f9e;
+        --header-grad-b: #5a3f80;
+        --header-shadow: rgba(0,0,0,0.45);
+        --tooltip-bg: #e5e7eb;
+        --tooltip-text: #1a1a1a;
+        --pill-inactive: #2f2f42;
+        --pill-inactive-hover: #3a3a52;
+        --pill-inactive-text: #c7c7d4;
+        --pill-active: #f0b429;
+        --pill-active-text: #1a1a1a;
+        --pill-active-glow: rgba(240,180,41,0.32);
+        --pill-count-bg: #1e1e28;
+        --pill-add-border: #3a3a52;
+        --pill-add-text: #6b6b80;
+        --pill-add-hover: #818cf8;
+        --card-shadow: rgba(0,0,0,0.4);
+        --card-shadow-hover: rgba(0,0,0,0.55);
+        --scrollbar-thumb: rgba(255,255,255,0.26);
+        --scrollbar-thumb-hover: rgba(255,255,255,0.42);
+        --scrollbar-track: rgba(255,255,255,0.05);
+        --color-scheme: dark;
+        --iconbtn-bg: rgba(255,255,255,0.08);
+        --iconbtn-border: rgba(255,255,255,0.16);
+        --iconbtn-border-hover: rgba(255,255,255,0.28);
+        --iconbtn-hover-bg: rgba(255,255,255,0.12);
+        --iconbtn-ink: #d4d4dc;
+        --ghost-border: rgba(255,255,255,0.18);
+        --ghost-border-hover: rgba(255,255,255,0.35);
+        --ghost-bg: rgba(255,255,255,0.02);
+        --ghost-bg-hover: rgba(255,255,255,0.05);
+        --ghost-plus: rgba(255,255,255,0.3);
+        --ghost-label: rgba(255,255,255,0.45);
+      }
+    }
+
+    /* #22 LIGHT ISLAND — the onboarding/feedback modals are light-only in v1.
+       Re-assert the light token values inside their subtrees so any tokenised
+       descendant renders light even while the dashboard is in dark mode.
+       (tokenisation is not redesign — these surfaces looked fine in light and
+       must keep looking fine.) */
+    #first-run-modal,
+    #welcome-modal,
+    .sentiment-drawer,
+    .sentiment-overlay {
+      --surface-card: #ffffff;
+      --surface-menu: #ffffff;
+      --surface-inset: #f8f9fa;
+      --surface-raised: #eeeeee;
+      --border-subtle: #e2e2ea;
+      --border-hairline: #e0e0e0;
+      --text-primary: #1a1a2e;
+      --text-heading: #1a1a1a;
+      --text-muted: #5f6368;
+      --text-faint: #888888;
+      --accent: #667eea;
+      --accent-text: #ffffff;
+      --accent-tint: rgba(102,126,234,0.06);
+      --link-chrome: #1a73e8;
+    }
+
     body {
       margin: 0;
       padding: 0;
       font-family: system-ui, -apple-system, sans-serif;
-      background: #e3f2fd;
+      background: var(--bg-page);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
     }
     .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--header-grad-a) 0%, var(--header-grad-b) 100%);
       padding: 8px 20px;
       margin-bottom: 0;
       border-radius: 0;
-      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+      box-shadow: 0 2px 8px var(--header-shadow);
       position: sticky;
       top: 0;
       z-index: 101;
@@ -38,7 +304,7 @@
     .sb-drop-caret {
       position: absolute;
       width: 3px;
-      background: #667eea;
+      background: var(--accent);
       border-radius: 2px;
       pointer-events: none;
       z-index: 5;
@@ -47,11 +313,11 @@
     .sb-drop-caret.visible { display: block; }
     .components-grid.sb-reordering .component-card { cursor: grabbing; }
     .component-card {
-      background: white;
+      background: var(--surface-card);
       padding: 0;
       border-radius: 8px;
-      border: 1px solid #000;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      border: 1px solid var(--border-card);
+      box-shadow: 0 1px 3px var(--card-shadow);
       
       /* Flex column: header takes its natural height, content fills remainder */
       display: flex;
@@ -73,19 +339,36 @@
       background: transparent;
     }
     .component-card::-webkit-scrollbar-thumb {
-      background: rgba(0, 0, 0, 0.2);
+      background: var(--scrollbar-thumb);
       border-radius: 3px;
     }
     .component-card::-webkit-scrollbar-thumb:hover {
-      background: rgba(0, 0, 0, 0.3);
+      background: var(--scrollbar-thumb-hover);
+    }
+    /* ===== PAGE / DOCUMENT SCROLLBAR (#22 — the dark theme owns this too) =====
+       color-scheme:dark (on :root) already darkens the native bar; these rules
+       match it to the card scrollbars for a consistent look. Thumb stays a light
+       alpha so it is discoverable on the near-black track, never the light-theme
+       bar pasted onto a dark UI. */
+    body::-webkit-scrollbar { width: 12px; height: 12px; }
+    body::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+    body::-webkit-scrollbar-thumb {
+      background: var(--scrollbar-thumb);
+      border-radius: 7px;
+      border: 3px solid transparent;
+      background-clip: content-box;
+    }
+    body::-webkit-scrollbar-thumb:hover {
+      background: var(--scrollbar-thumb-hover);
+      background-clip: content-box;
     }
     .component-card:hover {
-      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      box-shadow: 0 2px 6px var(--card-shadow-hover);
     }
     /* Ghost card: post-first-capture nudge */
     .ghost-card {
-      border: 2px dashed rgba(0,0,0,0.18);
-      background: rgba(0,0,0,0.02);
+      border: 2px dashed var(--ghost-border);
+      background: var(--ghost-bg);
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -94,8 +377,8 @@
       transition: background 0.15s, border-color 0.15s;
     }
     .ghost-card:hover {
-      background: rgba(0,0,0,0.05);
-      border-color: rgba(0,0,0,0.35);
+      background: var(--ghost-bg-hover);
+      border-color: var(--ghost-border-hover);
       box-shadow: none;
     }
     .ghost-card-inner {
@@ -109,11 +392,11 @@
     .ghost-plus {
       font-size: 28px;
       line-height: 1;
-      color: rgba(0,0,0,0.25);
+      color: var(--ghost-plus);
     }
     .ghost-label {
       font-size: 13px;
-      color: rgba(0,0,0,0.4);
+      color: var(--ghost-label);
       font-weight: 500;
     }
     .ghost-card.ghost-clicked {
@@ -124,9 +407,59 @@
     /* Paused card styling */
     .component-card.paused {
       opacity: 0.85;
+      background: var(--paused-shell);   /* #22: dark mode gives paused cards a warm plum shell so active/paused scan apart; light unchanged */
     }
     .component-card.paused .card-header {
-      background: #FCD1DE !important;
+      background: var(--paused-header) !important;
+    }
+
+    /* ===== CARD HEADER (was inline in dashboard.js renderComponent — #22) ===== */
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 12px;
+      background: var(--surface-raised);
+      border-radius: 6px 6px 0 0;
+      border-bottom: 1px solid var(--border-card);
+    }
+    .card-header-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+      min-width: 0;
+      flex: 1;
+    }
+    .card-header .editable-title {
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--text-heading);
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-header-actions {
+      display: flex;
+      align-items: center;
+    }
+    .template-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      background: var(--surface-inset);
+      color: var(--text-muted);
+      border-radius: 4px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .card-empty-placeholder {
+      color: var(--text-muted);
+      text-align: center;
+      padding: 20px;
     }
 
     /* ===== SHARED ICON BUTTON BASE ===== */
@@ -134,8 +467,9 @@
       width: 26px;
       height: 26px;
       border-radius: 50%;
-      border: 1px solid rgba(15,23,42,0.14);
-      background: rgba(255,255,255,0.76);
+      border: 1px solid var(--iconbtn-border);
+      background: var(--iconbtn-bg);
+      color: var(--iconbtn-ink);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -146,19 +480,20 @@
       transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.08s;
     }
     .iconBtn:hover {
-      background: rgba(0,0,0,0.06);
-      border-color: rgba(15,23,42,0.25);
+      background: var(--iconbtn-hover-bg);
+      border-color: var(--iconbtn-border-hover);
     }
     .iconBtn:active {
       transform: scale(0.95);
     }
     .iconBtn:focus-visible {
-      outline: 2px solid #4F46E5;
+      outline: 2px solid var(--accent-strong);
       outline-offset: 2px;
     }
     .iconBtn svg {
       width: 16px;
       height: 16px;
+      fill: currentColor;   /* glyphs follow --iconbtn-ink; template SVGs use fill="currentColor" (#22) */
     }
 
     /* ===== PAUSE BUTTON ===== */
@@ -168,12 +503,12 @@
     }
     .pause-btn.active-state {
       box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
-      background: rgba(0,0,0,0.08);
-      border-color: rgba(15,23,42,0.3);
+      background: var(--iconbtn-hover-bg);
+      border-color: var(--iconbtn-border-hover);
     }
     .pause-btn.active-state:hover {
       box-shadow: inset 0 2px 4px rgba(0,0,0,0.25);
-      background: rgba(0,0,0,0.12);
+      background: var(--iconbtn-hover-bg);
     }
 
     /* ===== CLOCK BUTTON + TOOLTIP ===== */
@@ -190,8 +525,8 @@
       top: calc(100% + 6px);
       left: 50%;
       transform: translateX(-50%);
-      background: #333;
-      color: white;
+      background: var(--tooltip-bg);
+      color: var(--tooltip-text);
       padding: 4px 8px;
       border-radius: 4px;
       font-size: 11px;
@@ -209,7 +544,7 @@
       left: 50%;
       transform: translateX(-50%);
       border: 4px solid transparent;
-      border-bottom-color: #333;
+      border-bottom-color: var(--tooltip-bg);
     }
     .clock-wrap:not(.dismissed):hover .custom-tooltip,
     .clock-wrap:not(.dismissed) .clock-btn:focus-visible ~ .custom-tooltip,
@@ -256,14 +591,14 @@
 
     /* Error banner on failed cards */
     .card-error-banner {
-      background: #FFEECC;
-      border-left: 3px solid #FF9800;
+      background: var(--warn-banner-bg);
+      border-left: 3px solid var(--warn-accent);
       padding: 8px 12px;
       display: flex;
       align-items: center;
       gap: 8px;
       font-size: 13px;
-      color: #5D4037;
+      color: var(--warn-banner-text);
       flex-shrink: 0;
     }
 
@@ -287,24 +622,24 @@
     }
 
     .card-error-banner .error-retry-btn {
-      background: #FF9800;
-      color: white;
+      background: var(--warn-accent);
+      color: var(--warn-accent-text);
       border: none;
       cursor: pointer;
     }
 
     .card-error-banner .error-retry-btn:hover {
-      background: #F57C00;
+      background: var(--warn-accent-hover);
     }
 
     .card-error-banner .error-open-btn {
-      background: white;
-      color: #FF9800;
-      border: 1px solid #FF9800;
+      background: var(--surface-card);
+      color: var(--warn-accent);
+      border: 1px solid var(--warn-accent);
     }
 
     .card-error-banner .error-open-btn:hover {
-      background: #FFF3E0;
+      background: var(--warn-open-bg);
     }
 
     /* Failure toast styles */
@@ -364,19 +699,19 @@
       position: absolute;
       bottom: 8px; /* Tight to card edge */
       right: 8px; /* Tight to card edge */
-      background: rgba(255, 255, 255, 0.95);
-      border: 1px solid #ddd;
+      background: var(--surface-menu);
+      border: 1px solid var(--border-hairline);
       border-radius: 4px;
       padding: 4px 8px;
       font-size: 11px;
       font-weight: 600;
-      color: #667eea;
+      color: var(--accent);
       cursor: pointer;
       z-index: 10;
       opacity: 1.0; /* Fully solid - maximum visibility */
       transition: all 0.2s ease;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      box-shadow: 0 1px 3px var(--card-shadow);
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -384,7 +719,7 @@
 
     .card-resize-btn:hover {
       opacity: 1;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      box-shadow: 0 2px 6px var(--card-shadow-hover);
       transform: scale(1.05);
     }
 
@@ -393,10 +728,10 @@
       position: absolute;
       bottom: 32px; /* Above button */
       right: 8px;
-      background: white;
-      border: 1px solid #ddd;
+      background: var(--surface-menu);
+      border: 1px solid var(--border-hairline);
       border-radius: 6px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      box-shadow: 0 4px 12px var(--card-shadow-hover);
       z-index: 100;
       min-width: 100px;
       display: none;
@@ -410,8 +745,8 @@
       padding: 8px 12px;
       cursor: pointer;
       font-size: 13px;
-      color: #333;
-      border-bottom: 1px solid #f0f0f0;
+      color: var(--text-primary);
+      border-bottom: 1px solid var(--border-subtle);
       transition: background 0.15s;
     }
 
@@ -420,7 +755,7 @@
     }
 
     .resize-menu-option:hover {
-      background: #f8f9fa;
+      background: var(--surface-inset);
     }
 
     .resize-menu-option.active {
@@ -457,16 +792,73 @@
     }
     .resize-menu-option.active .size-icon {
       filter: brightness(1.05);
-      box-shadow: 0 0 0 2px #667eea;
+      box-shadow: 0 0 0 2px var(--accent);
     }
     .card-resize-btn:hover .size-icon {
       transform: scale(1.1);
       transition: transform 0.15s ease;
     }
     
-    /* Force default cursor on captured content (but not links) */
+    /* #22: captured-content well — layout moved here from an inline style on the
+       wrapper in renderComponent. --surface-content is #ffffff in BOTH themes;
+       text/link colour is left at the UA default (not tokenised) so the evidence
+       is byte-identical across themes. In light mode --content-inset is 0 and
+       --content-shadow is none, so the panel renders flush exactly as before; in
+       dark mode it becomes a white "paper" panel inset from the dark card shell. */
     .component-content {
       cursor: default;
+      background: var(--surface-content);
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 12px;
+      margin: var(--content-inset-top) var(--content-inset) var(--content-inset);
+      border-radius: var(--content-radius);
+      box-shadow: var(--content-shadow);
+    }
+    /* ===== #22 C-lite: captured content goes dark (DARK THEME ONLY) =====
+       Two selector paths below — explicit toggle + first-load system-dark. KEEP IN SYNC.
+       Captured SVG charts (Kalshi etc.) are NOT recoloured: natural chart colours
+       are preserved on a light --media-well. Only the well + surrounding chrome
+       are themed. (Issue #3's black-SVG neutralisation is unrelated, stays in the
+       sanitiser, and is untouched by #22.) */
+    :root[data-theme="dark"] .component-content {
+      color: var(--text-on-content);
+      border-top: 1px solid var(--border-card);
+    }
+    :root[data-theme="dark"] .component-content a {
+      color: var(--link-content);
+      text-decoration: underline;
+    }
+    :root[data-theme="dark"] .component-content img {
+      background: var(--media-well);
+      border-radius: 4px;
+    }
+    :root[data-theme="dark"] .component-content svg[data-sb-svg="chart"] {
+      background: var(--media-well);
+      border-radius: 6px;
+      padding: 6px;
+      box-sizing: border-box;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme]) .component-content {
+        color: var(--text-on-content);
+        border-top: 1px solid var(--border-card);
+      }
+      :root:not([data-theme]) .component-content a {
+        color: var(--link-content);
+        text-decoration: underline;
+      }
+      :root:not([data-theme]) .component-content img {
+        background: var(--media-well);
+        border-radius: 4px;
+      }
+      :root:not([data-theme]) .component-content svg[data-sb-svg="chart"] {
+        background: var(--media-well);
+        border-radius: 6px;
+        padding: 6px;
+        box-sizing: border-box;
+      }
     }
     .component-content div,
     .component-content span,
@@ -661,7 +1053,7 @@
       display: none;  /* Hidden by default - JS shows when board is empty */
       text-align: center;
       padding: 60px 20px;
-      color: #666;
+      color: var(--text-muted);
     }
 
     /* Interactive Directory */
@@ -673,13 +1065,13 @@
     .interactive-directory-title {
       font-size: 28px;
       font-weight: 600;
-      color: #1a1a1a;
+      color: var(--text-heading);
       margin-bottom: 10px;
     }
 
     .interactive-directory-subtitle {
       font-size: 17px;
-      color: #5f6368;
+      color: var(--text-muted);
       margin-bottom: 28px;
     }
 
@@ -696,18 +1088,18 @@
       flex-direction: column;
       align-items: center;
       gap: 8px;
-      background: #fff;
-      border: 1px solid #e0e0e0;
+      background: var(--surface-card);
+      border: 1px solid var(--border-hairline);
       border-radius: 12px;
       padding: 20px 16px 16px;
       width: 168px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      box-shadow: 0 1px 4px var(--card-shadow);
       transition: box-shadow 0.15s ease, border-color 0.15s ease;
     }
 
     .practice-site-card:hover {
-      box-shadow: 0 3px 12px rgba(0,0,0,0.12);
-      border-color: #bbb;
+      box-shadow: 0 3px 12px var(--card-shadow-hover);
+      border-color: var(--text-faint);
     }
 
     .practice-site-favicon {
@@ -719,13 +1111,13 @@
     .practice-site-name {
       font-size: 16px;
       font-weight: 600;
-      color: #1a1a1a;
+      color: var(--text-heading);
       text-align: center;
     }
 
     .practice-site-desc {
       font-size: 14px;
-      color: #777;
+      color: var(--text-muted);
       text-align: center;
       line-height: 1.4;
       flex: 1;
@@ -736,8 +1128,8 @@
       padding: 8px 10px;
       font-size: 15px;
       font-weight: 600;
-      color: white;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #ffffff;
+      background: linear-gradient(135deg, var(--header-grad-a) 0%, var(--header-grad-b) 100%);
       border: none;
       border-radius: 6px;
       cursor: pointer;
@@ -755,11 +1147,11 @@
 
     .practice-fallback {
       font-size: 15px;
-      color: #888;
+      color: var(--text-faint);
     }
 
     .practice-fallback a {
-      color: #1a73e8;
+      color: var(--link-chrome);
       text-decoration: none;
     }
 
@@ -770,16 +1162,16 @@
     .practice-skip-row {
       margin-top: 16px;
       font-size: 15px;
-      color: #888;
+      color: var(--text-faint);
     }
 
     .practice-skip-link {
-      color: #888;
+      color: var(--text-faint);
       text-decoration: underline;
     }
 
     .practice-skip-link:hover {
-      color: #1a1a1a;
+      color: var(--text-heading);
     }
 
     .practice-skip-confirm {
@@ -804,8 +1196,8 @@
       padding: 4px 12px;
       font-size: 12px;
       font-weight: 600;
-      color: #1a1a1a;
-      background: #e0e0e0;
+      color: var(--text-heading);
+      background: var(--border-hairline);
       border: none;
       border-radius: 5px;
       cursor: pointer;
@@ -820,13 +1212,13 @@
     .subsequent-empty-heading {
       font-size: 28px;
       font-weight: 600;
-      color: #1a1a1a;
+      color: var(--text-heading);
       margin-bottom: 10px;
     }
 
     .subsequent-empty-subtitle {
       font-size: 17px;
-      color: #5f6368;
+      color: var(--text-muted);
       margin-bottom: 28px;
     }
 
@@ -849,7 +1241,7 @@
     .category-row-label {
       font-size: 17px;
       font-weight: 600;
-      color: #1a1a1a;
+      color: var(--text-heading);
       min-width: 56px;
       text-align: right;
     }
@@ -860,20 +1252,20 @@
       flex-direction: column;
       align-items: center;
       gap: 5px;
-      background: #f5f5f5;
-      border: 1px solid #e0e0e0;
+      background: var(--surface-inset);
+      border: 1px solid var(--border-hairline);
       border-radius: 16px;
       padding: 12px 8px;
       width: 80px;
       font-size: 16px;
-      color: #444;
+      color: var(--text-primary);
       cursor: pointer;
       text-decoration: none;
     }
 
     .chip-label {
       font-size: 13px;
-      color: #444;
+      color: var(--text-primary);
       display: -webkit-box;
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 2;
@@ -886,7 +1278,7 @@
 
     .subsequent-empty-footer {
       font-size: 17px;
-      color: #888;
+      color: var(--text-faint);
       margin-top: 8px;
     }
 
@@ -1336,6 +1728,40 @@
       background: #f0f1f3 !important;
     }
 
+    /* ===== THEME TOGGLE (header, next to Refresh All) — issue #22 ===== */
+    #theme-toggle-btn {
+      width: 34px;
+      height: 34px;
+      padding: 4px;
+      background: none;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #fff;                 /* sits on the gradient header in both themes */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.2s ease;
+    }
+    #theme-toggle-btn:hover { background: rgba(255,255,255,0.16); }
+    #theme-toggle-btn:focus-visible {
+      outline: 2px solid rgba(255,255,255,0.9);
+      outline-offset: 2px;
+    }
+    #theme-toggle-btn svg { width: 18px; height: 18px; display: block; }
+    /* show the icon for the mode you'll switch TO. Light = show moon. */
+    #theme-toggle-btn .sb-icon-sun  { display: none; }
+    #theme-toggle-btn .sb-icon-moon { display: block; }
+    :root[data-theme="dark"] #theme-toggle-btn .sb-icon-sun  { display: block; }
+    :root[data-theme="dark"] #theme-toggle-btn .sb-icon-moon { display: none; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme]) #theme-toggle-btn .sb-icon-sun  { display: block; }
+      :root:not([data-theme]) #theme-toggle-btn .sb-icon-moon { display: none; }
+    }
+
+    /* #22: NOT tokenised — .practice-pill only ever renders inside the light-only
+       welcome modal, so it keeps its literal light palette in both themes. */
     .practice-pill {
       display: inline-flex;
       align-items: center;
@@ -1675,7 +2101,7 @@
 
     /* ── BOARDS PILL TRAY ── */
     #tab-tray {
-      background: #e3f2fd;
+      background: var(--bg-page);
       padding: 6px 20px 6px;
       border-bottom: none;
       display: flex;
@@ -1699,7 +2125,7 @@
       top: 0;
       bottom: 0;
       width: 48px;
-      background: linear-gradient(to right, transparent, #e3f2fd);
+      background: linear-gradient(to right, transparent, var(--bg-page));
       pointer-events: none;
     }
     .sb-tab {
@@ -1712,34 +2138,34 @@
       font-family: inherit;
       flex-shrink: 0;
       border: 1.5px solid rgba(0,0,0,0.13);
-      background: #CFCBE5;
-      color: #1a1a2e;
+      background: var(--pill-inactive);
+      color: var(--pill-inactive-text);
       display: flex;
       align-items: center;
       gap: 7px;
       transition: background 0.15s, box-shadow 0.15s;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      box-shadow: 0 1px 3px var(--card-shadow);
     }
     .sb-tab.active {
-      background: #FFCC67;
-      color: #1a1a2e;
+      background: var(--pill-active);
+      color: var(--pill-active-text);
       border-color: rgba(0,0,0,0.13);
-      box-shadow: 0 2px 8px rgba(255,204,103,0.45);
+      box-shadow: 0 2px 8px var(--pill-active-glow);
     }
-    .sb-tab:not(.active):hover { background: #bdb8d8; }
+    .sb-tab:not(.active):hover { background: var(--pill-inactive-hover); }
     .sb-tab-count {
       font-size: 13px;
       font-weight: 600;
-      background: white;
-      color: #1a1a2e;
+      background: var(--pill-count-bg);
+      color: var(--pill-inactive-text);
       border-radius: 99px;
       padding: 1px 8px;
       line-height: 1.5;
     }
-    .sb-tab.active .sb-tab-count { background: rgba(255,255,255,0.75); }
+    .sb-tab.active .sb-tab-count { background: rgba(255,255,255,0.75); color: #1a1a2e; }
     .sb-tab-label { outline: none; }
     .sb-tab-label[contenteditable="true"] {
-      background: rgba(0,0,0,0.08);
+      background: var(--accent-tint);
       border-radius: 3px;
       padding: 1px 4px;
       min-width: 40px;
@@ -1752,19 +2178,19 @@
       cursor: pointer;
       font-size: 14px;
       padding: 0 1px;
-      color: rgba(0,0,0,0.45);
+      color: currentColor;   /* follows the pill's text colour — themes itself (#22) */
       font-family: inherit;
       line-height: 1;
     }
     .sb-tab:hover .sb-tab-kebab,
-    .sb-tab.active .sb-tab-kebab { opacity: 1; }
-    .sb-tab-kebab:hover { color: rgba(0,0,0,0.75); }
+    .sb-tab.active .sb-tab-kebab { opacity: 0.45; }   /* #22: opacity-of-currentColor reproduces the pre-#22 rgba(0,0,0,0.45) glyph on light, and themes on dark */
+    .sb-tab-kebab:hover { opacity: 0.75; }
     .sb-tab-add {
       padding: 7px 14px;
       border-radius: 99px;
-      border: 2px dashed #bbbbd0;
+      border: 2px dashed var(--pill-add-border);
       background: none;
-      color: #aaaabc;
+      color: var(--pill-add-text);
       font-size: 18px;
       line-height: 1;
       cursor: pointer;
@@ -1772,14 +2198,14 @@
       transition: all 0.12s;
       flex-shrink: 0;
     }
-    .sb-tab-add:hover { border-color: #9b8cd4; color: #9b8cd4; background: rgba(102,126,234,0.06); }
-    .sb-tab.drag-over { background: #FFCC67 !important; box-shadow: 0 2px 8px rgba(255,204,103,0.5) !important; }
+    .sb-tab-add:hover { border-color: var(--pill-add-hover); color: var(--pill-add-hover); background: var(--accent-tint); }
+    .sb-tab.drag-over { background: var(--pill-active) !important; box-shadow: 0 2px 8px var(--pill-active-glow) !important; }
     .sb-board-menu {
       position: fixed;
-      background: white;
-      border: 1px solid #e2e2ea;
+      background: var(--surface-menu);
+      border: 1px solid var(--border-subtle);
       border-radius: 10px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      box-shadow: 0 4px 16px var(--card-shadow-hover);
       padding: 6px;
       z-index: 9999;
       display: flex;
@@ -1796,27 +2222,27 @@
       padding: 7px 10px;
       border-radius: 6px;
       text-align: left;
-      color: #1a1a2e;
+      color: var(--text-primary);
       transition: background 0.1s;
       display: flex;
       align-items: center;
       gap: 8px;
       width: 100%;
     }
-    .sb-board-menu button:hover { background: #f0f0f5; }
-    .sb-board-menu button.sb-danger { color: #e04040; }
-    .sb-board-menu button.sb-danger:hover { background: #fff0f0; }
+    .sb-board-menu button:hover { background: var(--surface-inset); }
+    .sb-board-menu button.sb-danger { color: var(--danger); }
+    .sb-board-menu button.sb-danger:hover { background: var(--danger-tint); }
     .sb-board-empty {
       font-size: 14px;
-      color: #1a1a2e;
+      color: var(--text-primary);
     }
     #components-container { padding: 10px 20px 20px; }
     .sb-emoji-picker {
       z-index: 9999;
-      background: white;
-      border: 1px solid #e2e2ea;
+      background: var(--surface-menu);
+      border: 1px solid var(--border-subtle);
       border-radius: 10px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+      box-shadow: 0 4px 16px var(--card-shadow-hover);
       padding: 8px;
       display: grid;
       grid-template-columns: repeat(6, 1fr);
@@ -1833,7 +2259,7 @@
       line-height: 1;
       transition: background 0.1s;
     }
-    .sb-emoji-picker button:hover { background: #f0f0f5; }
+    .sb-emoji-picker button:hover { background: var(--surface-inset); }
   </style>
 </head>
 <body>
@@ -1844,6 +2270,10 @@
         SpotBoard | <span id="board-name" style="cursor: pointer; padding: 2px 6px; border-radius: 4px;" title="Click to edit board name">My Dashboard</span>
       </h1>
       <div style="display: flex; gap: 10px; align-items: center;">
+        <button id="theme-toggle-btn" type="button" aria-label="Switch to dark theme" title="Switch theme">
+          <svg class="sb-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="sb-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
         <button id="info-btn" style="padding: 4px 8px; background: none; border: none; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #667eea; line-height: 1;" title="Show tutorial"><img src="info-icon.svg" width="33" height="33" alt="info" style="display:block;"></button>
         <button id="refresh-all-btn" style="padding: 8px 16px; background: white; color: #1B2344; border: 1px solid rgba(27,35,68,0.15); border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 6px; transition: all 0.2s ease;">
           <svg width="18" height="18" viewBox="0 0 1200 1200" fill="#2BB5AD" xmlns="http://www.w3.org/2000/svg"><path d="M600,0C308.74,0,66.009,207.555,11.499,482.812h166.553 C229.37,297.756,398.603,161.719,600,161.719c121.069,0,230.474,49.195,309.668,128.613l-192.48,192.48h304.762H1200V0 l-175.781,175.781C915.653,67.181,765.698,0,600,0z M0,717.188V1200l175.781-175.781C284.346,1132.819,434.302,1200,600,1200 c291.26,0,533.991-207.555,588.501-482.812h-166.553C970.631,902.243,801.396,1038.281,600,1038.281 c-121.069,0-230.474-49.195-309.668-128.613l192.48-192.48H0z"/></svg>

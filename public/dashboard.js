@@ -508,7 +508,7 @@ function filterCardsToBoard(boardId) {
     if (!emptyMsg) {
       emptyMsg = document.createElement('div');
       emptyMsg.className = 'sb-board-empty';
-      emptyMsg.style.cssText = 'grid-column:1/-1;padding:56px 24px;text-align:center;color:#aaa;font-size:14px;line-height:1.6;';
+      emptyMsg.style.cssText = 'grid-column:1/-1;padding:56px 24px;text-align:center;color:var(--text-faint);font-size:14px;line-height:1.6;';
       emptyMsg.innerHTML = '📌 No spots here yet<br><span style="font-size:12px;">Drag a card onto this tab to add it</span>';
       grid.appendChild(emptyMsg);
     }
@@ -1908,17 +1908,17 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       }
       
       card.innerHTML = `
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 5px 12px; background: #EEEEEE; border-radius: 6px 6px 0 0; border-bottom: 1px solid #000;">
-          <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #495057; min-width: 0; flex: 1;">
+        <div class="card-header">
+          <div class="card-header-meta">
             ${component.favicon ? `<img src="${component.favicon}" alt="" style="width: 24px; height: 24px; flex-shrink: 0;" />` : ''}
-            <span class="editable-title" style="font-weight: 600; font-size: 15px; color: #000; cursor: pointer; padding: 2px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="Click to edit label"></span>
-            ${component.isPrePopulated ? '<span style="font-size: 10px; padding: 2px 6px; background: #f3f4f6; color: #6b7280; border-radius: 4px; font-weight: 500; white-space: nowrap;">Template</span>' : ''}
+            <span class="editable-title" title="Click to edit label"></span>
+            ${component.isPrePopulated ? '<span class="template-badge">Template</span>' : ''}
           </div>
-          <div style="display: flex; align-items: center;">
+          <div class="card-header-actions">
             <div class="clock-wrap">
               ${component.lastOutcome === 'failed' ? `
                 <button class="clock-btn iconBtn failed-state" aria-label="Refresh failed" aria-describedby="clock-tip-${component.id}">
-                  <svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                     <path d="M13 17.5a1 1 0 11-2 0 1 1 0 012 0zm-.25-8.25a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5z"/>
                     <path fill-rule="evenodd" d="M9.836 3.244c.963-1.665 3.365-1.665 4.328 0l8.967 15.504c.963 1.667-.24 3.752-2.165 3.752H3.034c-1.926 0-3.128-2.085-2.165-3.752L9.836 3.244zm3.03.751a1 1 0 00-1.732 0L2.168 19.499A1 1 0 003.034 21h17.932a1 1 0 00.866-1.5L12.866 3.994z"/>
                   </svg>
@@ -1926,19 +1926,19 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 <span class="custom-tooltip" role="tooltip" id="clock-tip-${component.id}">Last attempt failed ${component.lastErrorAt ? formatRelativeTime(component.lastErrorAt) : relativeTime}</span>
               ` : `
                 <button class="clock-btn iconBtn" aria-label="Last refresh details" aria-describedby="clock-tip-${component.id}">
-                  <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 7.5H7C7 7.63261 7.05268 7.75979 7.14645 7.85355L7.5 7.5ZM7.5 14C3.91015 14 1 11.0899 1 7.5H0C0 11.6421 3.35786 15 7.5 15V14ZM14 7.5C14 11.0899 11.0899 14 7.5 14V15C11.6421 15 15 11.6421 15 7.5H14ZM7.5 1C11.0899 1 14 3.91015 14 7.5H15C15 3.35786 11.6421 0 7.5 0V1ZM7.5 0C3.35786 0 0 3.35786 0 7.5H1C1 3.91015 3.91015 1 7.5 1V0ZM7 3V7.5H8V3H7ZM7.14645 7.85355L10.1464 10.8536L10.8536 10.1464L7.85355 7.14645L7.14645 7.85355Z" fill="#000000"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 7.5H7C7 7.63261 7.05268 7.75979 7.14645 7.85355L7.5 7.5ZM7.5 14C3.91015 14 1 11.0899 1 7.5H0C0 11.6421 3.35786 15 7.5 15V14ZM14 7.5C14 11.0899 11.0899 14 7.5 14V15C11.6421 15 15 11.6421 15 7.5H14ZM7.5 1C11.0899 1 14 3.91015 14 7.5H15C15 3.35786 11.6421 0 7.5 0V1ZM7.5 0C3.35786 0 0 3.35786 0 7.5H1C1 3.91015 3.91015 1 7.5 1V0ZM7 3V7.5H8V3H7ZM7.14645 7.85355L10.1464 10.8536L10.8536 10.1464L7.85355 7.14645L7.14645 7.85355Z" fill="currentColor"/></svg>
                 </button>
                 <span class="custom-tooltip" role="tooltip" id="clock-tip-${component.id}">Last refresh: ${relativeTime}</span>
               `}
             </div>
             <button class="pause-btn iconBtn${component.refreshPaused ? ' active-state' : ''}" title="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}" aria-label="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}">
-              <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M6.04995 2.74998C6.04995 2.44623 5.80371 2.19998 5.49995 2.19998C5.19619 2.19998 4.94995 2.44623 4.94995 2.74998V12.25C4.94995 12.5537 5.19619 12.8 5.49995 12.8C5.80371 12.8 6.04995 12.5537 6.04995 12.25V2.74998ZM10.05 2.74998C10.05 2.44623 9.80371 2.19998 9.49995 2.19998C9.19619 2.19998 8.94995 2.44623 8.94995 2.74998V12.25C8.94995 12.5537 9.19619 12.8 9.49995 12.8C9.80371 12.8 10.05 12.5537 10.05 12.25V2.74998Z" fill="#000000"/></svg>
+              <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M6.04995 2.74998C6.04995 2.44623 5.80371 2.19998 5.49995 2.19998C5.19619 2.19998 4.94995 2.44623 4.94995 2.74998V12.25C4.94995 12.5537 5.19619 12.8 5.49995 12.8C5.80371 12.8 6.04995 12.5537 6.04995 12.25V2.74998ZM10.05 2.74998C10.05 2.44623 9.80371 2.19998 9.49995 2.19998C9.19619 2.19998 8.94995 2.44623 8.94995 2.74998V12.25C8.94995 12.5537 9.19619 12.8 9.49995 12.8C9.80371 12.8 10.05 12.5537 10.05 12.25V2.74998Z" fill="currentColor"/></svg>
             </button>
             <button class="refresh-single-btn iconBtn" type="button" title="Refresh this card" aria-label="Refresh this card">
-              <svg width="18" height="18" viewBox="0 0 1920 1920" fill="#000000" xmlns="http://www.w3.org/2000/svg"><path d="M960 0v213.333c411.627 0 746.667 334.934 746.667 746.667S1371.627 1706.667 960 1706.667 213.333 1371.733 213.333 960c0-197.013 78.4-382.507 213.334-520.747v254.08H640V106.667H53.333V320h191.04C88.64 494.08 0 720.96 0 960c0 529.28 430.613 960 960 960s960-430.72 960-960S1489.387 0 960 0" fill-rule="evenodd"/></svg>
+              <svg width="18" height="18" viewBox="0 0 1920 1920" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M960 0v213.333c411.627 0 746.667 334.934 746.667 746.667S1371.627 1706.667 960 1706.667 213.333 1371.733 213.333 960c0-197.013 78.4-382.507 213.334-520.747v254.08H640V106.667H53.333V320h191.04C88.64 494.08 0 720.96 0 960c0 529.28 430.613 960 960 960s960-430.72 960-960S1489.387 0 960 0" fill-rule="evenodd"/></svg>
             </button>
             <button class="delete-btn iconBtn" title="Delete card" aria-label="Delete card">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2h4a1 1 0 1 1 0 2h-1.069l-.867 12.142A2 2 0 0 1 17.069 22H6.93a2 2 0 0 1-1.995-1.858L4.07 8H3a1 1 0 0 1 0-2h4V4zm2 2h6V4H9v2zM6.074 8l.857 12H17.07l.857-12H6.074zM10 10a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1z" fill="#0D0D0D"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2h4a1 1 0 1 1 0 2h-1.069l-.867 12.142A2 2 0 0 1 17.069 22H6.93a2 2 0 0 1-1.995-1.858L4.07 8H3a1 1 0 0 1 0-2h4V4zm2 2h6V4H9v2zM6.074 8l.857 12H17.07l.857-12H6.074zM10 10a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1z" fill="currentColor"/></svg>
             </button>
           </div>
         </div>
@@ -1956,8 +1956,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             </a>
           </div>
         ` : ''}
-        <div class="component-content" style="margin-top: 0; padding: 12px; background: #ffffff; border-radius: 0 0 6px 6px; flex: 1; min-height: 0; overflow: auto;">
-          ${cleanupDuplicates(component.html_cache) || '<div style="color: #6c757d; text-align: center; padding: 20px;"><div style="font-size: 18px; margin-bottom: 8px;">📭</div><div style="font-weight: 600; margin-bottom: 4px;">No content yet</div><div style="font-size: 13px;">Click "Refresh All" to fetch latest content</div></div>'}
+        <div class="component-content">
+          ${cleanupDuplicates(component.html_cache) || '<div class="card-empty-placeholder"><div style="font-size: 18px; margin-bottom: 8px;">📭</div><div style="font-weight: 600; margin-bottom: 4px;">No content yet</div><div style="font-size: 13px;">Click "Refresh All" to fetch latest content</div></div>'}
         </div>
       `;
 
@@ -2107,7 +2107,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 clockBtn.classList.remove('failed-state');
                 clockBtn.setAttribute('aria-label', 'Last refresh details');
                 clockBtn.innerHTML = `
-                  <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 7.5H7C7 7.63261 7.05268 7.75979 7.14645 7.85355L7.5 7.5ZM7.5 14C3.91015 14 1 11.0899 1 7.5H0C0 11.6421 3.35786 15 7.5 15V14ZM14 7.5C14 11.0899 11.0899 14 7.5 14V15C11.6421 15 15 11.6421 15 7.5H14ZM7.5 1C11.0899 1 14 3.91015 14 7.5H15C15 3.35786 11.6421 0 7.5 0V1ZM7.5 0C3.35786 0 0 3.35786 0 7.5H1C1 3.91015 3.91015 1 7.5 1V0ZM7 3V7.5H8V3H7ZM7.14645 7.85355L10.1464 10.8536L10.8536 10.1464L7.85355 7.14645L7.14645 7.85355Z" fill="#000000"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 7.5H7C7 7.63261 7.05268 7.75979 7.14645 7.85355L7.5 7.5ZM7.5 14C3.91015 14 1 11.0899 1 7.5H0C0 11.6421 3.35786 15 7.5 15V14ZM14 7.5C14 11.0899 11.0899 14 7.5 14V15C11.6421 15 15 11.6421 15 7.5H14ZM7.5 1C11.0899 1 14 3.91015 14 7.5H15C15 3.35786 11.6421 0 7.5 0V1ZM7.5 0C3.35786 0 0 3.35786 0 7.5H1C1 3.91015 3.91015 1 7.5 1V0ZM7 3V7.5H8V3H7ZM7.14645 7.85355L10.1464 10.8536L10.8536 10.1464L7.85355 7.14645L7.14645 7.85355Z" fill="currentColor"/></svg>
                 `;
               }
 
@@ -2391,8 +2391,9 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           
           const modalContent = document.createElement('div');
           modalContent.style.cssText = `
-            background: #2d3748;
-            color: white;
+            background: var(--surface-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border-subtle);
             padding: 20px;
             border-radius: 8px;
             max-width: 500px;
@@ -2406,19 +2407,19 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                  target="_blank" 
                  rel="noopener noreferrer"
                  title="${component.url || 'No URL'}"
-                 style="color: #63b3ed; text-decoration: none; display: block; padding: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                 style="color: var(--link-chrome); text-decoration: none; display: block; padding: 8px; background: var(--accent-tint); border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                 ${component.url || 'No URL'}
               </a>
             </div>
             <div style="margin-bottom: 12px;">
               <div style="font-weight: 600; margin-bottom: 4px;">Last updated:</div>
-              <div style="color: #cbd5e0;">${currentTimestampText}</div>
+              <div style="color: var(--text-muted);">${currentTimestampText}</div>
             </div>
             <div style="margin-bottom: 20px;">
               <div style="font-weight: 600; margin-bottom: 4px;">Capture method:</div>
-              <div style="color: #cbd5e0;">${component.positionBased ? 'Position-based' : 'Header-based'}</div>
+              <div style="color: var(--text-muted);">${component.positionBased ? 'Position-based' : 'Header-based'}</div>
             </div>
-            <button id="closeInfoModal" style="width: 100%; padding: 10px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+            <button id="closeInfoModal" style="width: 100%; padding: 10px; background: var(--accent); color: var(--accent-text); border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
               OK
             </button>
           `;
@@ -2741,7 +2742,55 @@ document.addEventListener('DOMContentLoaded', () => {
   if (header) {
     document.documentElement.style.setProperty('--header-h', header.offsetHeight + 'px');
   }
+
+  initThemeToggle();
 });
+
+// ===== Theme toggle (issue #22) =====
+// 2-state: follow system until the first explicit click, then the stored choice
+// wins. theme-init.js has already applied any stored choice to <html> before
+// first paint; this only wires the button and keeps its label in sync.
+function initThemeToggle() {
+  const btn = document.getElementById('theme-toggle-btn');
+  if (!btn) return;
+
+  const systemDark = () =>
+    window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const effectiveTheme = () => {
+    const attr = document.documentElement.getAttribute('data-theme');
+    if (attr === 'dark' || attr === 'light') return attr;
+    return systemDark() ? 'dark' : 'light';
+  };
+  const syncLabel = () => {
+    const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+    btn.setAttribute('aria-label', `Switch to ${next} theme`);
+  };
+
+  syncLabel();
+
+  btn.addEventListener('click', () => {
+    const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('sb-theme', next); } catch (e) { /* storage disabled */ }
+    syncLabel();
+    // header height is theme-invariant today, but re-measure in case a token
+    // ever changes header metrics.
+    const hdr = document.querySelector('.header');
+    if (hdr) document.documentElement.style.setProperty('--header-h', hdr.offsetHeight + 'px');
+  });
+
+  // Keep the label correct if the OS theme flips while the user has no explicit choice.
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => {
+      if (!['dark', 'light'].includes(document.documentElement.getAttribute('data-theme'))) {
+        syncLabel();
+      }
+    };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
+}
 
 // Simple toast notification for pause/resume
 function showStyledToast(title, message, type = 'info') {
