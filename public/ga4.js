@@ -116,6 +116,53 @@ function getBrowserLanguage() {
 }
 
 /**
+ * Best-effort browser / OS / device from Client Hints, falling back to the UA string.
+ * Sent as explicit event params (issue #24) so GA4 reporting does not depend on MP's
+ * own user_agent processing. UA/platform strings only — never URLs or page content.
+ * @returns {{browser: string, os: string, device_type: string}}
+ */
+function getClientEnv() {
+  let browser = 'unknown';
+  let device_os = 'unknown';
+  let device_type = 'desktop';
+  try {
+    const uaData = navigator.userAgentData;
+    const ua = navigator.userAgent || '';
+
+    if (uaData) {
+      const brands = uaData.brands || [];
+      // Prefer a specific product brand over the generic "Chromium" / placeholder entries.
+      const specific = brands.find(b => /google chrome|microsoft edge|opera|brave|vivaldi|firefox|safari/i.test(b.brand));
+      const named = specific
+        || brands.find(b => /chromium/i.test(b.brand))
+        || brands.find(b => !/not.?a.?brand/i.test(b.brand));
+      if (named) browser = named.brand;
+      if (uaData.platform) device_os = uaData.platform;
+      if (typeof uaData.mobile === 'boolean') device_type = uaData.mobile ? 'mobile' : 'desktop';
+    }
+
+    if (browser === 'unknown') {
+      if (/Edg\//.test(ua)) browser = 'Microsoft Edge';
+      else if (/OPR\/|Opera/.test(ua)) browser = 'Opera';
+      else if (/Firefox\//.test(ua)) browser = 'Firefox';
+      else if (/Chrome\//.test(ua)) browser = 'Chrome';
+      else if (/Safari\//.test(ua)) browser = 'Safari';
+    }
+    if (device_os === 'unknown') {
+      if (/Windows/.test(ua)) device_os = 'Windows';
+      else if (/Mac OS X|Macintosh/.test(ua)) device_os = 'macOS';
+      else if (/CrOS/.test(ua)) device_os = 'Chrome OS';
+      else if (/Android/.test(ua)) device_os = 'Android';
+      else if (/Linux/.test(ua)) device_os = 'Linux';
+    }
+    if (device_type === 'desktop' && /Mobi|Android|iPhone|iPad/.test(ua)) device_type = 'mobile';
+  } catch (e) {
+    /* leave defaults */
+  }
+  return { browser, device_os, device_type };
+}
+
+/**
  * Gets toolbar pin status (cached per session)
  * Must be called from background.js at session start
  * @returns {Promise<boolean>} True if extension pinned to toolbar
@@ -260,6 +307,7 @@ async function sendEvent(eventName, customParams = {}, engagementTimeMs = 100) {
           browser_language: getBrowserLanguage(),
           days_since_install: daysSinceInstall,
           is_pinned: isPinned,
+          ...getClientEnv(),
           ...customParams
         }
       }]
@@ -268,6 +316,10 @@ async function sendEvent(eventName, customParams = {}, engagementTimeMs = 100) {
     // Set user_id: 'owner' for dev builds (analytics exclusion), or local install UUID for real users
     const { user_id: localUserId } = await chrome.storage.local.get('user_id');
     payload.user_id = isOwnerCached ? 'owner' : localUserId;
+
+    // GA4 MP: forward the UA string so GA4 can populate Browser / OS / Device / Platform.
+    // UA string only — never full URLs, page titles, or captured content (issue #24).
+    payload.user_agent = navigator.userAgent;
 
     // Send to GA4
     const response = await fetch(GA4_ENDPOINT, {
