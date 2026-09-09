@@ -942,21 +942,14 @@ function showCaptureQuickstartModal() {
  * Used by both initial page load and "last card deleted" scenarios.
  */
 function renderEmptyState(container) {
-  const sitesHtml = ONBOARDING_PRACTICE_SITES.map(site => `
-    <div class="practice-site-card">
-      <img src="${site.favicon}" alt="${site.name} icon" class="practice-site-favicon">
-      <div class="practice-site-name">${site.name}</div>
-      <div class="practice-site-desc">${site.desc}</div>
-      <button class="practice-site-btn" data-url="${site.url}" type="button">Open &amp; capture</button>
-    </div>
-  `).join('');
-
   container.innerHTML = `
     <div class="empty-state" style="display: block;">
       <div class="interactive-directory">
         <h2 class="interactive-directory-title">Capture your first card</h2>
-        <p class="interactive-directory-subtitle">Pick an example site below for a quick guided tour on how SpotBoard works.</p>
-        <div class="practice-sites">${sitesHtml}</div>
+        <p class="interactive-directory-subtitle">SpotBoard saves a live copy of any section of a page and keeps it updated. Try it now on Wikipedia — about a minute.</p>
+        <div class="practice-cta-row">
+          <button id="empty-state-start" class="practice-primary-btn" type="button">Try it on Wikipedia →</button>
+        </div>
         <div class="practice-fallback">
           <a href="https://bondybondbond.github.io/spotboard/demo.html" target="_blank" rel="noopener noreferrer">Watch 30s demo →</a>
         </div>
@@ -972,28 +965,26 @@ function renderEmptyState(container) {
     </div>
   `;
 
-  // Track empty state viewed
-  if (typeof gtag !== 'undefined') {
-    gtag('event', 'empty_state_viewed');
+  if (window.GA4 && window.GA4.sendEvent) {
+    window.GA4.sendEvent('empty_state_viewed');
   }
 
-  // Add click handlers for practice site buttons
-  container.querySelectorAll('.practice-site-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const url = this.dataset.url;
-      if (typeof gtag !== 'undefined') {
-        gtag('event', 'interactive_directory_site_clicked', { site_url: url });
+  // Single first-run CTA: open Wikipedia and hand off to the coach via the tab-id pull model
+  // (CHECK_ONBOARDING) — the same mechanism the "Need practice?" pills use. No
+  // ?spotboard_onboarding=1 param, no pendingCaptureTabId, no capture auto-start: the coach
+  // teaches the user to start capture from the toolbar icon themselves (#31).
+  const startBtn = container.querySelector('#empty-state-start');
+  if (startBtn) {
+    startBtn.addEventListener('click', () => {
+      startBtn.disabled = true; // guard against spam-click overwriting pendingOnboardingTabId
+      if (window.GA4 && window.GA4.sendEvent) {
+        window.GA4.sendEvent('onboarding_wikipedia_clicked');
       }
-      chrome.tabs.create({ url: url + '?spotboard_onboarding=1' }, (tab) => {
-        chrome.storage.session.set({ pendingCaptureTabId: tab.id });
+      chrome.tabs.create({ url: ONBOARDING_PRACTICE_URL }, (tab) => {
+        chrome.storage.session.set({ pendingOnboardingTabId: tab.id });
       });
     });
-  });
-
-  // Favicon fallback: inline onerror= is CSP-blocked (script-src 'self'); use a listener instead.
-  container.querySelectorAll('.practice-site-favicon').forEach(img => {
-    img.addEventListener('error', function () { this.style.display = 'none'; });
-  });
+  }
 
   // Skip link handlers
   const skipLink = container.querySelector('#empty-state-skip');
@@ -1244,11 +1235,11 @@ function renderDashboardTour() {
     appendCloseButton();
     const title = document.createElement('p');
     title.className = 'dashboard-tour-title';
-    title.textContent = 'Nice one!';
+    title.textContent = 'Here’s your board';
     tourCard.appendChild(title);
     const body = document.createElement('p');
     body.className = 'dashboard-tour-body';
-    body.textContent = 'The more sites you track, the more valuable SpotBoard becomes — keep adding.';
+    body.textContent = 'Two quick things you’ll use a lot:';
     tourCard.appendChild(body);
     const btn = document.createElement('button');
     btn.className = 'dashboard-tour-btn';
@@ -1408,24 +1399,23 @@ function showDashboardTourCompletion(container) {
   document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
   const tourCard = document.getElementById('sb-dashboard-tour');
   if (tourCard) tourCard.remove();
-  if (window.sbConfetti && window.sbConfetti.fireConfetti) {
-    window.sbConfetti.fireConfetti(200);
-  }
+  // #31: the capture already got its celebration in-page ("You did it!"). The final tour
+  // screen is a quiet close, not a second celebration — no confetti, no fanfare.
   const overlay = document.createElement('div');
   overlay.className = 'dashboard-tour-completion';
   const card = document.createElement('div');
   card.className = 'dashboard-tour-completion-card';
   const title = document.createElement('p');
   title.className = 'dashboard-tour-title';
-  title.textContent = "🎉 You're all set!";
+  title.textContent = "That’s it.";
   card.appendChild(title);
   const body = document.createElement('p');
   body.className = 'dashboard-tour-body';
-  body.textContent = 'Now go explore the web and track what matters to you.';
+  body.textContent = 'Go capture what matters to you.';
   card.appendChild(body);
   const btn = document.createElement('button');
   btn.className = 'dashboard-tour-btn';
-  btn.textContent = "Let's go →";
+  btn.textContent = 'Done';
   btn.addEventListener('click', () => {
     location.reload(); // dashboardTourShown already written when the tour started
   });
@@ -1436,7 +1426,13 @@ function showDashboardTourCompletion(container) {
 
 // ===== ONBOARDING: Category Picker + Pre-populated Cards =====
 
-// Curated practice sites for the Interactive Directory (shown when dashboard has no cards)
+// First-run practice target (#31). One real, redirect-stable site — the new user experiences
+// the actual product, not a chooser or a sandbox. BBC/NPR were dropped from first-run: their
+// consent/redirect behaviour broke coach activation and made a messy first capture. The
+// "Need practice?" pills in the info modal still offer BBC/NPR/Wikipedia for a second round.
+const ONBOARDING_PRACTICE_URL = 'https://en.wikipedia.org/wiki/Main_Page';
+
+// Still used by the info-modal "Need practice?" pills (see dashboard.html).
 const ONBOARDING_PRACTICE_SITES = [
   { name: 'BBC News', url: 'https://www.bbc.co.uk/news', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=bbc.co.uk', desc: 'Headlines & top stories' },
   { name: 'NPR', url: 'https://www.npr.org', favicon: 'https://www.google.com/s2/favicons?sz=64&domain=npr.org', desc: 'Public radio & news' },
@@ -2899,48 +2895,15 @@ if (boardNameElement) {
 
 // ===== WELCOME MODAL LOGIC =====
 // #welcome-modal is now the info modal only (opened via (?) button).
-// #first-run-modal handles first-time users before any capture.
+// #31: the separate first-run "Welcome to SpotBoard!" modal was removed — it only gated the
+// empty state and its "Let's go →" just reloaded to the same screen. The empty-state
+// heading + "Try it on Wikipedia →" CTA now carries the welcome.
 
 const welcomeModal = document.getElementById('welcome-modal');
 const gotItBtn = document.getElementById('got-it-btn');
 const infoBtn = document.getElementById('info-btn');
-const firstRunModal = document.getElementById('first-run-modal');
 
-// Show first-run modal for completely new users (no cards, onboarding not complete)
 const hasSeenWelcome = localStorage.getItem('hasSeenWelcome');
-if (!hasSeenWelcome) {
-  chrome.storage.local.get(['onboardingCompleted'], ({ onboardingCompleted }) => {
-    if (!onboardingCompleted) {
-      chrome.storage.sync.get(null, (syncData) => {
-        const hasCards = Object.keys(syncData).some(k => k.startsWith('comp-'));
-        if (!hasCards) {
-          firstRunModal.style.display = 'flex';
-        }
-      });
-    }
-  });
-}
-
-// First-run modal handlers
-document.getElementById('first-run-lets-go').addEventListener('click', () => {
-  localStorage.setItem('hasSeenWelcome', 'true');
-  location.reload();
-});
-
-document.getElementById('first-run-skip').addEventListener('click', (e) => {
-  e.preventDefault();
-  document.getElementById('first-run-skip-confirm').style.display = 'block';
-});
-
-document.getElementById('first-run-yes-skip').addEventListener('click', () => {
-  chrome.storage.local.set({ onboardingCompleted: true, dashboardTourShown: true });
-  localStorage.setItem('hasSeenWelcome', 'true');
-  location.reload();
-});
-
-document.getElementById('first-run-cancel-skip').addEventListener('click', () => {
-  document.getElementById('first-run-skip-confirm').style.display = 'none';
-});
 
 // "Got it" button - dismiss welcome/info modal
 if (gotItBtn) {

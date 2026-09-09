@@ -1145,6 +1145,29 @@
       transform: scale(0.97);
     }
 
+    /* #31: single first-run CTA */
+    .practice-cta-row {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+
+    .practice-primary-btn {
+      padding: 14px 28px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #ffffff;
+      background: linear-gradient(135deg, var(--header-grad-a) 0%, var(--header-grad-b) 100%);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: filter 0.15s ease, transform 0.1s ease;
+    }
+
+    .practice-primary-btn:hover { filter: brightness(1.1); }
+    .practice-primary-btn:active { transform: scale(0.97); }
+    .practice-primary-btn:disabled { opacity: 0.6; cursor: default; }
+
     .practice-fallback {
       font-size: 15px;
       color: var(--text-faint);
@@ -2300,24 +2323,7 @@
     </div>
   </div>
 
-  <!-- First-Run Modal (shown to new users before any capture) -->
-  <div id="first-run-modal" style="display: none;">
-    <div class="first-run-backdrop"></div>
-    <div class="first-run-content">
-      <img src="logo.png" alt="SpotBoard" class="first-run-logo">
-      <h1 class="first-run-heading">Welcome to SpotBoard!</h1>
-      <p class="first-run-tagline">Save any section from any website — check it whenever you want, all in one place.</p>
-      <button id="first-run-lets-go" class="first-run-primary-btn">Let's go →</button>
-      <a href="#" id="first-run-skip" class="first-run-skip-link">I already know how it works</a>
-      <div id="first-run-skip-confirm" class="first-run-skip-confirm" style="display: none;">
-        <p>Skip the guided first capture?</p>
-        <div class="first-run-skip-buttons">
-          <button id="first-run-yes-skip" class="first-run-skip-yes">Yes, skip</button>
-          <button id="first-run-cancel-skip" class="first-run-skip-cancel">Cancel</button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <!-- #31: first-run "Welcome" modal removed — the empty-state heading + Wikipedia CTA is the welcome. -->
 
   <!-- Welcome Tutorial Modal -->
   <div id="welcome-modal" style="display: none;">

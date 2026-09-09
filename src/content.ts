@@ -1875,7 +1875,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         // Onboarding mode: show completion overlay
         if (wasOnboarding) {
           console.debug('[sb-onboarding] calling advanceOnboardingCoach(completed). body.lastChild before:', document.body.lastElementChild?.id);
-          advanceOnboardingCoach('completed');
+          advanceOnboardingCoach('completed', component.id);
           console.debug('[sb-onboarding] advanceOnboardingCoach done. body.lastChild after:', document.body.lastElementChild?.id);
         }
 
@@ -2032,16 +2032,36 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         //
         //  - VOLATILE_FINGERPRINT_RE exemption: a bare single-digit value ("0", "5" -- a
         //    count or score) is a valid tiny card, not garbage. Anchored regex.
-        //  - Onboarding / playground are guided flows on controlled pages -> never warn.
+        //  - Playground is a guided flow on a controlled page -> never warn.
+        //  - Onboarding (#31): we DO catch empties now -- silently saving a blank first card
+        //    and then celebrating it is the worst possible first impression. But a brand-new
+        //    user should be nudged to pick a better section, not shown the "capture anyway?"
+        //    bypass prompt as their first outcome (handled just below, before the modal).
         const capBody = new DOMParser().parseFromString(cleanedHTML, 'text/html').body;
         const capText = (capBody.textContent || '').trim();
-        const looksEmpty = !wasOnboarding && !getIsPlaygroundPage()
+        const looksEmpty = !getIsPlaygroundPage()
           && capText.replace(/\s/g, '').length < 2
           && capBody.querySelectorAll('li, tr, article, img, svg').length === 0
           && !VOLATILE_FINGERPRINT_RE.test(capText);
 
         if (!looksEmpty) {
           commitCapture();
+          return;
+        }
+
+        // Onboarding: never silently save a useless first card, and never make the bypass
+        // prompt the first thing a new user sees. Clear the selection, nudge toward a bigger
+        // block, and re-arm capture so they can immediately try again. (Not a state machine:
+        // a repeat empty just shows the hint again; the #9 modal below is unchanged for
+        // every non-onboarding capture.)
+        if (wasOnboarding) {
+          log('⚠️ Onboarding capture looks empty — prompting retry instead of saving.');
+          target.style.outline = '';
+          target.style.cursor = '';
+          lockedElement = null;
+          resetExclusions();
+          toggleCapture(true); // re-arm first so the banner/coach are back
+          showCaptureHint('Pick a bigger section — try a paragraph or a whole card.');
           return;
         }
 
@@ -2250,6 +2270,31 @@ function showCaptureBanner() {
   `;
   
   document.body.appendChild(banner);
+}
+
+// Lightweight, non-blocking, self-dismissing hint shown while capture mode stays active
+// (e.g. onboarding "pick a bigger section" recovery). Not showStyledNotification — that is a
+// full-screen blocking modal with a "View on SpotBoard" button, wrong for a "try again" nudge.
+function showCaptureHint(message: string) {
+  const existing = document.getElementById('spotboard-capture-hint');
+  if (existing) existing.remove();
+  const hint = document.createElement('div');
+  hint.id = 'spotboard-capture-hint';
+  hint.setAttribute('data-spotboard-ignore', 'true');
+  hint.textContent = message;
+  hint.style.cssText = `
+    position: fixed !important; bottom: 24px !important; left: 50% !important;
+    transform: translateX(-50%) !important;
+    background: #1c1c1e !important; color: #f5f5f7 !important;
+    padding: 12px 20px !important; border-radius: 10px !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    font-size: 14px !important; font-weight: 500 !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+    z-index: 2147483646 !important; pointer-events: none !important;
+    max-width: 360px !important; text-align: center !important;
+  `;
+  document.body.appendChild(hint);
+  setTimeout(() => hint.remove(), 4000);
 }
 
 function toggleCapture(forceState?: boolean) {

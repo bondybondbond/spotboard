@@ -324,20 +324,35 @@ setUninstallSurveyURL();
 // ================================
 // MESSAGE HANDLERS
 // ================================
+
+// Resolve a pending-tab handshake key, tolerating the fire-and-forget race where the
+// dashboard's chrome.storage.session.set hasn't landed yet when the content script asks.
+// Checks now, then once more after a short delay. Clears the key on a match. (#31)
+async function matchPendingTab(key: 'pendingOnboardingTabId' | 'pendingCaptureTabId', tabId?: number): Promise<boolean> {
+  if (tabId === undefined) return false;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await chrome.storage.session.get(key);
+    if (result[key] === tabId) {
+      await chrome.storage.session.remove(key);
+      return true;
+    }
+    if (attempt === 0) await new Promise(r => setTimeout(r, 400));
+  }
+  return false;
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // Onboarding re-trigger pull model: content script asks if it should start onboarding
+  // Onboarding re-trigger pull model: content script asks if it should start onboarding.
+  // The dashboard writes pendingOnboardingTabId in a fire-and-forget callback after
+  // chrome.tabs.create; a fast/cached page can ask before that set resolves, so re-check
+  // once after a short delay before giving up (#31).
   if (request.type === 'CHECK_ONBOARDING') {
     const tabId = sender.tab?.id;
     (async () => {
       try {
-        const result = await chrome.storage.session.get('pendingOnboardingTabId');
-        if (result.pendingOnboardingTabId === tabId) {
-          console.debug('[sb-onboarding] CHECK_ONBOARDING: tab', tabId, 'matches — clearing');
-          await chrome.storage.session.remove('pendingOnboardingTabId');
-          sendResponse(true);
-        } else {
-          sendResponse(false);
-        }
+        const matched = await matchPendingTab('pendingOnboardingTabId', tabId);
+        if (matched) console.debug('[sb-onboarding] CHECK_ONBOARDING: tab', tabId, 'matched — clearing');
+        sendResponse(matched);
       } catch {
         sendResponse(false); // channel closed (redirect mid-flight) — fail silently
       }
@@ -350,13 +365,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const tabId = sender.tab?.id;
     (async () => {
       try {
-        const result = await chrome.storage.session.get('pendingCaptureTabId');
-        if (result.pendingCaptureTabId === tabId) {
-          await chrome.storage.session.remove('pendingCaptureTabId');
-          sendResponse(true);
-        } else {
-          sendResponse(false);
-        }
+        sendResponse(await matchPendingTab('pendingCaptureTabId', tabId));
       } catch {
         sendResponse(false);
       }

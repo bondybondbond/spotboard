@@ -18,6 +18,18 @@ let _isOnboardingMode = sessionStorage.getItem('sb_onboarding') === '1'
 let _coachShadow: ShadowRoot | null = null;
 let _coachHost: HTMLElement | null = null;
 let _toggleCapture: ((forceState?: boolean) => void) | null = null;
+let _completedCardId: string | null = null;
+
+// Per-step funnel signal (#31). Fire-and-forget; background relays to GA4.
+function _emitStep(step: number | 'completed') {
+  try {
+    chrome.runtime.sendMessage({
+      type: 'GA4_EVENT',
+      eventName: 'onboarding_step_viewed',
+      params: { step: String(step) },
+    });
+  } catch (_e) { /* non-fatal — no extension context */ }
+}
 
 // ── Public accessors ───────────────────────────────────────────
 export function getIsPlaygroundPage(): boolean { return _isPlaygroundPage; }
@@ -63,6 +75,14 @@ function injectOnboardingCoach() {
     '50%{box-shadow:0 8px 32px rgba(0,0,0,.35),0 0 0 2px #fff,0 0 0 5px rgba(102,126,234,.55);}}',
     '#sb-card-step1{top:auto;bottom:120px;right:20px;}',
     '.pos-left{top:50%;left:20px;right:auto;bottom:auto;transform:translateY(-50%);}',
+    // #31: Step 2 is a big centred prompt — the red hover frame is the interaction, this just says "go".
+    '.pos-center{top:64px;left:50%;right:auto;bottom:auto;transform:translateX(-50%);',
+    'width:440px;max-width:calc(100vw - 40px);text-align:center;padding:22px 26px;}',
+    '.pos-center .coach-title{font-size:18px;}',
+    '.pos-center .coach-body{font-size:15px;color:#e6e6ea;margin-bottom:0;}',
+    // #31: Step 3 sits next to the (top-right) confirmation modal, never on the opposite side.
+    '.pos-confirm{top:20px;right:372px;}',
+    '@media (max-width:820px){.pos-confirm{top:auto;right:20px;bottom:20px;}}',
     '.coach-step-pill{display:inline-block;background:#6d28d9;color:#fff;font-size:11px;font-weight:600;',
     'padding:2px 10px;border-radius:20px;margin-bottom:10px;letter-spacing:.02em;}',
     '.coach-title{font-size:16px;font-weight:700;margin-bottom:8px;}',
@@ -145,14 +165,16 @@ function injectOnboardingCoach() {
     return card;
   }
 
-  shadow.appendChild(_makeCard('sb-card-step1', 'Step 1 of 3', 'Open SpotBoard',
-    'Look for the \uD83E\uDDE9 puzzle piece in your toolbar \u2192 click SpotBoard \u2192 click Save a Spot.',
-    '\uD83D\uDCA1 Tip: Pin SpotBoard for easier access!'));
-  shadow.appendChild(_makeCard('sb-card-step2', 'Step 2 of 3', 'Select a section',
-    'A red frame appears as you move your cursor. Click any block of content.'));
+  shadow.appendChild(_makeCard('sb-card-step1', 'Step 1 of 3', 'Start capturing',
+    'Click the SpotBoard icon in your toolbar, then choose Save a Spot. SpotBoard keeps the section you choose updated for you.',
+    '\uD83D\uDCA1 Don\u2019t see it? Click the \uD83E\uDDE9 puzzle piece, then pin SpotBoard.'));
+  const card2 = _makeCard('sb-card-step2', 'Step 2 of 3', 'Click any section to track it',
+    'A red frame follows your cursor \u2014 click the block you want to save.');
+  card2.classList.add('pos-center');
+  shadow.appendChild(card2);
   const card3 = _makeCard('sb-card-step3', 'Step 3 of 3', 'Confirm your capture',
-    'A green frame marks your selection. Press Confirm Spot to save it.');
-  card3.classList.add('pos-left');
+    'A green frame marks your selection. Press Confirm Spot \u2014 top right \u2014 to save it.');
+  card3.classList.add('pos-confirm');
   shadow.appendChild(card3);
 
   const backdrop = document.createElement('div');
@@ -177,8 +199,11 @@ function injectOnboardingCoach() {
   openBtn.className = 'coach-open-board';
   openBtn.textContent = '\u2192 Go to SpotBoard';
   openBtn.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ action: 'focusDashboard' }, (response) => {
-      if (!response?.found) chrome.runtime.sendMessage({ action: 'openDashboard' });
+    // Pass the new card id so the dashboard reloads/re-renders and glows it, instead of
+    // relying on the storage.onChanged reload having already landed (#31 stale-empty race).
+    const hc = _completedCardId ? { highlightCardId: _completedCardId } : {};
+    chrome.runtime.sendMessage({ action: 'focusDashboard', ...hc }, (response) => {
+      if (!response?.found) chrome.runtime.sendMessage({ action: 'openDashboard', ...hc });
     });
   });
   const closeX = document.createElement('button');
@@ -199,18 +224,27 @@ function injectOnboardingCoach() {
 
   document.body.appendChild(host);
   setCoachStep(1);
+  _emitStep(1);
 }
 
 // ── Public: advance coach through stages ───────────────────────
-export function advanceOnboardingCoach(stage: 'capturing' | 'selected' | 'completed') {
+export function advanceOnboardingCoach(stage: 'capturing' | 'selected' | 'completed', cardId?: string) {
+  // #31: if capture started before the coach mounted (slow page / redirect race), mount it
+  // now rather than silently dropping the transition and leaving the user with a bare crosshair.
+  if (!_coachShadow && stage !== 'completed') {
+    _isOnboardingMode = true;
+    injectOnboardingCoach();
+  }
   if (!_coachShadow) return;
   if (stage === 'capturing') {
     setCoachStep(2);
-    fireConfetti(40);
+    _emitStep(2);
   } else if (stage === 'selected') {
     setCoachStep(3);
-    fireConfetti(10);
+    _emitStep(3);
   } else if (stage === 'completed') {
+    _completedCardId = cardId || null;
+    _emitStep('completed');
     const host = document.getElementById('sb-coach-host') as HTMLElement | null;
 
     // Diagnostic log — keep for debugging
