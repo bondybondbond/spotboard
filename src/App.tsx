@@ -137,155 +137,79 @@ function App() {
   });
 
   return (
-    <div style={{ width: '100%' }}>
-      {/* First-time user tooltip */}
-      {components.length === 0 && (
-        <div style={{ 
-          background: '#e3f2fd', 
-          padding: '12px', 
-          borderRadius: '6px', 
-          marginBottom: '12px',
-          fontSize: '13px',
-          color: '#1565c0',
-          border: '1px solid #90caf9'
-        }}>
-          <div style={{ marginBottom: '8px', fontWeight: '600', fontSize: '14px' }}>
-            👋 Welcome to SpotBoard!
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <span style={{ 
-                background: '#1565c0', 
-                color: 'white', 
-                borderRadius: '50%', 
-                width: '18px', 
-                height: '18px', 
-                display: 'inline-flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                fontSize: '11px',
-                fontWeight: '600',
-                flexShrink: 0
-              }}>1</span>
-              <span>Click <strong>"Save a Spot"</strong> button below</span>
+    <div className="sb-popup">
+      <div className="sb-brand">
+        <img src="/logo.png" alt="SpotBoard logo" />
+        <span>SpotBoard</span>
+      </div>
+
+      {components.length === 0 ? (
+        <div className="sb-steps">
+          <div className="sb-steps-title">👋 Welcome to SpotBoard!</div>
+          <div className="sb-steps-list">
+            <div className="sb-step">
+              <span className="sb-step-num">1</span>
+              <span>Click the <strong>"Save a Spot"</strong> button below</span>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <span style={{ 
-                background: '#1565c0', 
-                color: 'white', 
-                borderRadius: '50%', 
-                width: '18px', 
-                height: '18px', 
-                display: 'inline-flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                fontSize: '11px',
-                fontWeight: '600',
-                flexShrink: 0
-              }}>2</span>
+            <div className="sb-step">
+              <span className="sb-step-num">2</span>
               <span>Hover over any section on this page</span>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <span style={{ 
-                background: '#1565c0', 
-                color: 'white', 
-                borderRadius: '50%', 
-                width: '18px', 
-                height: '18px', 
-                display: 'inline-flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                fontSize: '11px',
-                fontWeight: '600',
-                flexShrink: 0
-              }}>3</span>
+            <div className="sb-step">
+              <span className="sb-step-num">3</span>
               <span>Click to save it to your board</span>
             </div>
           </div>
         </div>
+      ) : (
+        <div className="sb-hint">Click any website element to save it to your board.</div>
       )}
-      
-      <button 
-        onClick={handleToggleCapture} 
-        style={{ 
-          width: '100%', 
-          marginBottom: '10px',
-          padding: '14px',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          color: 'white',
-          border: 'none',
-          borderRadius: '6px',
-          fontWeight: '600',
-          fontSize: '15px',
-          cursor: 'pointer',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-        }}
-      >
-        ✂️ Save a Spot
-      </button>
-      <button 
-        onClick={handleOpenCanvas} 
-        style={{ 
-          width: '100%', 
-          marginBottom: '10px', 
-          padding: '10px',
-          background: 'white',
-          color: '#667eea',
-          border: '2px solid #667eea',
-          borderRadius: '6px',
-          fontWeight: '500',
-          fontSize: '13px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '8px'
-        }}
-      >
-        <img src="/logo.png" alt="SpotBoard" style={{ width: '18px', height: '18px' }} />
-        Open Board
-      </button>
+
+      <div className="sb-actions">
+        <button className="sb-btn-primary" onClick={handleToggleCapture}>
+          ✂️ Save a Spot
+        </button>
+        <button className="sb-btn-secondary" onClick={handleOpenCanvas}>
+          <img src="/logo.png" alt="" />
+          Open Board ↗
+        </button>
+      </div>
+
       {currentDomain && currentDomain.includes('.') && (
-        <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <img 
-            src={`https://www.google.com/s2/favicons?sz=64&domain=${currentDomain}`} 
-            alt="" 
-            style={{ width: '16px', height: '16px' }} 
-          />
-          <span>Showing spots from: {currentDomain}</span>
+        <>
+          <div className="sb-divider" />
+          <div className="sb-filter">
+            <img
+              src={`https://www.google.com/s2/favicons?sz=64&domain=${currentDomain}`}
+              alt="Website favicon"
+            />
+            <span>Showing spots from: {currentDomain}</span>
+          </div>
+        </>
+      )}
+
+      {filteredComponents.length > 0 && (
+        <div className="sb-cards">
+          {filteredComponents.map((component: Component, index) => (
+            <div key={index} className="sb-card">
+              <div className="sb-card-head">
+                {component.favicon ? (
+                  <img src={component.favicon} alt="" />
+                ) : (
+                  <img src={`https://www.google.com/s2/favicons?sz=64&domain=${currentDomain}`} alt="" />
+                )}
+                <h3 className="sb-card-title">{component.customLabel || component.name}</h3>
+                <button className="sb-card-del" onClick={() => handleDelete(component)}>
+                  Delete
+                </button>
+              </div>
+              <small className="sb-card-url" title={component.url}>
+                {component.url}
+              </small>
+            </div>
+          ))}
         </div>
       )}
-      <div>
-        {filteredComponents.map((component: Component, index) => (
-          <div key={index} style={{ border: '1px solid #ccc', padding: '10px', marginBottom: '10px', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-              {component.favicon && (
-                <img 
-                  src={component.favicon} 
-                  alt="" 
-                  style={{ width: '16px', height: '16px', flexShrink: 0 }} 
-                />
-              )}
-              <h3 style={{ margin: 0, flex: 1 }}>{component.customLabel || component.name}</h3>
-              <button onClick={() => handleDelete(component)} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                Delete
-              </button>
-            </div>
-            <small 
-              title={component.url}
-              style={{ 
-                display: 'block', 
-                overflow: 'hidden', 
-                textOverflow: 'ellipsis', 
-                whiteSpace: 'nowrap',
-                color: '#666'
-              }}
-            >
-              {component.url}
-            </small>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

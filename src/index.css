@@ -1,25 +1,48 @@
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
   color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+  /* Spacing (4px system) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* Smooth modern corners */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+
+  /* Popup colour tokens (light) */
+  --pop-bg: #ffffff;
+  --pop-text: #1a1a24;
+  --pop-text-muted: #626d7a;
+  --pop-border: #e2e8f0;
+  --pop-line: #e2e8f0;
+  --pop-surface: #f8fafc;
+
+  --pop-accent-a: #6366f1; /* Vibrant Indigo */
+  --pop-accent-b: #a855f7; /* Vibrant Purple */
+  --pop-shadow: 0 4px 12px rgba(99, 102, 241, 0.15), 0 2px 4px rgba(0, 0, 0, 0.05);
+
+  --pop-btn2-bg: #d7dce4;
+  --pop-btn2-text: #334155;
+  --pop-btn2-border: #c2c9d4;
+  --pop-btn2-hover: #c9cfd9;
+
+  --pop-card-bg: #f8fafc;
+  --pop-card-border: #e2e8f0;
 }
 
 /* Extension popup: fixed width, no viewport-relative units anywhere on the layout.
@@ -27,48 +50,53 @@ a:hover {
    html/body/#root makes that computation self-referential and the popup oscillates
    ("vibrates") until a pointer-enter forces it to settle. Keep this deterministic. */
 html {
-  width: 380px;
+  width: 320px;
   overflow-x: hidden;
 }
 
 body {
   margin: 0;
-  width: 380px;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+  width: 320px;
+  background: var(--pop-bg);
+  color: var(--pop-text);
+  /* Curved corners on the popup panel itself. Radius only — no size/overflow change,
+     so the self-sizing chain (LEARNINGS UI-15) is untouched. */
+  border-radius: 16px;
 }
 
 button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
   cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  border: none;
+  background: transparent;
+  transition: all 0.2s ease;
 }
 
-@media (prefers-color-scheme: light) {
+button:focus-visible {
+  outline: 2px solid var(--pop-accent-a);
+  outline-offset: 1px;
+}
+
+/* Modern Dark Mode Counterparts */
+@media (prefers-color-scheme: dark) {
   :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
+    --pop-bg: #141416;
+    --pop-text: #f4f4f5;
+    --pop-text-muted: #bfbfbf;
+    --pop-border: #27272a;
+    --pop-line: #bfbfbf;
+    --pop-surface: #1e1e22;
+
+    --pop-accent-a: #6366f1;
+    --pop-accent-b: #8b5cf6;
+    --pop-shadow: 0 8px 16px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(99, 102, 241, 0.2);
+
+    --pop-btn2-bg: #595959;
+    --pop-btn2-text: #ffffff;
+    --pop-btn2-border: #6f6f6f;
+    --pop-btn2-hover: #666666;
+
+    --pop-card-bg: #1c1c1f;
+    --pop-card-border: #bfbfbf;
   }
 }
