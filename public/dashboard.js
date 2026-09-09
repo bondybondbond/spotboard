@@ -944,7 +944,7 @@ function showCaptureQuickstartModal() {
 function renderEmptyState(container) {
   const sitesHtml = ONBOARDING_PRACTICE_SITES.map(site => `
     <div class="practice-site-card">
-      <img src="${site.favicon}" alt="${site.name} icon" class="practice-site-favicon" onerror="this.style.display='none'">
+      <img src="${site.favicon}" alt="${site.name} icon" class="practice-site-favicon">
       <div class="practice-site-name">${site.name}</div>
       <div class="practice-site-desc">${site.desc}</div>
       <button class="practice-site-btn" data-url="${site.url}" type="button">Open &amp; capture</button>
@@ -988,6 +988,11 @@ function renderEmptyState(container) {
         chrome.storage.session.set({ pendingCaptureTabId: tab.id });
       });
     });
+  });
+
+  // Favicon fallback: inline onerror= is CSP-blocked (script-src 'self'); use a listener instead.
+  container.querySelectorAll('.practice-site-favicon').forEach(img => {
+    img.addEventListener('error', function () { this.style.display = 'none'; });
   });
 
   // Skip link handlers

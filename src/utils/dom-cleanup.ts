@@ -8,6 +8,27 @@
  */
 
 /**
+ * Strip inline event-handler attributes and javascript: URLs from a raw HTML string,
+ * BEFORE it is ever assigned to .innerHTML anywhere in the pipeline.
+ *
+ * Captured third-party markup routinely carries on* handlers (onerror/onload/onclick…).
+ * The moment such HTML is parsed into a DOM node (even a detached one) the handlers attach
+ * and fire (an <img onerror> whose src 404s fires immediately), and the extension CSP
+ * (script-src 'self') then blocks them — spamming the dashboard console with
+ * "Executing inline event handler violates …". Doing this at the STRING level means the
+ * handlers never attach in the first place. cleanupDuplicates() repeats the removal at the
+ * DOM level as a second layer for anything this misses.
+ */
+export function stripEventHandlers(html: string): string {
+  if (!html || html.indexOf('=') === -1) return html;
+  return html
+    // on*="…"  on*='…'  on*=bareword   (no standard HTML attribute begins with "on")
+    .replace(/\s+on[a-z0-9_-]+\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/gi, ' ')
+    // javascript: in any URL-bearing attribute → neutralise to "#"
+    .replace(/(\s+(?:href|src|xlink:href|action|formaction|data|poster|background)\s*=\s*)("javascript:[^"]*"|'javascript:[^']*'|javascript:[^\s"'>]+)/gi, '$1"#"');
+}
+
+/**
  * Apply user exclusions to HTML content
  * Removes DOM elements that user explicitly excluded during capture or editing
  * 
@@ -372,7 +393,14 @@ function isResponsiveDuplicate(
  */
 export function cleanupDuplicates(html: string): string {
   if (!html) return html;
-  
+
+  // 🎯 STRIP INLINE EVENT HANDLERS (string level, BEFORE any DOM parse): captured pages carry
+  // on* attributes (onerror, onload, onclick…) that attach and fire the instant this HTML is
+  // parsed into a node — even the detached `temp` below. The extension CSP (script-src 'self')
+  // then blocks them, spamming "Executing inline event handler violates…". Neutralise on the
+  // string so nothing ever attaches; the DOM sweep further down is only a backstop.
+  html = stripEventHandlers(html);
+
   const temp = document.createElement('div');
   temp.innerHTML = html;
 
@@ -381,6 +409,13 @@ export function cleanupDuplicates(html: string): string {
   // CNN Fusion CMS injects inline <script> tags (e.g. imageLoadError handler) inside image wrappers.
   // When captured HTML is injected into the dashboard those tags apply globally.
   temp.querySelectorAll('style, script, link[rel="stylesheet"]').forEach(el => el.remove());
+
+  // Backstop DOM sweep for any on* attribute the string-level pass above didn't catch.
+  temp.querySelectorAll('*').forEach(el => {
+    for (const attr of Array.from(el.attributes)) {
+      if (attr.name.toLowerCase().startsWith('on')) el.removeAttribute(attr.name);
+    }
+  });
 
   // 🎯 TAILWIND SVG SIZE FIX: Inline SVGs with only `size-N` Tailwind classes have no explicit
   // width/height attributes — Tailwind CSS isn't loaded in the card context, so they render at
@@ -1923,7 +1958,11 @@ interface SanitizationComponent {
  * @returns Sanitized HTML ready for storage and display
  */
 export function applySanitizationPipeline(inputHtml: string, component: SanitizationComponent): string {
-  const withExclusions = applyExclusions(inputHtml, component.excludedSelectors, component.selector);
+  // Defang inline handlers / javascript: URLs on the raw string FIRST — applyExclusions and
+  // the image-classification passes below all assign this HTML to .innerHTML, which would
+  // otherwise fire (and CSP-block) any on* handler the captured page carried.
+  const safeHtml = stripEventHandlers(inputHtml);
+  const withExclusions = applyExclusions(safeHtml, component.excludedSelectors, component.selector);
   const withBgImages = extractBackgroundImages(withExclusions);
   const withPreserved = preserveImageClassifications(withBgImages, component.html_cache || '');
   const withImageClassification = classifyImagesForRefresh(withPreserved);

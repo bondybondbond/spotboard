@@ -137,7 +137,7 @@ function App() {
   });
 
   return (
-    <div style={{ padding: '10px', width: '340px', maxWidth: '100vw' }}>
+    <div style={{ width: '100%' }}>
       {/* First-time user tooltip */}
       {components.length === 0 && (
         <div style={{ 

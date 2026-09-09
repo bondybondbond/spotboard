@@ -2214,7 +2214,10 @@ async function refreshComponent(component) {
           element = matches[0];
         }
         
-        extractedHtml = element.outerHTML;
+        // Defang on* handlers / javascript: URLs on the raw string before any of the drift /
+        // struct / sentiment measurement divs below parse it into a DOM (which would attach and
+        // CSP-block the handlers). stripEventHandlers is a window global from dom-cleanup.
+        extractedHtml = stripEventHandlers(element.outerHTML);
 
                 // HOTUKDEALS/JS-RENDERED IMAGES PATTERN: Check if original had images but extracted has none
         // Sites like HotUKDeals render images via JavaScript - direct fetch gets text but no images
@@ -2454,7 +2457,7 @@ async function refreshComponent(component) {
             }
             
             if (container) {
-              extractedHtml = container.outerHTML;
+              extractedHtml = stripEventHandlers(container.outerHTML);
               
               // Validate minimum size - if too small, try climbing higher
               if (extractedHtml.length < 1000) {
@@ -2470,7 +2473,7 @@ async function refreshComponent(component) {
                   const largerHtml = largerContainer.outerHTML;
                   // Found larger container
                   container = largerContainer;
-                  extractedHtml = largerHtml;
+                  extractedHtml = stripEventHandlers(largerHtml);
                 } else {
                   // Using small container
                 }
