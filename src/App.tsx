@@ -2,6 +2,22 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
+// A page where SpotBoard's content script can never run — capture is impossible here.
+function isRestrictedUrl(url?: string): boolean {
+  if (!url) return true;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return true;
+  }
+  const restrictedSchemes = ['chrome:', 'chrome-extension:', 'about:', 'view-source:', 'devtools:', 'edge:'];
+  if (restrictedSchemes.includes(parsed.protocol)) return true;
+  if (parsed.hostname === 'chromewebstore.google.com') return true;
+  if (parsed.hostname === 'chrome.google.com' && parsed.pathname.startsWith('/webstore')) return true;
+  return false;
+}
+
 interface Component {
   id: string; // UUID for matching sync + local data
   name: string;
@@ -19,10 +35,14 @@ interface Component {
 function App() {
   const [components, setComponents] = useState<Component[]>([]);
   const [currentDomain, setCurrentDomain] = useState<string>('');
+  // null = current tab URL not resolved yet — render only the brand until we know,
+  // so a restricted page never flashes the action buttons before collapsing.
+  const [restricted, setRestricted] = useState<boolean | null>(null);
 
   useEffect(() => {
     // Get current tab URL
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      setRestricted(isRestrictedUrl(tabs[0]?.url));
       if (tabs[0]?.url) {
         try {
           const url = new URL(tabs[0].url);
@@ -119,11 +139,15 @@ function App() {
     });
   };
 
-  const handleOpenCanvas = () => {
-    chrome.tabs.create({
-      url: chrome.runtime.getURL('dashboard.html'),
-      active: true
-    });
+  const handleOpenCanvas = async () => {
+    const dashboardUrl = chrome.runtime.getURL('dashboard.html');
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    // Already looking at the board — nothing to open, just get out of the way.
+    if (tab?.url?.split('#')[0].split('?')[0] === dashboardUrl) {
+      window.close();
+      return;
+    }
+    chrome.tabs.create({ url: dashboardUrl, active: true });
   };
 
   // Filter components to only show those from current domain
@@ -143,6 +167,23 @@ function App() {
         <span>SpotBoard</span>
       </div>
 
+      {restricted === null ? null : restricted ? (
+        <>
+          <div className="sb-blocked">
+            <div className="sb-blocked-title">SpotBoard can't run on this page</div>
+            <div className="sb-blocked-body">
+              Open a regular website to save a spot.
+            </div>
+          </div>
+          <div className="sb-actions">
+            <button className="sb-btn-secondary" onClick={handleOpenCanvas}>
+              <img src="/logo.png" alt="" />
+              Open Board ↗
+            </button>
+          </div>
+        </>
+      ) : (
+      <>
       {components.length === 0 ? (
         <div className="sb-steps">
           <div className="sb-steps-title">👋 Welcome to SpotBoard!</div>
@@ -209,6 +250,8 @@ function App() {
             </div>
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   );
