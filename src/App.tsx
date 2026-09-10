@@ -139,11 +139,15 @@ function App() {
     });
   };
 
-  const handleOpenCanvas = () => {
-    chrome.tabs.create({
-      url: chrome.runtime.getURL('dashboard.html'),
-      active: true
-    });
+  const handleOpenCanvas = async () => {
+    const dashboardUrl = chrome.runtime.getURL('dashboard.html');
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    // Already looking at the board — nothing to open, just get out of the way.
+    if (tab?.url?.split('#')[0].split('?')[0] === dashboardUrl) {
+      window.close();
+      return;
+    }
+    chrome.tabs.create({ url: dashboardUrl, active: true });
   };
 
   // Filter components to only show those from current domain
@@ -164,12 +168,20 @@ function App() {
       </div>
 
       {restricted === null ? null : restricted ? (
-        <div className="sb-blocked">
-          <div className="sb-blocked-title">SpotBoard can't run on this page</div>
-          <div className="sb-blocked-body">
-            Open a regular website to save a spot or reach your board.
+        <>
+          <div className="sb-blocked">
+            <div className="sb-blocked-title">SpotBoard can't run on this page</div>
+            <div className="sb-blocked-body">
+              Open a regular website to save a spot.
+            </div>
           </div>
-        </div>
+          <div className="sb-actions">
+            <button className="sb-btn-secondary" onClick={handleOpenCanvas}>
+              <img src="/logo.png" alt="" />
+              Open Board ↗
+            </button>
+          </div>
+        </>
       ) : (
       <>
       {components.length === 0 ? (
