@@ -49,3 +49,7 @@ _do not upload/
 # Windows reserved filename artifact
 nul
 .serena/
+
+# ai-dev-kit approach-A pilot overlay (reversible)
+.claude/
+/AGENTS.md
