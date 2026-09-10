@@ -687,8 +687,27 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
     }
   });
 
-  // Clone (classification attributes will be copied)
-  const clone = cloneWithShadow(element) as HTMLElement;
+  // 🎯 MARK USER-EXCLUDED ELEMENTS before cloning.
+  // A data-attribute marker rides along with cloneNode / HTML-string serialisation, so it
+  // survives shadow-DOM flattening, <slot> projection, and any earlier sibling removals —
+  // unlike a child-index path, which goes stale the instant the clone's structure diverges
+  // from the live DOM (the cause of issue #2: 2+ exclusions removed the wrong elements).
+  // MUST be set before cloneWithShadow(): the shadow flatten reads each open shadow root as
+  // an HTML string, so a marker on a node inside one is only captured if it is already set
+  // at read time.
+  excludedElements.forEach(el => el.setAttribute('data-spotboard-excluded', 'true'));
+
+  // Clone (classification + exclusion markers will be copied).
+  // Invariant: `element` (the capture root) is never itself in `excludedElements` — both
+  // handleClick paths that reach toggleExclusion require `target !== lockedElement` — so the
+  // clone's own root can't carry the marker and this array is the complete un-mark set.
+  let clone: HTMLElement;
+  try {
+    clone = cloneWithShadow(element) as HTMLElement;
+  } finally {
+    // Restore the live page even if cloning throws — never leave a marker on the user's DOM.
+    excludedElements.forEach(el => el.removeAttribute('data-spotboard-excluded'));
+  }
 
   // Clean up markers from original DOM (restore page to pristine state)
   markedElements.forEach(el => el.removeAttribute('data-spotboard-hidden'));
@@ -705,28 +724,11 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   });
   
   // 🎯 REMOVE USER-EXCLUDED ELEMENTS
-  // User marked these elements for exclusion before confirming capture
-  // We need to find them in the clone using path-based matching
+  // Matched via the data-spotboard-excluded marker set on the live nodes before cloning.
+  // querySelectorAll returns document order, so for a nested pair the ancestor is removed
+  // first and the later remove() on the now-detached descendant is a harmless no-op.
   if (excludedElements.length > 0) {
-    console.log('🎯 Processing', excludedElements.length, 'user-excluded elements');
-    
-    // For each excluded element, calculate its path from root
-    // Then find the same element in the clone using that path
-    excludedElements.forEach(excludedEl => {
-      // Get path from root element to excluded element
-      const path = getElementPath(excludedEl, element);
-      console.log('  📍 Excluded element path:', path, excludedEl.tagName, excludedEl.className);
-      
-      // Find corresponding element in clone using path
-      const elementInClone = getElementByPath(clone, path);
-      
-      if (elementInClone) {
-        elementInClone.remove();
-        console.log('  ✅ Removed excluded element from clone');
-      } else {
-        console.warn('  ⚠️ Could not find excluded element in clone');
-      }
-    });
+    clone.querySelectorAll('[data-spotboard-excluded]').forEach(el => el.remove());
   }
   
   // 🎯 Remove elements with display:none (catches CSS-based hidden duplicates)
@@ -1032,36 +1034,6 @@ function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []
   
   return clone.outerHTML;
 }
-
-// Helper: Get path from root to element
-function getElementPath(element: Element, root: Element): number[] {
-  const path: number[] = [];
-  let current = element;
-  
-  while (current && current !== root) {
-    const parent = current.parentElement;
-    if (!parent) break;
-    
-    const index = Array.from(parent.children).indexOf(current);
-    path.unshift(index);
-    current = parent;
-  }
-  
-  return path;
-}
-
-// Helper: Get element from clone using path
-function getElementByPath(root: Element, path: number[]): Element | null {
-  let current: Element | null = root;
-  
-  for (const index of path) {
-    if (!current) return null;
-    current = current.children[index] || null;
-  }
-  
-  return current;
-}
-
 
 // Toggle exclusion marking on child element
 
