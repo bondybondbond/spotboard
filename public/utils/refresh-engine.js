@@ -717,7 +717,7 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
     if (_nbCacheLen > 500 && extractedHtml.length < _nbCacheLen * 0.5) {
       console.log(`[SB-REFRESH] No raw baseline: proxy check failed (raw=${extractedHtml.length} < 50% of cache=${_nbCacheLen}) → tab fallback (will not poison baseline)`);
       const _nbFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
-      const { html: _nbTabHtml, activeFocusNeeded: _nbActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, _nbFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+      const { html: _nbTabHtml, activeFocusNeeded: _nbActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, _nbFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true);
       if (_nbTabHtml) {
         const _nbSanitized = applySanitizationPipeline(_nbTabHtml, component);
         return _buildTabSuccessResult(_nbSanitized, component, _nbActiveFocusNeeded);
@@ -729,7 +729,7 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
   } else if (driftBaseline > 500 && (extractedHtml.length > driftBaseline * 1.5 || extractedHtml.length < driftBaseline * 0.3)) {
     console.log(`[SB-REFRESH] Content drift detected: raw=${extractedHtml.length} vs rawBaseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x, ${extractedHtml.length > driftBaseline ? 'expanded' : 'shrunk'}) → falling back to tab-based refresh`);
     const driftFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
-    const { html: tabHtml, activeFocusNeeded: driftActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+    const { html: tabHtml, activeFocusNeeded: driftActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true);
     if (tabHtml) {
       // Skip fingerprint check for position-based captures
       if (!component.positionBased && driftFingerprint && !tabHtml.toLowerCase().includes(driftFingerprint.toLowerCase())) {
@@ -804,11 +804,20 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
  * @param {string|null} fingerprint - Optional heading text for multi-match disambiguation
  * @param {boolean} skipToActive - If true, skip background+offscreen and go straight to active popup
  *                                 Set for components with requiresActiveFocus=true in storage (self-learned).
+ * @param {boolean} skipToOffscreen - If true, skip the background-tab attempt and start at the
+ *                                 offscreen popup. Set for components with requiresFixedCaptureWidth=true
+ *                                 in storage. `tryBackgroundWithSpoof` inherits the current window's width
+ *                                 (whatever the user's browser happens to be), while `tryOffscreenWindow`
+ *                                 and `tryActiveTab` both render at a fixed 300px — a site whose layout is
+ *                                 responsive (e.g. a chart that reflows at different widths) can come back
+ *                                 looking like a different page depending on which tier captured it. This
+ *                                 flag keeps such a component on the fixed-width tiers only, so its capture
+ *                                 always renders the same layout regardless of which tier succeeds.
  * @returns {Promise<string|null>} - Extracted HTML or null if failed
  *
  * Process:
  * 1. Check if site requires active tab (requiresVisibleTab or skipToActive)
- * 2. Try background tab with visibility spoof (seamless)
+ * 2. Try background tab with visibility spoof (seamless) — unless skipToOffscreen
  * 3. Try offscreen unfocused popup (IO fires, no taskbar flash)
  * 4. Fallback to focused active popup if offscreen gets 0 large images
  *
@@ -820,7 +829,7 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
  *
  * Used in: refreshComponent() when direct fetch fails or for known problematic sites
  */
-async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0, skipToActive = false) {
+async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0, skipToActive = false, skipToOffscreen = false) {
   // Per-call local flag — parallel-refresh safe (no shared module-level state)
   let activeFocusNeeded = false;
   try {
@@ -833,23 +842,30 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
       return { html: result || null, activeFocusNeeded: false };
     }
 
-    if (DEBUG) console.log('[SB-REFRESH]', new URL(url).hostname, 'path=background', 'expected=', expectedImgCount + '/' + expectedLargeImgCount);
+    // skipToOffscreen is set for components with stored requiresFixedCaptureWidth=true
+    // (see param doc above) — go straight to the offscreen tier, which already renders at a
+    // fixed 300px like tryActiveTab, rather than starting on the width-inconsistent background tab.
+    if (!skipToOffscreen) {
+      if (DEBUG) console.log('[SB-REFRESH]', new URL(url).hostname, 'path=background', 'expected=', expectedImgCount + '/' + expectedLargeImgCount);
 
-    // ATTEMPT 1: Try background tab with visibility spoof
-    const result = await tryBackgroundWithSpoof(url, selector, fingerprint);
-    if (result) {
-      // Check if images are degraded (site may detect background tab despite spoof)
-      const resultImgCount = (result.match(/<img/gi) || []).length;
-      const resultLargeImgCount = (result.match(LARGE_IMG_RE) || []).length;
-      // Fallback if: all images gone OR meaningful (medium+) images gone while expected
-      // Covers Vue/React sites (HotUKDeals) where avatars survive but deal images are IO-gated
-      if ((expectedImgCount >= 3 && resultImgCount === 0) ||
-          (expectedLargeImgCount >= 1 && resultLargeImgCount === 0)) {
-        if (DEBUG) console.log('[SB-REFRESH]', new URL(url).hostname, 'images degraded expected=', expectedImgCount + '/' + expectedLargeImgCount, 'got=', resultImgCount + '/' + resultLargeImgCount, '→ trying offscreen');
-        // Fall through to offscreen window
-      } else {
-        return { html: result, activeFocusNeeded: false };
+      // ATTEMPT 1: Try background tab with visibility spoof
+      const result = await tryBackgroundWithSpoof(url, selector, fingerprint);
+      if (result) {
+        // Check if images are degraded (site may detect background tab despite spoof)
+        const resultImgCount = (result.match(/<img/gi) || []).length;
+        const resultLargeImgCount = (result.match(LARGE_IMG_RE) || []).length;
+        // Fallback if: all images gone OR meaningful (medium+) images gone while expected
+        // Covers Vue/React sites (HotUKDeals) where avatars survive but deal images are IO-gated
+        if ((expectedImgCount >= 3 && resultImgCount === 0) ||
+            (expectedLargeImgCount >= 1 && resultLargeImgCount === 0)) {
+          if (DEBUG) console.log('[SB-REFRESH]', new URL(url).hostname, 'images degraded expected=', expectedImgCount + '/' + expectedLargeImgCount, 'got=', resultImgCount + '/' + resultLargeImgCount, '→ trying offscreen');
+          // Fall through to offscreen window
+        } else {
+          return { html: result, activeFocusNeeded: false };
+        }
       }
+    } else if (DEBUG) {
+      console.log('[SB-REFRESH]', new URL(url).hostname, 'path=offscreen (requiresFixedCaptureWidth — skipping width-inconsistent background tab)');
     }
 
     // ATTEMPT 2: Unfocused popup at screen edge — IO spoof fires immediately.
@@ -2040,7 +2056,7 @@ async function refreshComponent(component) {
     const originalLargeImgCount = (component.html_cache?.match(LARGE_IMG_RE) || []).length;
     const captureMode = willNeedActiveTab(component.url) ? 'tab-based' : 'direct-fetch';
     if (captureMode === 'tab-based') {
-      const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, null, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+      const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, null, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true);
 
       if (tabHtml) {
         // Verify with fingerprint
@@ -2099,7 +2115,7 @@ async function refreshComponent(component) {
       console.warn(`⚠️ Direct fetch failed for ${component.name} (${component.url}): ${fetchError} - trying tab fallback`);
       
       const originalFingerprint = extractFingerprint(component.html_cache);
-      const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+      const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true);
 
       if (tabHtml) {
         // Fingerprint verification (skip for position-based captures)
@@ -2306,7 +2322,7 @@ async function refreshComponent(component) {
           const originalFingerprint = extractFingerprint(component.html_cache);
 
           // Try tab-based refresh as fallback
-          const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+          const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true);
           if (tabHtml) {
             // Verify we got the right element by checking fingerprint
             // 🎯 BATCH 3: Skip fingerprint check for position-based captures
@@ -2500,7 +2516,7 @@ async function refreshComponent(component) {
         // If heading fallback didn't work, try tab-based refresh
         if (!extractedHtml) {
           const originalFingerprint = extractFingerprint(component.html_cache);
-          const { html: tabHtml, activeFocusNeeded: selectorTabActiveFocus } = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true);
+          const { html: tabHtml, activeFocusNeeded: selectorTabActiveFocus } = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true);
 
           if (tabHtml) {
             // 🎯 BATCH 3: Skip fingerprint check for position-based captures
@@ -2800,6 +2816,7 @@ async function refreshAll(allowedIds = null) {
           lastErrorCode: comp.lastErrorCode,
           lastErrorAt: comp.lastErrorAt,
           ...(comp.requiresActiveFocus ? { requiresActiveFocus: true } : {}),
+          ...(comp.requiresFixedCaptureWidth ? { requiresFixedCaptureWidth: true } : {}),
           ...(comp.board ? { board: comp.board } : {}),
           ...(comp.created_at ? { created_at: comp.created_at } : {}) // issue #18: preserve capture-order key
         };
@@ -2837,6 +2854,7 @@ async function refreshAll(allowedIds = null) {
           cardSize: comp.cardSize || '1x1', // 🔧 FIX: Preserve card size on refresh
           ...syncEntry, // last_refresh + lastAttemptAt/lastSuccessAt/lastOutcome/lastErrorCode/lastErrorAt
           ...(updatedActiveFocus ? { requiresActiveFocus: true } : {}),
+          ...(comp.requiresFixedCaptureWidth ? { requiresFixedCaptureWidth: true } : {}),
           ...(comp.board ? { board: comp.board } : {}),
           ...(comp.created_at ? { created_at: comp.created_at } : {}) // issue #18: preserve capture-order key
         };

@@ -2077,6 +2077,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 cardSize: component.cardSize || '1x1',
                 ...syncEntry,
                 ...(component.requiresActiveFocus ? { requiresActiveFocus: true } : {}),
+                ...(component.requiresFixedCaptureWidth ? { requiresFixedCaptureWidth: true } : {}),
                 ...(component.board ? { board: component.board } : {})
               }
             }, () => {
