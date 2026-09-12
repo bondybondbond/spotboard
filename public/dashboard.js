@@ -869,8 +869,8 @@ function showCaptureQuickstartModal() {
       await chrome.action.openPopup();
 
       // Track success
-      if (typeof gtag !== 'undefined') {
-        gtag('event', 'open_popup_clicked', {
+      if (window.GA4 && window.GA4.sendEvent) {
+        window.GA4.sendEvent('open_popup_clicked', {
           result: 'succeeded',
           source: 'empty_state_modal'
         });
@@ -881,8 +881,8 @@ function showCaptureQuickstartModal() {
 
     } catch (error) {
       // Track failure
-      if (typeof gtag !== 'undefined') {
-        gtag('event', 'open_popup_clicked', {
+      if (window.GA4 && window.GA4.sendEvent) {
+        window.GA4.sendEvent('open_popup_clicked', {
           result: 'failed',
           source: 'empty_state_modal'
         });
@@ -890,26 +890,6 @@ function showCaptureQuickstartModal() {
 
       // Show fallback message (modal stays open)
       fallbackMsg.style.display = 'block';
-    }
-  });
-
-  // Handle sandbox link click
-  const sandboxLink = modal.querySelector('#sandbox-link');
-  sandboxLink.addEventListener('click', function() {
-    if (typeof gtag !== 'undefined') {
-      gtag('event', 'sandbox_opened', {
-        source: 'empty_state_modal'
-      });
-    }
-  });
-
-  // Handle demo link click in modal
-  const modalDemoLink = modal.querySelector('#modal-demo-link');
-  modalDemoLink.addEventListener('click', function() {
-    if (typeof gtag !== 'undefined') {
-      gtag('event', 'demo_link_clicked', {
-        source: 'empty_state_modal'
-      });
     }
   });
 
