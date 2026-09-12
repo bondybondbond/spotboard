@@ -1,8 +1,10 @@
 # SpotBoard - Chrome Extension
 
+> **Dev/bug work runs the ai-dev-kit loop.** For any code change or bug: read `AGENTS.md` first, use `/plan` then `/deliver`. **GitHub Issues is the change record — not `BUGS.md`.** Non-dev routines (metrics, tester feedback, CWS submission prep) still use the skills in `spotboard-private/.claude/` from that folder.
+
 Chrome extension that captures live website sections (news, deals, scores) into a personal dashboard. Manual refresh model — designed for 2-3 daily check-ins.
 
-**Private docs** (PRD, backlog, learnings, metrics): `C:\apps\spotboard-private\` — read CONTEXT.md there first every session.
+**Private docs** (PRD, backlog, learnings, metrics): `C:\apps\spotboard-private\` — read CONTEXT.md there first every session. (Reference only for dev work — read by absolute path, don't run dev sessions from there.)
 
 ---
 
