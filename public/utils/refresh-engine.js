@@ -2619,8 +2619,9 @@ async function runWithConcurrency(items, fn, limit) {
 }
 
 /**
- * Refresh all components in parallel (limit=3 for normal cards, limit=3 for focus-required,
- * normal pool runs first — see issue #11 for the live-test evidence behind concurrent focus)
+ * Refresh all components in parallel (limit=3 for normal cards, limit=1 for focus-required —
+ * serialized per issue #33, since concurrent focus-tier popups race for the OS's single
+ * focused-window slot; normal pool runs first)
  */
 async function refreshAll(allowedIds = null) {
   const btn = document.getElementById('refresh-all-btn');
@@ -2697,18 +2698,22 @@ async function refreshAll(allowedIds = null) {
       : `${activeComponents.length} components`;
     toastManager.startRefresh(activeComponents.length, toastMessage);
     
-    // Refresh active components in parallel (normal cards: limit=3, focus-required: limit=3)
+    // Refresh active components in parallel (normal cards: limit=3, focus-required: limit=1)
     const results = [];
     const componentRefreshMap = new Map(); // Track which components were refreshed
 
     // Split into two pools, run after each other (focus lane still starts only once the
     // normal pool has fully drained — the barrier itself was not removed by this change):
     // - normalCards: background/offscreen refresh — safe to run concurrently
-    // - focusCards: requiresActiveFocus (focused popup) — validated safe to run concurrently
-    //   too, up to 3 at once, via live-tested concurrency (issue #11): 9/9 runs at
-    //   concurrency=3 showed genuine overlap with zero cross-contamination, ~36% faster
-    //   than the previous one-at-a-time loop. Concurrency isn't tied to the current count
-    //   of 3 focus cards — it's a worker-pool limit that simply caps out when the queue is smaller.
+    // - focusCards: requiresActiveFocus (focused popup) — MUST run one at a time (issue #33).
+    //   tryActiveTab() creates a real OS-focused chrome.windows.create({focused:true}) popup;
+    //   Chrome only ever has one truly OS-focused window, so concurrent focus-tier workers (or
+    //   a finishing worker's focus-restore step) can steal focus from a sibling's still-waiting
+    //   popup mid-extraction, causing that card's content to fail to render/mount — exactly the
+    //   starvation reported in #33. Issue #11 had load-tested concurrency=3 here as "safe" (9/9
+    //   runs, ~36% faster than serial); #33 is a real-world regression of that finding under
+    //   conditions #11's test didn't cover, so that speed gain is reverted in favor of
+    //   correctness for this small (few-card), already-visible-flash tier.
     const focusCards = activeComponents.filter(c => c.requiresActiveFocus || requiresVisibleTab(c.url));
     const normalCards = activeComponents
       .filter(c => !c.requiresActiveFocus && !requiresVisibleTab(c.url))
@@ -2720,7 +2725,7 @@ async function refreshAll(allowedIds = null) {
       });
 
     if (DEBUG) console.log('[SB-PARALLEL] refreshAll start:', activeComponents.length, 'cards at', new Date().toISOString());
-    if (DEBUG) console.log('[SB-PARALLEL] pools: normal=' + normalCards.length + ' (limit=3) focus=' + focusCards.length + ' (limit=3)');
+    if (DEBUG) console.log('[SB-PARALLEL] pools: normal=' + normalCards.length + ' (limit=3) focus=' + focusCards.length + ' (limit=1)');
 
     // Single card toast message for parallel mode
     toastManager.updateProgress('Refreshing ' + activeComponents.length + ' card' + (activeComponents.length !== 1 ? 's' : '') + '…', false);
@@ -2749,9 +2754,9 @@ async function refreshAll(allowedIds = null) {
 
     // Run normal cards concurrently (up to 3 at once)
     await runWithConcurrency(normalCards, processCard, 3);
-    // Run focus-required cards after the normal pool drains — concurrently (up to 3 at once),
-    // reusing the same runWithConcurrency worker pool. See issue #11 for the live-test evidence.
-    await runWithConcurrency(focusCards, processCard, 3);
+    // Run focus-required cards after the normal pool drains — ONE AT A TIME (issue #33: real
+    // OS focus is a single-capacity resource, not a pool to size — see comment at focusCards above).
+    await runWithConcurrency(focusCards, processCard, 1);
 
     if (DEBUG) console.log('[SB-PARALLEL] refreshAll complete elapsed=' + (Date.now() - refreshStartTime) + 'ms');
     
