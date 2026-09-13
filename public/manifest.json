@@ -19,7 +19,7 @@
   "background": {
     "service_worker": "assets/background.js"
   },
-  "permissions": ["storage", "activeTab", "scripting", "tabs", "windows"],
+  "permissions": ["storage", "activeTab", "scripting", "tabs", "windows", "system.display"],
   "host_permissions": ["<all_urls>"],
   "content_scripts": [
     {

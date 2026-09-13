@@ -381,6 +381,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // Keep channel open for async response
   }
   
+  // #53: a dashboard window can end up at stale coordinates (e.g. after a monitor is
+  // disconnected or the display layout changes) — chrome.windows.update({focused:true})
+  // reports success even when the window sits entirely off every connected display.
+  // Reposition onto the primary display only when it isn't actually visible anywhere;
+  // a window on a legitimate second monitor is left alone.
+  async function ensureWindowVisible(windowId: number): Promise<void> {
+    const win = await chrome.windows.get(windowId);
+    const displays = await chrome.system.display.getInfo();
+    if (displays.length === 0) return; // no display info available — best effort only
+
+    const bounds = { left: win.left ?? 0, top: win.top ?? 0, width: win.width ?? 0, height: win.height ?? 0 };
+    const intersects = (area: chrome.system.display.Bounds) =>
+      bounds.left < area.left + area.width && bounds.left + bounds.width > area.left &&
+      bounds.top < area.top + area.height && bounds.top + bounds.height > area.top;
+
+    const onScreen = displays.some(d => intersects(d.workArea));
+
+    if (win.state === 'minimized') {
+      // Restore it — a minimized window is never visible regardless of its bounds.
+      await chrome.windows.update(windowId, { state: 'normal' });
+    }
+    // Bounds are only actually wrong if the window sits off every connected display;
+    // a merely-minimized window on a legitimate second monitor keeps its own position.
+    if (onScreen) return;
+
+    const primary = displays.find(d => d.isPrimary) ?? displays[0];
+    const width = Math.min(bounds.width || primary.workArea.width, primary.workArea.width);
+    const height = Math.min(bounds.height || primary.workArea.height, primary.workArea.height);
+    const left = primary.workArea.left + Math.round((primary.workArea.width - width) / 2);
+    const top = primary.workArea.top + Math.round((primary.workArea.height - height) / 2);
+
+    // Chrome rejects setting explicit bounds together with a maximized/minimized state
+    // in the same call, so restore to 'normal' first.
+    await chrome.windows.update(windowId, { state: 'normal' });
+    await chrome.windows.update(windowId, { left, top, width, height });
+  }
+
   // Dashboard focus handler (for "View on SpotBoard" button)
   if (request.action === 'focusDashboard') {
     const dashboardUrl = chrome.runtime.getURL('dashboard.html');
@@ -402,10 +439,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const tabs = await chrome.tabs.query({});
       // tolerant match: a dashboard tab carrying a hash/query still counts
       const dashboardTab = tabs.find(tab => !!tab.url && tab.url.split(/[?#]/)[0] === dashboardUrl);
+      const senderWindowId = sender.tab?.windowId;
 
       if (dashboardTab && dashboardTab.id) {
+        // #53: bring the dashboard into the window the user is actually looking at
+        // (the one they just captured from) rather than switching OS focus to wherever
+        // else it happens to be open — a separate window, even on another monitor, is
+        // easy to miss when the user's workflow keeps everything in one window.
+        if (senderWindowId !== undefined && dashboardTab.windowId !== senderWindowId) {
+          await chrome.tabs.move(dashboardTab.id, { windowId: senderWindowId, index: -1 });
+        }
         await chrome.tabs.update(dashboardTab.id, { active: true });
-        chrome.windows.update(dashboardTab.windowId!, { focused: true });
+        const targetWindowId = senderWindowId ?? dashboardTab.windowId!;
+        try {
+          await ensureWindowVisible(targetWindowId);
+        } catch (e) {
+          console.warn('ensureWindowVisible failed:', e);
+        }
+        await chrome.windows.update(targetWindowId, { focused: true });
         // #19: re-run the render so an already-open board shows the new card and
         // picks up the highlight. Only when we're actually highlighting.
         if (highlightCardId) chrome.tabs.reload(dashboardTab.id);
@@ -432,7 +483,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           console.warn('pendingHighlightCard set failed:', e);
         }
       }
-      chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+      // #53: explicit windowId so this opens in the tab the user is looking at, not
+      // whichever window Chrome considers "current" (can differ across monitors).
+      chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html'), windowId: sender.tab?.windowId });
       sendResponse({ opened: true });
     })();
 
