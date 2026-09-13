@@ -19,6 +19,16 @@ let lockedElement: HTMLElement | null = null; // Track element waiting for confi
 let excludedElements: HTMLElement[] = []; // Track child elements marked for exclusion (red)
 let previewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Element handleHover last showed the dashed-red exclusion preview on. A live-updating page
+// (e.g. Kalshi's real-time odds table) can reflow between the user hovering a child (correct
+// preview shown) and the click landing -- event.target at click time then reflects post-reflow
+// content, which can be a different element than what was previewed (issue #1: excluded
+// Kalshi's "Chance" header instead of the Yes/No button the user actually hovered/clicked).
+// handleClick only honors an exclusion when its target matches this -- a mismatch is direct
+// evidence content shifted mid-click, so it fails safe (excludes nothing) rather than trusting
+// a possibly-stale target.
+let hoveredExclusionCandidate: HTMLElement | null = null;
+
 // Initialize onboarding module — stores toggleCapture reference via dependency injection.
 // toggleCapture is a hoisted function declaration, available here before its definition.
 // It's only called later on user action, not during init.
@@ -428,10 +438,12 @@ function handleHover(event: MouseEvent) {
         // Keep the solid red styling for already-excluded elements
         target.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
         target.style.setProperty('outline', '2px solid #ff0000', 'important');
+        hoveredExclusionCandidate = null;
       } else {
         // Show dashed red border preview for potential exclusion
         target.style.setProperty('outline', '2px dashed #ff0000', 'important');
         target.style.setProperty('background', 'transparent', 'important');
+        hoveredExclusionCandidate = target;
       }
       target.style.cursor = 'pointer';
     }
@@ -470,6 +482,9 @@ function handleExit(event: MouseEvent) {
     // Clear preview styling from non-excluded children
     target.style.removeProperty('outline');
     target.style.removeProperty('background');
+    if (target === hoveredExclusionCandidate) {
+      hoveredExclusionCandidate = null;
+    }
     return;
   }
   
@@ -1048,6 +1063,7 @@ function resetExclusions() {
   });
   // Clear the array
   excludedElements = [];
+  hoveredExclusionCandidate = null;
   log('🧹 All exclusions cleared');
 }
 
@@ -1174,7 +1190,16 @@ function handleClick(event: MouseEvent) {
     if (lockedElement.contains(target) && target !== lockedElement) {
             event.preventDefault();
       event.stopPropagation();
-      toggleExclusion(target);
+      // Fail-safe: only honor this as an exclusion if it lands on the element the hover
+      // preview last highlighted. A mismatch means content shifted between hover and click
+      // (see issue #1 -- Kalshi's live-updating table) -- exclude nothing rather than risk
+      // excluding a different element than the one the user saw highlighted.
+      const alreadyExcluded = excludedElements.includes(target);
+      if (target === hoveredExclusionCandidate || alreadyExcluded) {
+        toggleExclusion(target);
+      } else {
+        log('🛡️ Exclusion click target did not match last-hovered preview -- content likely shifted, skipping exclusion:', target.tagName, target.className);
+      }
       return;
     }
     
