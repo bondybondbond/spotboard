@@ -1285,10 +1285,25 @@ function handleClick(event: MouseEvent) {
       }
     );
     
-    const firstTextNode = walker.nextNode();
-    if (firstTextNode?.textContent?.trim()) {
-      const text = (firstTextNode as Text).textContent!.trim();
-      name = text.length > 50 ? text.substring(0, 50) + '...' : text;
+    // Collect every text candidate first so a bare-digit/separator fragment ("2", ":") can be
+    // told apart from a complete bare-number value ("87", "2024") by DOM structure, not just
+    // string content: if it's the ONLY text node in the capture, there's nothing to split it
+    // from, so it's a legitimate whole value. If there are SEVERAL sibling text nodes, a bare
+    // digit/separator one is evidence of a split value (digit-per-char clocks, digit-group
+    // counters) — skip it and keep looking for a candidate that stands on its own. (#55)
+    const candidates: string[] = [];
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const text = node.textContent?.trim();
+      if (text) candidates.push(text);
+    }
+    const isPlausibleName = (text: string): boolean =>
+      /\p{L}/u.test(text) || (/\d/.test(text) && !/^\d+$/.test(text));
+    const chosen = candidates.length === 1
+      ? candidates[0]
+      : candidates.find(isPlausibleName);
+    if (chosen) {
+      name = chosen.length > 50 ? chosen.substring(0, 50) + '...' : chosen;
     }
   }
   
