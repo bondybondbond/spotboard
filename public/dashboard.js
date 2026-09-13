@@ -7,6 +7,275 @@
  * - utils/refresh-engine.js
  */
 
+// ══════════════════════════════════════════════
+// EXPORT / IMPORT — issue #59 (backup/recovery escape hatch)
+// Manual-only, low-profile advanced menu. Not a "backup" feature — a full
+// recovery artifact (sync metadata + local HTML per card) a user or the
+// dev/AI workflow can restore from after a storage wipe. See issue #59 for
+// the decision log (why manual export/import, not snapshots or cloud).
+// ══════════════════════════════════════════════
+const EXPORT_SCHEMA_VERSION = 1;
+
+async function exportBoard() {
+  const syncData = await new Promise(r => chrome.storage.sync.get(null, r));
+  const localResult = await new Promise(r => chrome.storage.local.get(['componentsData'], r));
+  const componentsData = localResult.componentsData || {};
+
+  const cards = [];
+  Object.keys(syncData).forEach(key => {
+    if (!key.startsWith('comp-')) return;
+    const comp = syncData[key];
+    const local = componentsData[comp.id] || {};
+    cards.push({ ...comp, ...local });
+  });
+
+  const payload = {
+    schemaVersion: EXPORT_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    boardName: syncData.boardName || null,
+    boards: syncData.boards || [],
+    cardOrder: syncData.cardOrder || {},
+    cards
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `spotboard-export-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  showStyledToast('Exported', `Saved ${cards.length} card(s) to a file`, 'success');
+}
+
+// Validates shape before any storage is touched — a malformed/partial file must
+// never be able to wipe the existing board (issue #59 acceptance criterion).
+function validateExportPayload(payload) {
+  const issues = [];
+  if (!payload || typeof payload !== 'object') {
+    issues.push('File is not a valid export');
+    return issues;
+  }
+  if (payload.schemaVersion !== EXPORT_SCHEMA_VERSION) {
+    issues.push(`Unsupported export version (${payload.schemaVersion ?? 'missing'})`);
+  }
+  if (!Array.isArray(payload.cards)) {
+    issues.push('File is missing its card list');
+  } else {
+    const seenIds = new Set();
+    payload.cards.forEach((c, i) => {
+      if (!c || !c.id) issues.push(`Card ${i + 1}: missing id`);
+      if (!c || !c.selector) issues.push(`Card ${i + 1}: missing selector`);
+      if (c && c.excludedSelectors != null && !Array.isArray(c.excludedSelectors)) {
+        issues.push(`Card ${i + 1}: excludedSelectors is not a list`);
+      }
+      // A duplicate id would silently collapse to one card when keyed into
+      // syncWrites/componentsData in applyImportedBoard() — surface it instead.
+      if (c && c.id) {
+        if (seenIds.has(c.id)) issues.push(`Card ${i + 1}: duplicate id`);
+        seenIds.add(c.id);
+      }
+    });
+  }
+  if (payload.boards != null && !Array.isArray(payload.boards)) {
+    issues.push('File\'s "boards" field is not a list');
+  }
+  if (payload.cardOrder != null && (typeof payload.cardOrder !== 'object' || Array.isArray(payload.cardOrder))) {
+    issues.push('File\'s "cardOrder" field is not valid');
+  }
+  return issues;
+}
+
+// chrome.storage callbacks never reject on failure (e.g. quota exceeded) — they just
+// leave chrome.runtime.lastError set. Wrapping every write to actually reject lets
+// applyImportedBoard() stop and report failure instead of claiming "Board restored"
+// over a write that silently didn't happen (the reviewer-caught data-loss path).
+function chromeStorageSet(area, items) {
+  return new Promise((resolve, reject) => {
+    area.set(items, () => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve();
+    });
+  });
+}
+
+function chromeStorageRemove(area, keys) {
+  return new Promise((resolve, reject) => {
+    area.remove(keys, () => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve();
+    });
+  });
+}
+
+async function importBoardFromFile(file) {
+  let payload;
+  try {
+    payload = JSON.parse(await file.text());
+  } catch (e) {
+    showStyledToast('Import failed', 'That file is not valid JSON', 'info');
+    return;
+  }
+
+  const issues = validateExportPayload(payload);
+  if (issues.length) {
+    showStyledToast('Import failed', issues[0], 'info');
+    return;
+  }
+
+  showImportConfirmModal(payload);
+}
+
+function showImportConfirmModal(payload) {
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex; justify-content: center; align-items: center;
+    z-index: 10000;
+  `;
+
+  const modalContent = document.createElement('div');
+  modalContent.style.cssText = `
+    background: var(--surface-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    padding: 20px;
+    border-radius: 8px;
+    max-width: 480px;
+    width: 90%;
+  `;
+
+  modalContent.innerHTML = `
+    <div style="font-weight: 600; margin-bottom: 8px; font-size: 15px;">Replace your current board?</div>
+    <div id="importSummaryText" style="margin-bottom: 20px; color: var(--text-muted);"></div>
+    <div style="display: flex; gap: 10px;">
+      <button id="cancelImportBtn" style="flex: 1; padding: 10px; background: var(--surface-inset); color: var(--text-primary); border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Cancel</button>
+      <button id="confirmImportBtn" style="flex: 1; padding: 10px; background: var(--accent); color: var(--accent-text); border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Replace board</button>
+    </div>
+  `;
+  // Dynamic values via textContent, not innerHTML interpolation — avoids any
+  // possibility of a crafted export file injecting markup into the confirm dialog.
+  const exportedAt = payload.exportedAt ? new Date(payload.exportedAt).toLocaleString() : 'an unknown date';
+  modalContent.querySelector('#importSummaryText').textContent =
+    `This file has ${payload.cards.length} card(s), exported ${exportedAt}. Importing will replace every card on your board now. This cannot be undone.`;
+
+  modal.appendChild(modalContent);
+  document.body.appendChild(modal);
+
+  modal.querySelector('#cancelImportBtn').addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+  modal.querySelector('#confirmImportBtn').addEventListener('click', async () => {
+    modal.remove();
+    await applyImportedBoard(payload);
+  });
+}
+
+async function applyImportedBoard(payload) {
+  const syncWrites = {};
+  const componentsData = {};
+
+  payload.cards.forEach(card => {
+    const id = card.id;
+    // Spread the WHOLE card object into sync (minus the local-only bulk fields) rather
+    // than hand-listing known fields — CLAUDE.md: "ALL code paths writing to
+    // chrome.storage.sync MUST spread ALL fields". A fixed field list here would
+    // silently drop anything not on it (e.g. legacy onboarding cards' `created_at`)
+    // on the exact path meant to restore metadata, and would rot as new fields are
+    // added to the app without this list being updated too.
+    const { html_cache, rawCaptureLength, ...syncFields } = card;
+    syncWrites[`comp-${id}`] = {
+      ...syncFields,
+      excludedSelectors: syncFields.excludedSelectors || [],
+      positionBased: syncFields.positionBased || false,
+      refreshPaused: syncFields.refreshPaused || false,
+      cardSize: syncFields.cardSize || '1x1'
+    };
+
+    componentsData[id] = {
+      html_cache: card.html_cache,
+      last_refresh: card.last_refresh,
+      ...(rawCaptureLength ? { rawCaptureLength } : {})
+    };
+  });
+
+  if (payload.boardName) syncWrites.boardName = payload.boardName;
+  syncWrites.boards = payload.boards || [];
+  syncWrites.cardOrder = payload.cardOrder || {};
+
+  // Replace, not merge: drop any comp-* key not present in the imported file.
+  const existingSync = await new Promise(r => chrome.storage.sync.get(null, r));
+  const staleKeys = Object.keys(existingSync).filter(k => k.startsWith('comp-') && !syncWrites[k]);
+
+  // Write the new state FIRST, remove stale keys only after that succeeds — if the
+  // write fails (e.g. sync quota), the existing board is still intact to fall back
+  // to, instead of having already been deleted (reviewer-caught data-loss ordering).
+  try {
+    await chromeStorageSet(chrome.storage.sync, syncWrites);
+    await chromeStorageSet(chrome.storage.local, { componentsData });
+  } catch (e) {
+    showStyledToast('Import failed', 'Could not save the imported board — your current board is unchanged', 'info');
+    return;
+  }
+
+  // Stale-key removal is a separate failure domain from the writes above: by this
+  // point the imported board is already fully and correctly persisted, so a removal
+  // failure here means old comp-* keys merely linger alongside the new ones (extra
+  // cards, non-destructive) — never "the import silently didn't happen" (reviewer
+  // caught an earlier version that reported the same false "unchanged" message here).
+  let staleRemovalFailed = false;
+  if (staleKeys.length) {
+    try {
+      await chromeStorageRemove(chrome.storage.sync, staleKeys);
+    } catch (e) {
+      staleRemovalFailed = true;
+    }
+  }
+
+  showStyledToast(
+    'Board restored',
+    staleRemovalFailed
+      ? `Imported ${payload.cards.length} card(s) — some old cards may still show; reload if so`
+      : `Imported ${payload.cards.length} card(s)`,
+    'success'
+  );
+  setTimeout(() => location.reload(), 800);
+}
+
+function initAdvancedMenu() {
+  const menuBtn = document.getElementById('advanced-menu-btn');
+  const dropdown = document.getElementById('advanced-menu-dropdown');
+  const exportBtn = document.getElementById('export-board-btn');
+  const importBtn = document.getElementById('import-board-btn');
+  const fileInput = document.getElementById('import-board-file');
+  if (!menuBtn || !dropdown || !exportBtn || !importBtn || !fileInput) return;
+
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.classList.toggle('open');
+  });
+  document.addEventListener('click', () => dropdown.classList.remove('open'));
+
+  exportBtn.addEventListener('click', () => {
+    dropdown.classList.remove('open');
+    exportBoard();
+  });
+
+  importBtn.addEventListener('click', () => {
+    dropdown.classList.remove('open');
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (file) importBoardFromFile(file);
+  });
+}
+
 // NEW: Migration helper - converts old array format to per-component keys
 async function migrateStorageIfNeeded() {
   return new Promise((resolve) => {
@@ -2726,6 +2995,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   initThemeToggle();
+  initAdvancedMenu();
 });
 
 // ===== Theme toggle (issue #22) =====

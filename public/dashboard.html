@@ -1783,6 +1783,52 @@
       :root:not([data-theme]) #theme-toggle-btn .sb-icon-moon { display: none; }
     }
 
+    /* ===== ADVANCED MENU (header, hamburger) — issue #59 export/import ===== */
+    #advanced-menu-wrap { position: relative; flex-shrink: 0; }
+    #advanced-menu-btn {
+      width: 34px;
+      height: 34px;
+      padding: 4px;
+      background: none;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: rgba(255,255,255,0.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.2s ease;
+    }
+    #advanced-menu-btn:hover { background: rgba(255,255,255,0.16); }
+    #advanced-menu-btn svg { width: 18px; height: 18px; display: block; }
+    #advanced-menu-dropdown {
+      display: none;
+      position: absolute;
+      top: 40px;
+      left: 0;
+      background: var(--surface-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+      min-width: 160px;
+      z-index: 200;
+      overflow: hidden;
+    }
+    #advanced-menu-dropdown.open { display: block; }
+    #advanced-menu-dropdown button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 10px 14px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+    #advanced-menu-dropdown button:hover { background: var(--surface-inset); }
+
     /* #22: NOT tokenised — .practice-pill only ever renders inside the light-only
        welcome modal, so it keeps its literal light palette in both themes. */
     .practice-pill {
@@ -2293,6 +2339,16 @@
         SpotBoard | <span id="board-name" style="cursor: pointer; padding: 2px 6px; border-radius: 4px;" title="Click to edit board name">My Dashboard</span>
       </h1>
       <div style="display: flex; gap: 10px; align-items: center;">
+        <div id="advanced-menu-wrap">
+          <button id="advanced-menu-btn" type="button" aria-label="Advanced options" title="Advanced options">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <div id="advanced-menu-dropdown">
+            <button id="export-board-btn" type="button">Export board</button>
+            <button id="import-board-btn" type="button">Import board</button>
+          </div>
+          <input id="import-board-file" type="file" accept="application/json" style="display:none;" />
+        </div>
         <button id="theme-toggle-btn" type="button" aria-label="Switch to dark theme" title="Switch theme">
           <svg class="sb-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           <svg class="sb-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>

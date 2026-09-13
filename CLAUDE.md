@@ -38,7 +38,7 @@ Chrome extension that captures live website sections (news, deals, scores) into 
 ## Storage Model
 
 - **Chrome Sync** (`comp-{uuid}`): Metadata — URL, selector, label, fingerprint, excludedSelectors, positionBased, pauseRefresh, lastAttemptAt, lastSuccessAt, lastOutcome, lastErrorCode, lastErrorAt
-- **Chrome Local** (`{uuid}`): HTML content — device-specific, no size limit
+- **Chrome Local** (`{uuid}`): HTML content — device-specific, default ~10MB quota (no `unlimitedStorage` permission requested)
 
 **Critical**: ALL code paths writing to `chrome.storage.sync` MUST spread ALL fields — partial writes silently strip metadata.
 
