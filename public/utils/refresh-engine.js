@@ -856,8 +856,20 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
         const resultLargeImgCount = (result.match(LARGE_IMG_RE) || []).length;
         // Fallback if: all images gone OR meaningful (medium+) images gone while expected
         // Covers Vue/React sites (HotUKDeals) where avatars survive but deal images are IO-gated
+        //
+        // Third clause guards against a self-reinforcing lock-in: `expected*` is derived from
+        // the component's own html_cache (last stored capture), not a live ground truth. Once a
+        // background-tab refresh returns a near-empty large-image count for any reason, that
+        // degraded result becomes the next refresh's baseline too — so `resultLargeImgCount === 0`
+        // never trips again (it's comparing 1 against 1, not 1 against the ~20 the site actually
+        // has). A feed-sized component (>=5 total images in the last stored capture) stuck at
+        // <=1 large image is never legitimate — it's this lock-in, not real content — so
+        // escalate on an absolute floor too, giving the active-tab tier a chance to run and
+        // self-learn requiresActiveFocus
+        // (confirmed live on HotUKDeals: 65 imgs in a focused tab vs 5 in an unfocused capture).
         if ((expectedImgCount >= 3 && resultImgCount === 0) ||
-            (expectedLargeImgCount >= 1 && resultLargeImgCount === 0)) {
+            (expectedLargeImgCount >= 1 && resultLargeImgCount === 0) ||
+            (expectedImgCount >= 5 && resultLargeImgCount <= 1)) {
           if (DEBUG) console.log('[SB-REFRESH]', new URL(url).hostname, 'images degraded expected=', expectedImgCount + '/' + expectedLargeImgCount, 'got=', resultImgCount + '/' + resultLargeImgCount, '→ trying offscreen');
           // Fall through to offscreen window
         } else {
