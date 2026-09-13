@@ -29,6 +29,34 @@ let previewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 // a possibly-stale target.
 let hoveredExclusionCandidate: HTMLElement | null = null;
 
+// The sibling group (including hoveredExclusionCandidate) last previewed for a Shift+hover
+// bulk exclusion. handleClick recomputes the group fresh at click time and requires it to
+// exactly match this before committing a bulk exclusion -- extends the same fail-safe
+// reasoning as hoveredExclusionCandidate (issue #1) to a set instead of a single element.
+let hoveredSimilarGroup: HTMLElement[] = [];
+
+// Direct siblings sharing the same parent, tag, and exact className as `element` (element
+// included). Exact class-signature match by design -- see issue #34 decision log: loose
+// tag/class-only matching has a documented over-match failure mode in other tools' element
+// pickers, so a BEM-modifier variant (e.g. "item item--featured") intentionally falls
+// outside the group rather than risk excluding something the user didn't mean to.
+function getSimilarSiblings(element: HTMLElement): HTMLElement[] {
+  const parent = element.parentElement;
+  if (!parent) return [element];
+  return Array.from(parent.children).filter(
+    (el): el is HTMLElement =>
+      el instanceof HTMLElement &&
+      el.tagName === element.tagName &&
+      el.className === element.className
+  );
+}
+
+function sameElementSet(a: HTMLElement[], b: HTMLElement[]): boolean {
+  if (a.length !== b.length) return false;
+  const bSet = new Set(b);
+  return a.every(el => bSet.has(el));
+}
+
 // Initialize onboarding module — stores toggleCapture reference via dependency injection.
 // toggleCapture is a hoisted function declaration, available here before its definition.
 // It's only called later on user action, not during init.
@@ -431,14 +459,38 @@ function handleHover(event: MouseEvent) {
     
     // Check if hovering over a child of locked element (but not the locked element itself)
     if (lockedElement.contains(target) && target !== lockedElement) {
+      // Clear any previously-previewed similar-siblings group before computing new state --
+      // sibling elements other than `target` don't get their own mouseout when the pointer
+      // moves to a different candidate, so this hover pass is what clears their preview.
+      if (hoveredSimilarGroup.length > 0) {
+        hoveredSimilarGroup.forEach(el => {
+          if (el !== target && !excludedElements.includes(el)) {
+            el.style.removeProperty('outline');
+            el.style.removeProperty('background');
+          }
+        });
+        hoveredSimilarGroup = [];
+      }
+
       // Check if this element is already excluded
       const isAlreadyExcluded = excludedElements.includes(target);
-      
+
       if (isAlreadyExcluded) {
         // Keep the solid red styling for already-excluded elements
         target.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
         target.style.setProperty('outline', '2px solid #ff0000', 'important');
         hoveredExclusionCandidate = null;
+      } else if (event.shiftKey && getSimilarSiblings(target).length > 1) {
+        // Shift+hover: preview the whole similar-siblings group for bulk exclusion (#34)
+        const group = getSimilarSiblings(target);
+        group.forEach(el => {
+          if (!excludedElements.includes(el)) {
+            el.style.setProperty('outline', '2px dashed #ff0000', 'important');
+            el.style.setProperty('background', 'transparent', 'important');
+          }
+        });
+        hoveredExclusionCandidate = target;
+        hoveredSimilarGroup = group;
       } else {
         // Show dashed red border preview for potential exclusion
         target.style.setProperty('outline', '2px dashed #ff0000', 'important');
@@ -447,7 +499,7 @@ function handleHover(event: MouseEvent) {
       }
       target.style.cursor = 'pointer';
     }
-    
+
     return;
   }
   
@@ -484,6 +536,14 @@ function handleExit(event: MouseEvent) {
     target.style.removeProperty('background');
     if (target === hoveredExclusionCandidate) {
       hoveredExclusionCandidate = null;
+      // Also clear any similar-siblings group previewed alongside this hover (#34)
+      hoveredSimilarGroup.forEach(el => {
+        if (el !== target && !excludedElements.includes(el)) {
+          el.style.removeProperty('outline');
+          el.style.removeProperty('background');
+        }
+      });
+      hoveredSimilarGroup = [];
     }
     return;
   }
@@ -1064,6 +1124,7 @@ function resetExclusions() {
   // Clear the array
   excludedElements = [];
   hoveredExclusionCandidate = null;
+  hoveredSimilarGroup = [];
   log('🧹 All exclusions cleared');
 }
 
@@ -1161,6 +1222,16 @@ function toggleExclusion(element: HTMLElement) {
   previewDebounceTimer = setTimeout(() => updatePreview(), 300);
   }
 
+// Shift+Click for bulk exclusion collides with the browser's own Shift+Click "extend text
+// selection" gesture -- text selection starts on mousedown, before our click handler ever
+// runs, so preventDefault() there is the only place that can stop it (field feedback, #34).
+function handleMouseDown(event: MouseEvent) {
+  if (!isCapturing || !lockedElement || !event.shiftKey) return;
+  if (lockedElement.contains(event.target as HTMLElement)) {
+    event.preventDefault();
+  }
+}
+
 function handleClick(event: MouseEvent) {
   if (!isCapturing) return;
   
@@ -1195,7 +1266,37 @@ function handleClick(event: MouseEvent) {
       // (see issue #1 -- Kalshi's live-updating table) -- exclude nothing rather than risk
       // excluding a different element than the one the user saw highlighted.
       const alreadyExcluded = excludedElements.includes(target);
-      if (target === hoveredExclusionCandidate || alreadyExcluded) {
+      const willBulkExclude = !alreadyExcluded && event.shiftKey && hoveredSimilarGroup.length > 1;
+
+      // Clear a stale similar-siblings preview if this click isn't the bulk-exclude path that
+      // would consume it (e.g. Shift was released between the hover and the click landing) --
+      // otherwise those siblings' dashed outlines leak until an unrelated mouse move touches them.
+      if (!willBulkExclude && hoveredSimilarGroup.length > 0) {
+        hoveredSimilarGroup.forEach(el => {
+          if (el !== target && !excludedElements.includes(el)) {
+            el.style.removeProperty('outline');
+            el.style.removeProperty('background');
+          }
+        });
+        hoveredSimilarGroup = [];
+      }
+
+      if (alreadyExcluded) {
+        toggleExclusion(target);
+      } else if (willBulkExclude) {
+        // Shift+click: commit bulk exclusion, but only if the sibling group recomputed right
+        // now still matches what the hover preview showed -- same fail-safe reasoning as the
+        // single-element check below, extended to a set (#34).
+        const freshGroup = getSimilarSiblings(target);
+        if (target === hoveredExclusionCandidate && sameElementSet(freshGroup, hoveredSimilarGroup)) {
+          freshGroup.forEach(el => {
+            if (!excludedElements.includes(el)) toggleExclusion(el);
+          });
+          log('❌ Bulk-excluded', freshGroup.length, 'similar siblings');
+        } else {
+          log('🛡️ Similar-siblings group changed between hover and click -- content likely shifted, skipping bulk exclusion:', target.tagName, target.className);
+        }
+      } else if (target === hoveredExclusionCandidate) {
         toggleExclusion(target);
       } else {
         log('🛡️ Exclusion click target did not match last-hovered preview -- content likely shifted, skipping exclusion:', target.tagName, target.className);
@@ -1635,6 +1736,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       </div>
       <div style="font-size: 14px; opacity: 0.9; font-family: inherit;">
         Click elements inside the green box to exclude them.<br>
+        Shift+Click to exclude all similar siblings too.<br>
         Preview updates as you exclude.
       </div>
     </div>
@@ -2318,6 +2420,7 @@ function toggleCapture(forceState?: boolean) {
     log("🟢 Capture Mode: ON");
     document.addEventListener('mouseover', handleHover, true);
     document.addEventListener('mouseout', handleExit, true);
+    document.addEventListener('mousedown', handleMouseDown, true);
     document.addEventListener('click', handleClick, true);
     document.addEventListener('keydown', handleKeydown, true);
     
@@ -2338,6 +2441,7 @@ function toggleCapture(forceState?: boolean) {
     log("🔴 Capture Mode: OFF");
     document.removeEventListener('mouseover', handleHover, true);
     document.removeEventListener('mouseout', handleExit, true);
+    document.removeEventListener('mousedown', handleMouseDown, true);
     document.removeEventListener('click', handleClick, true);
     document.removeEventListener('keydown', handleKeydown, true);
     

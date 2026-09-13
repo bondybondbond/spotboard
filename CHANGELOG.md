@@ -5,6 +5,7 @@
 ### Added
 
 - **Board export/import** (#59): a low-profile "advanced options" menu in the dashboard header now lets you export your whole board (every card, including its captured content) to a file, and import it back — a way to recover from an accidental storage wipe, or move your board between profiles. Manual only; not an automatic backup.
+- **Bulk exclusion — exclude all similar siblings in one action** (#34): while excluding elements during capture, Shift+hovering a list-style item now previews its whole group of matching siblings (same repeated card/row type) instead of just the one you're pointing at, and Shift+click excludes the whole group at once. A plain click still excludes just one element, as before. Narrow by design — only catches siblings that share the exact same styling class, so it won't help on every site (a more general fix is being explored under #61).
 
 ### Fixed
 
