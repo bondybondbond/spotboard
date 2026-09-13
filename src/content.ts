@@ -494,6 +494,7 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
     align-items: center !important;
     z-index: 2147483647 !important;
     isolation: isolate !important;
+    float: none !important;
   `;
   
   const modalContent = document.createElement('div');
@@ -509,18 +510,19 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
     position: relative !important;
     z-index: 2147483647 !important;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    float: none !important;
   `;
 
   // 🎯 BATCH 1.5: Enhanced notification with "View on SpotBoard" button
   modalContent.innerHTML = `
-    <div style="font-size: 16px; margin-bottom: 20px; line-height: 1.5; font-family: inherit;">
+    <div style="font-size: 16px; margin-bottom: 20px; line-height: 1.5; font-family: inherit; float: none !important;">
       ${message}
     </div>
-    <div style="display: flex; gap: 12px; flex-direction: column; font-family: inherit;">
-      <button id="viewBoardBtn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; text-transform: none !important;">
+    <div style="display: flex; gap: 12px; flex-direction: column; font-family: inherit; float: none !important; width: 100% !important;">
+      <button id="viewBoardBtn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; text-transform: none !important; float: none !important; box-sizing: border-box;">
         View on SpotBoard
       </button>
-      <button id="closeNotification" style="width: 100%; padding: 12px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; text-transform: none !important;">
+      <button id="closeNotification" style="width: 100%; padding: 12px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; text-transform: none !important; float: none !important; box-sizing: border-box;">
         Close
       </button>
     </div>
