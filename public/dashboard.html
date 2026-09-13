@@ -38,6 +38,10 @@
       --content-shadow: none;
       --paused-header: #FCD1DE;
       --paused-shell: var(--surface-card);   /* light: no shell change; dark: warm plum cast */
+      /* modal backdrop dimming — separate var so dark mode can dim harder for the
+         same visual contrast (issue #59: a light-mode-tuned 50% black overlay barely
+         separated from an already-dark page) */
+      --modal-overlay: rgba(0, 0, 0, 0.5);
       /* borders */
       --border-card: #000000;
       --border-subtle: #e2e2ea;
@@ -116,6 +120,7 @@
       --content-shadow: none;
       --paused-header: #5e2a39;
       --paused-shell: #1e1e2a;
+      --modal-overlay: rgba(0, 0, 0, 0.72);
       --border-card: #44445f;
       --border-subtle: #33334a;
       --border-hairline: #33334a;
@@ -188,6 +193,7 @@
         --content-shadow: none;
         --paused-header: #5e2a39;
         --paused-shell: #1e1e2a;
+        --modal-overlay: rgba(0, 0, 0, 0.72);
         --border-card: #44445f;
         --border-subtle: #33334a;
         --border-hairline: #33334a;

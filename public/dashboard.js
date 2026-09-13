@@ -133,7 +133,7 @@ function showImportConfirmModal(payload) {
   const modal = document.createElement('div');
   modal.style.cssText = `
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--modal-overlay);
     display: flex; justify-content: center; align-items: center;
     z-index: 10000;
   `;
@@ -143,6 +143,7 @@ function showImportConfirmModal(payload) {
     background: var(--surface-card);
     color: var(--text-primary);
     border: 1px solid var(--border-subtle);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
     padding: 20px;
     border-radius: 8px;
     max-width: 480px;
