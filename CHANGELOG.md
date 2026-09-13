@@ -2,6 +2,10 @@
 
 ## [Unreleased] - targeting 1.4.3+
 
+### Added
+
+- **Board export/import** (#59): a low-profile "advanced options" menu in the dashboard header now lets you export your whole board (every card, including its captured content) to a file, and import it back — a way to recover from an accidental storage wipe, or move your board between profiles. Manual only; not an automatic backup.
+
 ### Fixed
 
 - **Kalshi concurrent-refresh starvation** (#33): Refresh All's active-focus lane (`requiresActiveFocus` cards — sites needing a real OS-focused popup to render, e.g. Kalshi) ran up to 3 cards concurrently via `chrome.windows.create({focused:true})`. Since Chrome only has one truly OS-focused window at a time, concurrent focus-tier workers (or a finishing worker's focus-restore step) could steal focus from a sibling mid-extraction, causing that card to fail to refresh. Serialized the focus lane to one card at a time (`public/utils/refresh-engine.js`) — trades back some of issue #11's measured concurrency speedup for correctness on this small, already-visible-flash tier.
