@@ -814,11 +814,59 @@ export function cleanupDuplicates(html: string): string {
     }
   });
   
+  // 🎯 EXTREME INLINE LAYOUT STYLING (#56): sites that inline an oversized font-size + an
+  // oversized centering margin sized for their OWN full-width page (e.g. time.is's #clock:
+  // font-size:289px + margin-left:327.5px) render broken once transplanted into a much
+  // narrower card/preview — blank (pushed off-frame) or a single giant clipped digit.
+  // Large font-size ALONE is legitimate (clocks/scoreboards/counters are valid card content) —
+  // only strip when it co-occurs with an oversized layout-only margin. Lives here (not in
+  // content.ts's sanitizeHTML) so capture, refresh (applySanitizationPipeline), AND dashboard
+  // render (which all call cleanupDuplicates) share one guard instead of three copies.
+  const EXTREME_FONT_PX = 120;
+  const EXTREME_MARGIN_PX = 100;
+  temp.querySelectorAll<HTMLElement>('[style]').forEach(el => {
+    const style = el.getAttribute('style') ?? '';
+    const fontSizeMatch = style.match(/font-size\s*:\s*(-?[\d.]+)px/);
+    const marginLeftMatch = style.match(/margin-left\s*:\s*(-?[\d.]+)px/);
+    const marginRightMatch = style.match(/margin-right\s*:\s*(-?[\d.]+)px/);
+    const fontSize = fontSizeMatch ? parseFloat(fontSizeMatch[1]) : 0;
+    const marginLeft = marginLeftMatch ? Math.abs(parseFloat(marginLeftMatch[1])) : 0;
+    const marginRight = marginRightMatch ? Math.abs(parseFloat(marginRightMatch[1])) : 0;
+
+    if (fontSize > EXTREME_FONT_PX && (marginLeft > EXTREME_MARGIN_PX || marginRight > EXTREME_MARGIN_PX)) {
+      const cleaned = style
+        .replace(/font-size\s*:[^;]+;?\s*/g, '')
+        .replace(/line-height\s*:[^;]+;?\s*/g, '')
+        .replace(/margin-left\s*:[^;]+;?\s*/g, '')
+        .replace(/margin-right\s*:[^;]+;?\s*/g, '')
+        .trim();
+      if (cleaned) el.setAttribute('style', cleaned);
+      else el.removeAttribute('style');
+
+      // Descendants (e.g. time.is's per-digit spans) often carry their own inline
+      // width/margin sized to slot into THIS element's now-stripped oversized font —
+      // meaningless once the parent isn't oversized anymore. Strip those too so
+      // content doesn't get shoved off-frame.
+      el.querySelectorAll<HTMLElement>('[style]').forEach(descendant => {
+        const dStyle = descendant.getAttribute('style') ?? '';
+        const dCleaned = dStyle
+          .replace(/\bwidth\s*:[^;]+;?\s*/g, '')
+          .replace(/margin-left\s*:[^;]+;?\s*/g, '')
+          .replace(/margin-right\s*:[^;]+;?\s*/g, '')
+          .trim();
+        if (dCleaned !== dStyle) {
+          if (dCleaned) descendant.setAttribute('style', dCleaned);
+          else descendant.removeAttribute('style');
+        }
+      });
+    }
+  });
+
   if (temp.innerHTML.length === 0) {
     console.error('❌ [cleanupDuplicates] RETURNED EMPTY HTML!');
     console.error('   Original input length:', html.length);
   }
-  
+
   return temp.innerHTML;
 }
 
