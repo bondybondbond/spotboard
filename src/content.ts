@@ -19,6 +19,11 @@ let lockedElement: HTMLElement | null = null; // Track element waiting for confi
 let excludedElements: HTMLElement[] = []; // Track child elements marked for exclusion (red)
 let previewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+// #13: updatePreview() is a separate function from showCaptureConfirmation() and needs to
+// reach the confirmation modal's iframe -- document.querySelector can't see into a shadow
+// root, so it needs its own reference (mirrors onboarding-coach.ts's _coachShadow pattern).
+let _confirmationShadow: ShadowRoot | null = null;
+
 // Element handleHover last showed the dashed-red exclusion preview on. A live-updating page
 // (e.g. Kalshi's real-time odds table) can reflow between the user hovering a child (correct
 // preview shown) and the click landing -- event.target at click time then reflects post-reflow
@@ -555,7 +560,36 @@ function handleExit(event: MouseEvent) {
 // 3. Click Handler (The Save)
 // Sanitize captured HTML - remove capture artifacts
 // Show styled notification modal instead of alert
+// #13: puts an overlay in a closed Shadow DOM so no host-page stylesheet rule can select
+// into it at all (rule matching never crosses a shadow boundary, unlike !important overrides
+// which only work if every bled-through property was anticipated -- issue #13's history is
+// repeated one-off patches for exactly that). The host itself is a bare anchor (no visible
+// box), same pattern as onboarding-coach.ts's _coachHost -- everything visible/interactive is
+// appended inside the returned ShadowRoot. Callers must set `pointer-events` explicitly on
+// whatever they append (host sets it to none so a host-page rule matching div/* can't make
+// the anchor itself clickable/hoverable; that value inherits into the shadow tree by default).
+//
+// The host also needs its OWN explicit z-index, not just its shadow content's. A descendant's
+// z-index only creates a stacking context local to that descendant -- where the whole shadow
+// subtree sits in the page's top-level stacking order is governed by the HOST's own z-index.
+// Before this file used Shadow DOM, each overlay's top-level div (with z-index:2147483647) WAS
+// the document.body child, so its z-index applied at the page's root stacking context directly.
+// Missing this on the host renders it as an effective z-index:0 element -- any site element
+// with a real z-index (a sticky header, an ad unit) can then paint over the whole overlay.
+function createOverlayShadowHost(hostId: string): { host: HTMLElement; shadow: ShadowRoot } {
+  const host = document.createElement('div');
+  host.id = hostId;
+  host.setAttribute('data-spotboard-ignore', 'true'); // prevent accidental capture
+  host.style.cssText = 'position: fixed !important; top: 0 !important; left: 0 !important; ' +
+    'z-index: 2147483647 !important; ' +
+    'opacity: 1 !important; filter: none !important; float: none !important; pointer-events: none !important;';
+  const shadow = host.attachShadow({ mode: 'closed' });
+  document.body.appendChild(host);
+  return { host, shadow };
+}
+
 function showStyledNotification(message: string, type: 'success' | 'error' = 'success', cardId?: string) {
+  const { host, shadow } = createOverlayShadowHost('spotboard-notification-host');
   const modal = document.createElement('div');
   modal.style.cssText = `
     position: fixed !important;
@@ -570,6 +604,8 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
     z-index: 2147483647 !important;
     isolation: isolate !important;
     float: none !important;
+    pointer-events: auto !important;
+    text-transform: none !important;
   `;
   
   const modalContent = document.createElement('div');
@@ -604,8 +640,8 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
   `;
   
   modal.appendChild(modalContent);
-  document.body.appendChild(modal);
-  
+  shadow.appendChild(modal);
+
   // View Board button - smart navigation
   const viewBtn = modal.querySelector('#viewBoardBtn');
   if (viewBtn) {
@@ -621,17 +657,17 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
         // If found, background script already focused it (and reloads it when highlighting)
       });
 
-      modal.remove();
+      host.remove();
     });
   }
-  
+
   // Close button
   const closeBtn = modal.querySelector('#closeNotification');
   if (closeBtn) {
-    closeBtn.addEventListener('click', () => modal.remove());
+    closeBtn.addEventListener('click', () => host.remove());
   }
   modal.addEventListener('click', (e) => {
-    if (e.target === modal) modal.remove();
+    if (e.target === modal) host.remove();
   });
 }
 
@@ -1668,7 +1704,7 @@ function generatePreviewSrcdoc(html: string): string {
  * Uses the locked element + current exclusions to generate a dashboard-parity preview.
  */
 function updatePreview(): void {
-  const iframe = document.querySelector('#spotboard-preview-iframe') as HTMLIFrameElement | null;
+  const iframe = _confirmationShadow?.querySelector('#spotboard-preview-iframe') as HTMLIFrameElement | null;
   if (!iframe || !lockedElement) return;
 
   // Save scroll position before replacing content (only possible with allow-same-origin)
@@ -1706,9 +1742,15 @@ function updatePreview(): void {
 function showCaptureConfirmation(target: HTMLElement, name: string, selector: string, positionBased: boolean, clickBranch: HTMLElement | null = null) {
   log('🚀 showCaptureConfirmation called with:', { name, selector, positionBased });
   
+  // #13: shadow-hosted. The host (not `modal`) carries the 'spotboard-capture-confirmation'
+  // id, because other functions in this file do `event.target.closest('#spotboard-capture-confirmation')`
+  // on document-level listeners -- shadow event retargeting rewrites event.target to the HOST
+  // for those, so the id has to live there for closest() to still resolve it.
+  const { host, shadow } = createOverlayShadowHost('spotboard-capture-confirmation');
+  _confirmationShadow = shadow;
+
   // Create top-right confirmation modal
   const modal = document.createElement('div');
-  modal.id = 'spotboard-capture-confirmation';
   modal.style.cssText = `
     position: fixed !important;
     top: 20px !important;
@@ -1727,6 +1769,8 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
     overflow: hidden !important;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
     isolation: isolate !important;
+    pointer-events: auto !important;
+    text-transform: none !important;
   `;
   
   modal.innerHTML = `
@@ -1781,7 +1825,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   if (captureTitleEl) captureTitleEl.setAttribute('title', name);
 
   log('📦 Modal HTML created, appending to body...');
-  document.body.appendChild(modal);
+  shadow.appendChild(modal);
   log('✅ Modal appended to DOM successfully');
   
   // 🎯 Preview collapse toggle
@@ -1832,8 +1876,9 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       const selectedMode = (modal.querySelector('input[name="captureMode"]:checked') as HTMLInputElement)?.value || 'header';
       const finalPositionBased = selectedMode === 'position';
       log('📍 Final capture mode (user selected):', finalPositionBased ? 'Position-based' : 'Header-based');
-      
-      modal.remove();
+
+      host.remove();
+      _confirmationShadow = null;
       
       // ⏳ WAIT 2 SECONDS FOR JS FRAMEWORKS TO RENDER
       log('⏳ Waiting 2s for JavaScript to render...');
@@ -2192,14 +2237,17 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         // harmlessly. This also clears the locked element's green page outline.
         toggleCapture(false);
 
+        // #13: shadow-hosted (see createOverlayShadowHost) -- host carries the id, no other
+        // code looks this overlay up by id so nothing external needs adjusting for it.
+        const { host: warnHost, shadow: warnShadow } = createOverlayShadowHost('spotboard-empty-capture-warning');
         const warnOverlay = document.createElement('div');
-        warnOverlay.id = 'spotboard-empty-capture-warning';
         warnOverlay.style.cssText = `
           position: fixed !important; top: 0 !important; left: 0 !important;
           right: 0 !important; bottom: 0 !important;
           background: rgba(0, 0, 0, 0.5) !important;
           display: flex !important; justify-content: center !important; align-items: center !important;
-          z-index: 2147483647 !important; isolation: isolate !important;
+          z-index: 2147483647 !important; isolation: isolate !important; pointer-events: auto !important;
+          text-transform: none !important;
         `;
         const warnBox = document.createElement('div');
         warnBox.style.cssText = `
@@ -2221,7 +2269,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         warnCancel.style.cssText = `flex: 1 !important; padding: 12px !important; background: #f56565 !important; color: white !important; border: none !important; border-radius: 4px !important; cursor: pointer !important; font-size: 14px !important; font-weight: 600 !important; font-family: inherit !important; text-transform: none !important;`;
 
         const closeWarn = () => {
-          warnOverlay.remove();
+          warnHost.remove();
           document.removeEventListener('keydown', warnKeyHandler, true);
         };
         const proceedAnyway = (e?: Event) => {
@@ -2262,7 +2310,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         warnBox.appendChild(warnMsg);
         warnBox.appendChild(warnRow);
         warnOverlay.appendChild(warnBox);
-        document.body.appendChild(warnOverlay);
+        warnShadow.appendChild(warnOverlay);
         warnCancel.focus();
 
         chrome.runtime.sendMessage({
@@ -2280,7 +2328,8 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
     cancelBtn.addEventListener('click', (e) => {
             e.stopPropagation();
       e.preventDefault();
-      modal.remove();
+      host.remove();
+      _confirmationShadow = null;
       // Clear green flash and unlock
       target.style.outline = '';
       target.style.cursor = '';
@@ -2305,7 +2354,8 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   // Handle Escape key to close modal
   const escapeHandler = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
-            modal.remove();
+            host.remove();
+      _confirmationShadow = null;
       target.style.outline = '';
       target.style.cursor = '';
       lockedElement = null;
