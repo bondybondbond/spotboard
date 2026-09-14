@@ -260,6 +260,30 @@ function generateExclusionSelector(el: HTMLElement, root: HTMLElement): string {
     log('⚠️ Exclusion candidate selector invalid, escalating:', candidate, e);
   }
 
+  // Table-column exclusion (#67): a <td>/<th> whose class selector isn't unique within
+  // root is usually one cell of a repeating column -- every other row's cell shares the
+  // same class. The old fallback here was an absolute nth-child path anchored through the
+  // element's <tbody>, which some sites (yr.no's hourly table) restructure over time --
+  // pruning past-hour <tbody> row-groups shifts the remaining group's tbody position, so
+  // the stored path stops matching on refresh and the excluded column silently reappears
+  // (the refresh-time safe-fail leaves unmatched content visible rather than guessing).
+  // A selector scoped to the TABLE + the cell's column index has no tbody/row dependency
+  // at all, so it survives that kind of pruning. Only used when the table itself can be
+  // identified uniquely within root and no colspan is present anywhere in it (colspans
+  // decouple DOM child-index from visual column, which would skew nth-child alignment) --
+  // otherwise falls through to the ancestor/positional path unchanged.
+  const tableColumnSelector = buildTableColumnSelector(el, root);
+  if (tableColumnSelector) {
+    try {
+      if (root.querySelectorAll(tableColumnSelector).length >= 1) {
+        log('🎯 Exclusion selector using table-column scoping:', tableColumnSelector);
+        return tableColumnSelector;
+      }
+    } catch (e) {
+      log('⚠️ Table-column exclusion selector invalid, escalating:', tableColumnSelector, e);
+    }
+  }
+
   // Escalate: unique ancestor path (same mechanism generateSelector itself uses)
   const baseSelector = buildBaseSelector(el);
   const pathSelector = buildPathFromUniqueAncestor(el, baseSelector);
@@ -279,6 +303,47 @@ function generateExclusionSelector(el: HTMLElement, root: HTMLElement): string {
   const positional = buildPositionalPath(el, root);
   log('🎯 Exclusion selector using positional fallback:', positional);
   return positional;
+}
+
+/** Build a table-column-scoped exclusion selector for `el` (a <td>/<th>), or null if the
+ *  table can't be safely column-scoped. Requirements, all checked before returning:
+ *   1. `el` sits inside a <table> that is itself within `root`.
+ *   2. That table's base selector (tag + up to 3 classes, from buildBaseSelector) resolves
+ *      to exactly ONE table within root -- otherwise the generated selector could reach
+ *      into an unrelated table sharing the same class.
+ *   3. The table has no `colspan` attribute anywhere -- a colspan on an earlier cell in a
+ *      row shifts that row's DOM child-index out of alignment with the visual column, and
+ *      verifying per-row alignment in that case is out of scope for this narrow fix.
+ *  Column index is 1-based among `el`'s row siblings (DOM position, safe once colspan-free).
+ */
+function buildTableColumnSelector(el: HTMLElement, root: HTMLElement): string | null {
+  const table = el.closest('table');
+  if (!table || !root.contains(table)) return null;
+
+  const row = el.closest('tr');
+  if (!row || !table.contains(row)) return null;
+
+  if (table.querySelector('[colspan]')) return null;
+
+  // Every row must have the same cell count as `row` -- a shorter/longer row (footer,
+  // summary, divider) with no `colspan` involved would still silently misalign
+  // `:nth-child(N)` for that row otherwise (colspan alone doesn't catch this case).
+  const rowCellCount = row.children.length;
+  const rows = Array.from(table.querySelectorAll('tr'));
+  if (rows.some(r => r.children.length !== rowCellCount)) return null;
+
+  const tableBase = buildBaseSelector(table);
+  if (!tableBase.includes('.')) return null; // no class -- can't trust uniqueness by tag alone
+  try {
+    if (root.querySelectorAll(tableBase).length !== 1) return null;
+  } catch (e) {
+    return null;
+  }
+
+  const colIndex = Array.from(row.children).indexOf(el) + 1;
+  if (colIndex < 1) return null;
+
+  return `${tableBase} tr > ${el.tagName.toLowerCase()}:nth-child(${colIndex})`;
 }
 
 /** Build a :nth-child chain from `root` down to `el`. Always uniquely identifies `el`
