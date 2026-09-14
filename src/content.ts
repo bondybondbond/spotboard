@@ -66,12 +66,6 @@ function getSimilarSiblings(element: HTMLElement): HTMLElement[] {
   );
 }
 
-function sameElementSet(a: HTMLElement[], b: HTMLElement[]): boolean {
-  if (a.length !== b.length) return false;
-  const bSet = new Set(b);
-  return a.every(el => bSet.has(el));
-}
-
 // Initialize onboarding module — stores toggleCapture reference via dependency injection.
 // toggleCapture is a hoisted function declaration, available here before its definition.
 // It's only called later on user action, not during init.
@@ -1419,7 +1413,23 @@ function handleClick(event: MouseEvent) {
       // (see issue #1 -- Kalshi's live-updating table) -- exclude nothing rather than risk
       // excluding a different element than the one the user saw highlighted.
       const alreadyExcluded = excludedElements.includes(target);
-      const willBulkExclude = !alreadyExcluded && event.shiftKey && hoveredSimilarGroup.length > 1;
+      // Shift is very commonly pressed only at click time, after the mouse has already stopped
+      // moving over the target -- no further mousemove fires in that case, so a hover preview
+      // computed without Shift held never got a chance to compute a group at all (real-world
+      // repro, field report, 14 Sep 2026). Recompute fresh here rather than require the hover
+      // to have already done it. But if the hover DID have Shift held and already previewed a
+      // group (hoveredSimilarGroup non-empty), the original #1 fail-safe still applies in full:
+      // the fresh group must match what was previewed, or content likely shifted between hover
+      // and click and bulk exclusion is skipped rather than risking excluding the wrong set.
+      const targetMatchesHoverPreview = target === hoveredExclusionCandidate;
+      const freshGroup = (!alreadyExcluded && event.shiftKey && targetMatchesHoverPreview)
+        ? getSimilarSiblings(target)
+        : null;
+      const groupPreviewedWithShift = hoveredSimilarGroup.length > 1;
+      const groupMatchesPreview = !groupPreviewedWithShift
+        || (!!freshGroup && freshGroup.length === hoveredSimilarGroup.length
+          && freshGroup.every(el => hoveredSimilarGroup.includes(el)));
+      const willBulkExclude = !!freshGroup && freshGroup.length > 1 && groupMatchesPreview;
 
       // Clear a stale similar-siblings preview if this click isn't the bulk-exclude path that
       // would consume it (e.g. Shift was released between the hover and the click landing) --
@@ -1437,19 +1447,16 @@ function handleClick(event: MouseEvent) {
       if (alreadyExcluded) {
         toggleExclusion(target);
       } else if (willBulkExclude) {
-        // Shift+click: commit bulk exclusion, but only if the sibling group recomputed right
-        // now still matches what the hover preview showed -- same fail-safe reasoning as the
-        // single-element check below, extended to a set (#34).
-        const freshGroup = getSimilarSiblings(target);
-        if (target === hoveredExclusionCandidate && sameElementSet(freshGroup, hoveredSimilarGroup)) {
-          freshGroup.forEach(el => {
-            if (!excludedElements.includes(el)) toggleExclusion(el);
-          });
-          log('❌ Bulk-excluded', freshGroup.length, 'similar siblings');
-        } else {
-          log('🛡️ Similar-siblings group changed between hover and click -- content likely shifted, skipping bulk exclusion:', target.tagName, target.className);
-        }
-      } else if (target === hoveredExclusionCandidate) {
+        freshGroup!.forEach(el => {
+          if (!excludedElements.includes(el)) toggleExclusion(el);
+        });
+        log('❌ Bulk-excluded', freshGroup!.length, 'similar siblings');
+      } else if (!!freshGroup && groupPreviewedWithShift && !groupMatchesPreview) {
+        // Fresh group no longer matches what the shift-hover preview showed -- content likely
+        // shifted between hover and click (#1). Exclude nothing rather than risk excluding a
+        // different set than the one the user saw highlighted.
+        log('🛡️ Similar-siblings group changed between hover and click -- content likely shifted, skipping bulk exclusion:', target.tagName, target.className);
+      } else if (targetMatchesHoverPreview) {
         toggleExclusion(target);
       } else {
         log('🛡️ Exclusion click target did not match last-hovered preview -- content likely shifted, skipping exclusion:', target.tagName, target.className);
