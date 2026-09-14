@@ -140,6 +140,63 @@ test('works when the capture root IS the table itself, not a wrapping container'
   assert.equal(cells[1].textContent, '11°C')
 })
 
+test('#74: groups the column when the header row has fewer cells than data rows (real yr.no shape)', () => {
+  // Live-reproduced yr.no shape: header <tr> has 5 <th>, every data <tr> has 6 <td> -- no
+  // colspan/rowspan, just real markup asymmetry. Previously this failed the whole-table
+  // row-uniformity check (header included) and silently fell back to a fragile selector.
+  const table = document.createElement('table')
+  table.className = 'wx-table'
+  const header = document.createElement('tr')
+  ;['Time', 'Weather', 'Temp', 'Precip', 'Wind'].forEach(t => header.appendChild(el('th', t)))
+  table.appendChild(header)
+  ;[
+    ['00', 'Cloudy', '10°C', '0mm', '4 m/s', 'NW'],
+    ['01', 'Cloudy', '11°C', '0mm', '5 m/s', 'NW'],
+  ].forEach(cells => {
+    const tr = document.createElement('tr')
+    cells.forEach(text => tr.appendChild(el('td', text)))
+    table.appendChild(tr)
+  })
+  const root = el('div', null, [table])
+  document.body.appendChild(root)
+
+  const windCell = table.rows[1].children[4] // "4 m/s" — 5th <td>, the header's last <th> only spans 5 labels
+  const cells = getTableColumnCells(windCell, root)
+
+  assert.ok(cells)
+  // Includes the header's own 5th <th> ("Wind") alongside the 2 data cells -- same
+  // "header is part of the column" behavior as the equal-cell-count case below.
+  assert.equal(cells.length, 3)
+  assert.equal(cells[0].textContent, 'Wind')
+  assert.equal(cells[1].textContent, '4 m/s')
+  assert.equal(cells[2].textContent, '5 m/s')
+})
+
+test('returns null when the table has a rowspan anywhere (index would misalign)', () => {
+  const { root, table } = buildTable([
+    [{ text: 'Hour 0' }, { text: '10°C' }],
+    [{ text: 'Hour 1' }, { text: '11°C' }],
+  ])
+  table.rows[0].children[0].setAttribute('rowspan', '2')
+
+  assert.equal(getTableColumnCells(table.rows[1].children[1], root), null)
+})
+
+test('returns null when a data row mixes <th> and <td> (ambiguous row-header cell)', () => {
+  const table = document.createElement('table')
+  table.className = 'wx-table'
+  ;[['Row A', '10°C'], ['Row B', '11°C']].forEach(([label, temp]) => {
+    const tr = document.createElement('tr')
+    tr.appendChild(el('th', label))
+    tr.appendChild(el('td', temp))
+    table.appendChild(tr)
+  })
+  const root = el('div', null, [table])
+  document.body.appendChild(root)
+
+  assert.equal(getTableColumnCells(table.rows[0].children[1], root), null)
+})
+
 test('includes the column header (<th>) alongside its <td> data cells', () => {
   // A header sits alone in its own row (one <th> per column), so tag-matched grouping could
   // never bulk-select it: the header is still part of "the column" for selection purposes,

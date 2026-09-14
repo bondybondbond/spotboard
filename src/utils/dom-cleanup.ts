@@ -29,6 +29,47 @@ export function stripEventHandlers(html: string): string {
 }
 
 /**
+ * Is column `colIndex` (0-based, among a row's direct `<td>`/`<th>` children) safe to bulk-target
+ * with `:nth-child(colIndex + 1)` across every row of `table`?
+ *
+ * Shared by content.ts's `getTableColumnCells` (capture-time selector generation + Shift-click
+ * column grouping, #62) and this file's `isTrustedTableColumn` (refresh-time trust check, #67) --
+ * one definition so the two guards can't silently diverge, which is exactly what #74 found: the
+ * refresh-time copy rejected a selector the capture-time copy had (at the time) accepted, because
+ * yr.no's header row legitimately has one fewer cell than its data rows (no colspan/rowspan
+ * involved -- just real markup asymmetry), and the old check compared ALL rows' cell counts,
+ * header included.
+ *
+ * A header-only row (all `<th>`, no `<td>`) doesn't constrain data-row column identity, so it's
+ * excluded from the uniformity comparison. A row mixing `<th>` and `<td>` (e.g. a `<th
+ * scope="row">` row-header cell inside an otherwise-`<td>` data row) is treated conservatively as
+ * untrustworthy rather than guessed at. `[rowspan]` misaligns column index exactly like
+ * `[colspan]` does and was previously never checked.
+ */
+export function isColumnSafeToTarget(table: HTMLElement, colIndex: number): boolean {
+  if (colIndex < 0) return false;
+  if (table.querySelector('[colspan], [rowspan]')) return false;
+
+  const rows = Array.from(table.querySelectorAll('tr'));
+  if (rows.length === 0) return false;
+
+  const dataRows: Element[] = [];
+  for (const row of rows) {
+    const children = Array.from(row.children);
+    const hasTd = children.some(c => c.tagName === 'TD');
+    const hasTh = children.some(c => c.tagName === 'TH');
+    if (hasTh && hasTd) return false; // mixed row -- ambiguous, don't trust
+    if (hasTh && !hasTd) continue; // header-only row -- irrelevant to data-column identity
+    if (!hasTd) return false; // no cells at all -- shouldn't happen, fail safe
+    dataRows.push(row);
+  }
+  if (dataRows.length === 0) return false;
+
+  const firstCount = dataRows[0].children.length;
+  return dataRows.every(r => r.children.length === firstCount && r.children[colIndex] != null);
+}
+
+/**
  * Apply user exclusions to HTML content
  * Removes DOM elements that user explicitly excluded during capture or editing
  * 
@@ -102,23 +143,20 @@ export function applyExclusions(html: string, excludedSelectors?: string[], card
   // clicked. That's the whole point (the exclusion is meant to follow the column across
   // refreshes), so the generic multi-match budget below -- tuned to catch an accidentally
   // over-broad class selector -- would wrongly reject it on any card where one column is a
-  // large share of a small table's text. Trust it instead IF the same two guarantees
-  // content.ts already checked at capture time still hold against the REFRESHED markup:
-  // the table selector still resolves to exactly one table, and that table is still
-  // colspan-free (a colspan appearing on refresh would misalign the column index).
-  const TABLE_COLUMN_SELECTOR_RE = /^(.+?)\s+tr\s*>\s*(?:td|th):nth-child\(\d+\)$/i;
+  // large share of a small table's text. Trust it instead IF the same guarantees content.ts
+  // already checked at capture time still hold against the REFRESHED markup: the table
+  // selector still resolves to exactly one table, and the column index is still safe to
+  // target (see isColumnSafeToTarget -- shared with content.ts's getTableColumnCells so the
+  // two can't drift apart the way #74 found them doing).
+  const TABLE_COLUMN_SELECTOR_RE = /^(.+?)\s+tr\s*>\s*(?:td|th):nth-child\((\d+)\)$/i;
   const isTrustedTableColumn = (effectiveSelector: string): boolean => {
     const m = effectiveSelector.match(TABLE_COLUMN_SELECTOR_RE);
     if (!m) return false;
     try {
       const tables = queryRoot.querySelectorAll(m[1]);
-      if (tables.length !== 1 || tables[0].querySelector('[colspan]')) return false;
-      // Same row-uniformity guard as capture time -- a row with a different cell count
-      // (no colspan involved) would misalign nth-child(N) for that row specifically.
-      const rows = Array.from(tables[0].querySelectorAll('tr'));
-      if (rows.length === 0) return false;
-      const firstCount = rows[0].children.length;
-      return rows.every(r => r.children.length === firstCount);
+      if (tables.length !== 1) return false;
+      const colIndex = parseInt(m[2], 10) - 1; // nth-child is 1-based; children index is 0-based
+      return isColumnSafeToTarget(tables[0] as HTMLElement, colIndex);
     } catch (e) {
       return false;
     }

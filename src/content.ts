@@ -1,5 +1,5 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
-import { cleanupDuplicates, tagSentimentData } from './utils/dom-cleanup';
+import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget } from './utils/dom-cleanup';
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, classifyImages } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
 
@@ -349,11 +349,12 @@ export function getTableColumnCells(el: HTMLElement, root: HTMLElement): HTMLEle
   const row = cell.closest('tr');
   if (!row || !table.contains(row)) return null;
 
-  if (table.querySelector('[colspan]')) return null;
+  const colIndex = Array.from(row.children).indexOf(cell);
+  if (colIndex < 0) return null;
 
-  const rowCellCount = row.children.length;
-  const rows = Array.from(table.querySelectorAll('tr'));
-  if (rows.some(r => r.children.length !== rowCellCount)) return null;
+  // See isColumnSafeToTarget (dom-cleanup.ts) for the guard details -- shared with the
+  // refresh-time trust check so the two can't silently diverge (#74).
+  if (!(table instanceof HTMLElement) || !isColumnSafeToTarget(table, colIndex)) return null;
 
   const tableBase = buildBaseSelector(table);
   if (!tableBase.includes('.')) return null; // no class -- can't trust uniqueness by tag alone
@@ -364,9 +365,7 @@ export function getTableColumnCells(el: HTMLElement, root: HTMLElement): HTMLEle
     return null;
   }
 
-  const colIndex = Array.from(row.children).indexOf(cell);
-  if (colIndex < 0) return null;
-
+  const rows = Array.from(table.querySelectorAll('tr'));
   const cells = rows
     .map(r => r.children[colIndex])
     .filter((c): c is HTMLElement => c instanceof HTMLElement);
