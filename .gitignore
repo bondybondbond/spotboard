@@ -37,6 +37,7 @@ public/utils/confetti.js
 # Test files
 *.mjs
 test-*.js
+.test-build/
 
 # Temporary submission files
 .do not upload/

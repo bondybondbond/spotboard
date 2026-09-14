@@ -22,6 +22,10 @@
 - **Capture confirmation, "Spotted" notification, and empty-capture warning could render faded or washed out on some sites** (#13): these popups lived in the page's own styling context, so a site's CSS rules for generic elements (buttons, boxes) could bleed into them — dimming them, blending their text into the background, or forcing odd casing. Isolated them from the site's CSS rules that were causing this, so they render correctly regardless of the site (`src/content.ts`).
 - **Excluded table content (e.g. a weather site's wind column) could come back after a refresh** (#67): when the excluded content was one column of a table, the stored exclusion could be tied to its row's position in the table's internal grouping — which some sites reshuffle over time as content ages — so refresh silently failed to remove it again. Excluding a table cell now targets the whole column directly instead of a position, which isn't affected by that kind of reshuffling (`src/content.ts`, `src/utils/dom-cleanup.ts`). Already-excluded cards from before this fix need excluding once more to pick up the more durable version.
 
+### Internal
+
+- **Automated tests for the capture/exclusion logic** (#40): the project's automated test files hadn't actually run in a long time — they required a full browser and silently failed when run any other way. Replaced with a real, runnable test suite covering multiple-element exclusion, nested exclusions, table-column exclusions, the empty-capture warning, and content captured from an open shadow DOM. No user-visible change.
+
 ## [1.3.4] - 2026-03-05
 
 ### Fixed

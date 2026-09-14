@@ -736,7 +736,24 @@ function showStyledNotification(message: string, type: 'success' | 'error' = 'su
   });
 }
 
-function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []): string {
+// #9: pure predicate for the "capture looks empty" gate — extracted (unchanged logic) from an
+// inline const in the save-path click handler so #40's jsdom harness can test it directly.
+// A card is flagged empty when it has near-zero text AND no structural/media content, unless
+// it's a legitimately tiny value (VOLATILE_FINGERPRINT_RE — e.g. a bare "54%") or a playground
+// capture (which intentionally allows empty test captures).
+export function looksEmptyCapture(html: string, isPlaygroundPage: boolean): boolean {
+  const body = new DOMParser().parseFromString(html, 'text/html').body;
+  const text = (body.textContent || '').trim();
+  return !isPlaygroundPage
+    && text.replace(/\s/g, '').length < 2
+    && body.querySelectorAll('li, tr, article, img, svg').length === 0
+    && !VOLATILE_FINGERPRINT_RE.test(text);
+}
+
+// Exported (test-only reason): #40's jsdom harness bundles this file and needs to call
+// sanitizeHTML directly to regression-test the exclusion-marking logic that caused #2 —
+// no other caller outside this file exists or should exist.
+export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []): string {
   // 🎯 STEP 1: Mark hidden elements in ORIGINAL DOM (before cloning)
   // Check computed styles on live DOM elements, then mark them for removal
   const allOriginalElements = [element, ...Array.from(element.querySelectorAll('*'))];
@@ -2263,12 +2280,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         //    and then celebrating it is the worst possible first impression. But a brand-new
         //    user should be nudged to pick a better section, not shown the "capture anyway?"
         //    bypass prompt as their first outcome (handled just below, before the modal).
-        const capBody = new DOMParser().parseFromString(cleanedHTML, 'text/html').body;
-        const capText = (capBody.textContent || '').trim();
-        const looksEmpty = !getIsPlaygroundPage()
-          && capText.replace(/\s/g, '').length < 2
-          && capBody.querySelectorAll('li, tr, article, img, svg').length === 0
-          && !VOLATILE_FINGERPRINT_RE.test(capText);
+        const looksEmpty = looksEmptyCapture(cleanedHTML, getIsPlaygroundPage());
 
         if (!looksEmpty) {
           commitCapture();
@@ -2291,7 +2303,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           return;
         }
 
-        log('⚠️ Capture looks empty — warning before save. text:', JSON.stringify(capText.slice(0, 40)));
+        log('⚠️ Capture looks empty — warning before save.');
 
         // Tear capture mode down before showing the decision modal. Capture-mode's
         // document-level hover handlers (handleHover/handleExit) call
