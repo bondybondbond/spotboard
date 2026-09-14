@@ -47,6 +47,44 @@ test('returns every row\'s cell in the clicked column, not same-row/same-class c
   assert.ok(!cells.includes(table.rows[0].children[1]))
 })
 
+test('resolves through nested wrapper spans to find the containing cell -- real click target, not the bare <td>', () => {
+  // Real sites rarely render a bare <td>text</td>. yr.no (14 Sep 2026) wraps every cell's
+  // value in 3+ levels of <span> for styling (<td><span class="cell-content"><span><span
+  // class="text-4">value</span></span></span>), and a real mouse click almost always lands
+  // on one of those inner spans, never the <td> itself. Passing the deepest span here must
+  // still resolve to that cell's column -- this is the bug that made every real click fail
+  // even though every synthetic test dispatched directly on the <td> and "passed".
+  const table = document.createElement('table')
+  table.className = 'wx-table'
+  ;[['Hour 0', '4 m/s'], ['Hour 1', '5 m/s']].forEach(([time, wind]) => {
+    const tr = document.createElement('tr')
+    tr.appendChild(el('td', time))
+    const outer = document.createElement('span')
+    outer.className = 'cell-content'
+    const middle = document.createElement('span')
+    const inner = document.createElement('span')
+    inner.className = 'text-4'
+    inner.appendChild(document.createTextNode(wind))
+    middle.appendChild(inner)
+    outer.appendChild(middle)
+    const td = document.createElement('td')
+    td.appendChild(outer)
+    tr.appendChild(td)
+    table.appendChild(tr)
+  })
+  const root = el('div', null, [table])
+  document.body.appendChild(root)
+
+  const deepestSpan = table.rows[0].children[1].querySelector('.text-4')
+  const cells = getTableColumnCells(deepestSpan, root)
+
+  assert.equal(cells.length, 2)
+  assert.equal(cells[0].textContent, '4 m/s')
+  assert.equal(cells[1].textContent, '5 m/s')
+  // Returned cells are the actual <td> elements, not the nested spans clicked into.
+  assert.equal(cells[0].tagName, 'TD')
+})
+
 test('returns null when the table has a colspan anywhere (index alignment unsafe)', () => {
   const { root, table } = buildTable([
     [{ text: 'Hour 0' }, { text: '10°C' }],

@@ -332,10 +332,21 @@ function generateExclusionSelector(el: HTMLElement, root: HTMLElement): string {
  *  definition.
  */
 export function getTableColumnCells(el: HTMLElement, root: HTMLElement): HTMLElement[] | null {
-  const table = el.closest('table');
+  // Real cell markup is rarely a bare <td>text</td> -- sites commonly wrap the value in
+  // several layers of <span> for styling (yr.no: <td><span class="cell-content"><span>
+  // <span class="text-4">...). A real click almost always lands on one of those inner spans,
+  // never the <td> itself, so `row.children` (which are only the <td>/<th> elements) would
+  // never contain the raw clicked node. Resolve up to the containing cell first -- whatever
+  // was actually clicked inside a cell still means "this cell/column", regardless of markup
+  // depth (field report, 14 Sep 2026: synthetic tests that clicked the <td> directly worked,
+  // but nothing a real mouse could reach ever did).
+  const cell = el.closest('td, th');
+  if (!cell || !(cell instanceof HTMLElement)) return null;
+
+  const table = cell.closest('table');
   if (!table || !root.contains(table)) return null;
 
-  const row = el.closest('tr');
+  const row = cell.closest('tr');
   if (!row || !table.contains(row)) return null;
 
   if (table.querySelector('[colspan]')) return null;
@@ -353,7 +364,7 @@ export function getTableColumnCells(el: HTMLElement, root: HTMLElement): HTMLEle
     return null;
   }
 
-  const colIndex = Array.from(row.children).indexOf(el);
+  const colIndex = Array.from(row.children).indexOf(cell);
   if (colIndex < 0) return null;
 
   const cells = rows
@@ -362,17 +373,19 @@ export function getTableColumnCells(el: HTMLElement, root: HTMLElement): HTMLEle
   return cells.length > 0 ? cells : null;
 }
 
-/** Build a table-column-scoped exclusion selector for `el` (a <td>/<th>), or null if the
- *  table can't be safely column-scoped -- see `getTableColumnCells` for the guards. */
+/** Build a table-column-scoped exclusion selector for `el` (anywhere inside a <td>/<th>), or
+ *  null if the table can't be safely column-scoped -- see `getTableColumnCells` for the
+ *  guards, including the resolve-up-to-the-containing-cell step this shares with it. */
 function buildTableColumnSelector(el: HTMLElement, root: HTMLElement): string | null {
   if (!getTableColumnCells(el, root)) return null;
 
-  const table = el.closest('table')!;
-  const row = el.closest('tr')!;
+  const cell = el.closest('td, th')!;
+  const table = cell.closest('table')!;
+  const row = cell.closest('tr')!;
   const tableBase = buildBaseSelector(table);
-  const colIndex = Array.from(row.children).indexOf(el) + 1;
+  const colIndex = Array.from(row.children).indexOf(cell) + 1;
 
-  return `${tableBase} tr > ${el.tagName.toLowerCase()}:nth-child(${colIndex})`;
+  return `${tableBase} tr > ${cell.tagName.toLowerCase()}:nth-child(${colIndex})`;
 }
 
 /** Build a :nth-child chain from `root` down to `el`. Always uniquely identifies `el`
