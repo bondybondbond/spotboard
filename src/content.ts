@@ -46,6 +46,16 @@ let hoveredSimilarGroup: HTMLElement[] = [];
 // pickers, so a BEM-modifier variant (e.g. "item item--featured") intentionally falls
 // outside the group rather than risk excluding something the user didn't mean to.
 function getSimilarSiblings(element: HTMLElement): HTMLElement[] {
+  // Table-column exclusion (#62): a table cell's real "similar group" is its column, not
+  // same-row siblings sharing a class -- on tables that style columns with a shared utility
+  // class (e.g. a right-align class used by Temp/Precip/Wind-speed alike), same-row/class
+  // matching used to group unrelated columns together instead of down one column. Checked
+  // first, ahead of the generic same-parent+class fallback below.
+  if (lockedElement) {
+    const columnCells = getTableColumnCells(element, lockedElement);
+    if (columnCells && columnCells.length > 1) return columnCells;
+  }
+
   const parent = element.parentElement;
   if (!parent) return [element];
   return Array.from(parent.children).filter(
@@ -305,18 +315,29 @@ function generateExclusionSelector(el: HTMLElement, root: HTMLElement): string {
   return positional;
 }
 
-/** Build a table-column-scoped exclusion selector for `el` (a <td>/<th>), or null if the
- *  table can't be safely column-scoped. Requirements, all checked before returning:
+/** Find every cell in `el`'s column (across all rows of its table, header row included), or
+ *  null if the table can't be safely column-scoped. Requirements, all checked before
+ *  returning:
  *   1. `el` sits inside a <table> that is itself within `root`.
  *   2. That table's base selector (tag + up to 3 classes, from buildBaseSelector) resolves
- *      to exactly ONE table within root -- otherwise the generated selector could reach
- *      into an unrelated table sharing the same class.
+ *      to exactly ONE table within root -- otherwise a generated selector could reach into
+ *      an unrelated table sharing the same class. `root` itself counts as a match here (not
+ *      just its descendants) -- a user capturing the table element directly as the capture
+ *      root is a normal, expected click target, not an edge case to special-case around.
  *   3. The table has no `colspan` attribute anywhere -- a colspan on an earlier cell in a
  *      row shifts that row's DOM child-index out of alignment with the visual column, and
  *      verifying per-row alignment in that case is out of scope for this narrow fix.
+ *   4. Every row has the same cell count -- a shorter/longer row (footer, summary, divider)
+ *      would otherwise silently misalign column index for that row.
  *  Column index is 1-based among `el`'s row siblings (DOM position, safe once colspan-free).
+ *  Matches any element at that column index regardless of tag (<td> or <th> alike) -- a
+ *  column's header cell is part of "the column" as far as bulk-selecting it goes, even
+ *  though it's the only <th> in its own row and so never groups with itself alone.
+ *  Shared by `buildTableColumnSelector` (the stored, refresh-surviving selector -- #67) and
+ *  the interactive Shift+hover/Shift+click grouping (#62) -- same guards, same column, one
+ *  definition.
  */
-function buildTableColumnSelector(el: HTMLElement, root: HTMLElement): string | null {
+export function getTableColumnCells(el: HTMLElement, root: HTMLElement): HTMLElement[] | null {
   const table = el.closest('table');
   if (!table || !root.contains(table)) return null;
 
@@ -325,9 +346,6 @@ function buildTableColumnSelector(el: HTMLElement, root: HTMLElement): string | 
 
   if (table.querySelector('[colspan]')) return null;
 
-  // Every row must have the same cell count as `row` -- a shorter/longer row (footer,
-  // summary, divider) with no `colspan` involved would still silently misalign
-  // `:nth-child(N)` for that row otherwise (colspan alone doesn't catch this case).
   const rowCellCount = row.children.length;
   const rows = Array.from(table.querySelectorAll('tr'));
   if (rows.some(r => r.children.length !== rowCellCount)) return null;
@@ -335,13 +353,30 @@ function buildTableColumnSelector(el: HTMLElement, root: HTMLElement): string | 
   const tableBase = buildBaseSelector(table);
   if (!tableBase.includes('.')) return null; // no class -- can't trust uniqueness by tag alone
   try {
-    if (root.querySelectorAll(tableBase).length !== 1) return null;
+    const matchCount = root.querySelectorAll(tableBase).length + (root.matches(tableBase) ? 1 : 0);
+    if (matchCount !== 1) return null;
   } catch (e) {
     return null;
   }
 
+  const colIndex = Array.from(row.children).indexOf(el);
+  if (colIndex < 0) return null;
+
+  const cells = rows
+    .map(r => r.children[colIndex])
+    .filter((c): c is HTMLElement => c instanceof HTMLElement);
+  return cells.length > 0 ? cells : null;
+}
+
+/** Build a table-column-scoped exclusion selector for `el` (a <td>/<th>), or null if the
+ *  table can't be safely column-scoped -- see `getTableColumnCells` for the guards. */
+function buildTableColumnSelector(el: HTMLElement, root: HTMLElement): string | null {
+  if (!getTableColumnCells(el, root)) return null;
+
+  const table = el.closest('table')!;
+  const row = el.closest('tr')!;
+  const tableBase = buildBaseSelector(table);
   const colIndex = Array.from(row.children).indexOf(el) + 1;
-  if (colIndex < 1) return null;
 
   return `${tableBase} tr > ${el.tagName.toLowerCase()}:nth-child(${colIndex})`;
 }
