@@ -1828,10 +1828,9 @@ async function tryActiveTab(url, selector, fingerprint = null) {
     // Extract - WITH SANITIZATION AND IMAGE CLASSIFICATION IN THE TAB
     // Inject DomSnapshot into tab context (needed — executeScript funcs run in tab's isolated world)
     await chrome.scripting.executeScript({ target: { tabId: atTabId }, files: ['utils/dom-snapshot.js'] });
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: atTabId },
-      args: [selector, fingerprint],
-      func: (sel, fp) => {
+    // Named (not inline) so the widen-and-retry path below (issue #72) can re-run the
+    // identical extraction after resizing, without duplicating this whole function body.
+    const extractFromTab = (sel, fp) => {
         // Find the correct element (by fingerprint if provided)
         let element = null;
         
@@ -1866,7 +1865,24 @@ async function tryActiveTab(url, selector, fingerprint = null) {
           console.error('[Active Tab] Element not found!');
           return null;
         }
-        
+
+        // 🎯 STRUCTURALLY-EXPECTED-BUT-EMPTY IMAGE SLOT DETECTION (issue #72) — must run FIRST,
+        // before the hidden-element marking pass below, which would strip a display:none
+        // placeholder div before we ever get a chance to see it existed. Generic condition, not
+        // CNBC-specific: a container whose class names it as a thumbnail/image role, holding no
+        // <img>/<picture> and no text. Some sites (e.g. CNBC's river cards) only mount the real
+        // image once the live viewport is wide enough — at this popup's fixed narrow width the
+        // slot stays empty. Confirmed width-only, not IntersectionObserver-based (a dispatched
+        // scroll/resize event at the SAME width does not resolve it, only an actual wider
+        // viewport does). Same signal as the direct-fetch-path guard below, kept consistent
+        // deliberately — see that guard's comment for why a structural slot check (rather than a
+        // generic link-count/content-length proxy) is the right shape for "image expected but
+        // missing" here.
+        let hasEmptyImageSlots = false;
+        element.querySelectorAll('[class*="thumbnail" i], [class*="image" i]').forEach(el => {
+          if (!el.querySelector('img, picture') && (el.textContent || '').trim() === '') hasEmptyImageSlots = true;
+        });
+
         // Now sanitize and extract the found element
         // Mark hidden elements BEFORE cloning (while CSS is loaded)
         const allElements = [element, ...Array.from(element.querySelectorAll('*'))];
@@ -2035,11 +2051,62 @@ async function tryActiveTab(url, selector, fingerprint = null) {
           console.log(`🖼️ [SpotBoard] Next.js fill layout fix: ${fillFixes} images un-collapsed`);
         }
 
-        return clone.outerHTML;
-      }
+        return { html: clone.outerHTML, hasEmptyImageSlots };
+    };
+
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: atTabId },
+      args: [selector, fingerprint],
+      func: extractFromTab
     });
 
-    const html = results[0]?.result;
+    let html = results[0]?.result?.html;
+
+    // 🎯 WIDEN-AND-RETRY (issue #72): if an expected image slot never resolved at the
+    // popup's normal narrow width, widen the same live window (no reload — preserves
+    // scroll/React state) and re-run the identical extraction once. Only pays the extra
+    // ~2s when the signal is actually detected; most sites never hit this path.
+    if (results[0]?.result?.hasEmptyImageSlots) {
+      if (DEBUG) console.log('[SB-REFRESH] tryActiveTab: empty image slots, widening + retrying');
+      try {
+        // Must reposition `left` too: the popup is pinned 55%-visible at the screen's right
+        // edge, so widening in place alone pushes it past Chrome's "≥50% on-screen" bounds
+        // constraint (chrome.windows.update throws "Invalid value for bounds" otherwise).
+        //
+        // Width is NOT tuned to the minimum needed to unstick the lazy-mount — re-verified via
+        // live viewport bisection during #77's follow-up (CDP viewport emulation, not a stale
+        // estimate): it's a hard cutoff at exactly 1020px content width (0 images at 1000px, 7
+        // at 1020px) matching CNBC's own confirmed `min-width:1020px` breakpoint exactly, well
+        // below its largest breakpoint. 1400 is instead chosen to match the responsive tier a
+        // real, normal-width user browser would render in, which matters more: CNBC serves a
+        // *different, smaller* image variant (224×180 vs 240×180) below its 1340px breakpoint,
+        // so a refresh popup that only clears the mount threshold would silently capture a
+        // lower-resolution/differently-cropped image than the user's own original capture did.
+        // Confirmed live: a genuinely wide browser tab (1920px) and this 1400px popup both
+        // resolve to the identical `w=240&h=180` CDN image URL. 1400 = 1340px breakpoint + ~60px
+        // margin (window chrome eats ~16px of that before it reaches content width).
+        const _wideW = 1400;
+        const _wideLeft = Math.round(_screenRight - _wideW * 0.55);
+        await chrome.windows.update(win.id, { width: _wideW, left: _wideLeft });
+        // Explicit resize/scroll nudge — some lazy-mount libraries only re-check on these
+        // events firing, not purely on a debounced viewport-size poll.
+        await chrome.scripting.executeScript({
+          target: { tabId: atTabId },
+          world: 'MAIN',
+          func: () => { window.dispatchEvent(new Event('resize')); window.dispatchEvent(new Event('scroll')); }
+        }).catch(() => {});
+        // 4s (not 2s): live testing against CNBC showed its lazy-mount re-check is debounced
+        // longer than 2s after a width change — 2s consistently left the placeholder unresolved.
+        await new Promise(r => setTimeout(r, 4000));
+        const retryResults = await chrome.scripting.executeScript({
+          target: { tabId: atTabId },
+          args: [selector, fingerprint],
+          func: extractFromTab
+        });
+        const retryHtml = retryResults[0]?.result?.html;
+        if (retryHtml) html = retryHtml;
+      } catch (_) { /* best-effort — fall back to the first-pass html below */ }
+    }
 
     // Close popup and restore focus to user's window
     await closeWindowSafely(win.id);
@@ -2300,8 +2367,7 @@ async function refreshComponent(component) {
         // Sites like HotUKDeals render images via JavaScript - direct fetch gets text but no images
         const originalImgCount = (component.html_cache?.match(/<img/gi) || []).length;
         const extractedImgCount = (extractedHtml.match(/<img/gi) || []).length;
-        const hasImagesMissing = originalImgCount >= 3 && extractedImgCount === 0;
-        
+
         // Images missing check (silent)
         
         // Check if we got a skeleton/loading placeholder instead of real content
@@ -2317,7 +2383,30 @@ async function refreshComponent(component) {
         const linkCount = tempDiv.querySelectorAll('a').length;
         const articleCount = tempDiv.querySelectorAll('article, h5, [class*="article"]').length;
         const contentLength = tempDiv.textContent.trim().length;
-        
+
+        // 🎯 SELF-REINFORCING LOCK-IN GUARD (issue #72, same class as Change 5/HotUKDeals —
+        // see LEARNINGS.md REF-26). `originalImgCount` is read from this component's own
+        // html_cache — the *last stored capture*, not a live ground truth. Once one direct-fetch
+        // (or a since-fixed but previously-broken tab-based capture) loses every image, that
+        // degraded 0 becomes the next refresh's baseline too, so `originalImgCount >= 3` can
+        // never trip again and this card is permanently stuck on direct-fetch, which for a
+        // purely client-rendered image widget (CNBC's RiverPlus cards: no SSR fallback markup
+        // at all, confirmed via live inspection) can never recover images on its own.
+        // Absolute floor, independent of the baseline — but scoped to a STRUCTURAL image-slot
+        // signal (empty thumbnail/image containers), not a generic link/text-length proxy: an
+        // earlier version of this guard used linkCount+contentLength alone, which a cold review
+        // correctly flagged as an unbounded regression for any card that is genuinely text-only
+        // by design (extractedImgCount is always 0 for those too, so it would re-trigger the
+        // slow tab-based tier on every single refresh, forever). A page that reserves dedicated
+        // thumbnail/image-role containers and leaves every one of them empty is a much stronger,
+        // false-positive-resistant signal than "many links" — a text-only site never has these
+        // containers at all, so this can't misfire on one.
+        const emptyImageSlots = Array.from(
+          tempDiv.querySelectorAll('[class*="thumbnail" i], [class*="image" i]')
+        ).filter(el => !el.querySelector('img, picture') && (el.textContent || '').trim() === '');
+        const hasImagesMissing = (originalImgCount >= 3 && extractedImgCount === 0) ||
+          (extractedImgCount === 0 && emptyImageSlots.length >= 3);
+
         // IGN PATTERN: Check for empty content containers
         const contentContainers = tempDiv.querySelectorAll('[class*="details"], [class*="content"], [class*="title"]:not(h1):not(h2):not(h3)');
         const emptyContainers = Array.from(contentContainers).filter(el => {
