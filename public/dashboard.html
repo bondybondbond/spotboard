@@ -28,6 +28,7 @@
       --surface-raised: #EEEEEE;      /* card header strip */
       --surface-menu: #ffffff;        /* dropdowns, pickers, resize menu, modals-in-scope */
       --surface-inset: #f8f9fa;       /* empty-state cards, menu hover fill */
+      --title-hover-bg: rgba(0,0,0,0.10); /* #79: card-title hover — --surface-inset is too close to --surface-raised (#EEEEEE) to read as a hover cue in light mode */
       --surface-content: #ffffff;     /* captured-content well — SAME in both themes */
       /* #22: the white evidence panel is inset from the SpotBoard-owned card shell.
          Light = flush (0 inset) so nothing changes; dark = a visible dark frame
@@ -113,6 +114,7 @@
       --surface-raised: #3a3a4f;
       --surface-menu: #26263a;
       --surface-inset: #26263a;
+      --title-hover-bg: #26263a;      /* #79: card-title hover — KEEP IN SYNC with the @media dark block below */
       --surface-content: #161621;     /* unchanged — evidence stays on a light well */
       --content-inset: 0;
       --content-inset-top: 0;
@@ -186,6 +188,7 @@
         --surface-raised: #3a3a4f;
         --surface-menu: #26263a;
         --surface-inset: #26263a;
+        --title-hover-bg: #26263a;      /* #79: KEEP IN SYNC with :root[data-theme="dark"] above */
         --surface-content: #161621;
         --content-inset: 0;
         --content-inset-top: 0;
@@ -448,6 +451,13 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    /* #79: was a hardcoded '#f0f0f0' inline style set from JS on mouseenter —
+       near-white-on-near-white in dark mode since --text-heading is near-white there too.
+       Uses --title-hover-bg, not --surface-inset — surface-inset is too close to
+       --surface-raised (the header strip it sits on) to read as a hover cue in light mode. */
+    .card-header .editable-title:hover {
+      background: var(--title-hover-bg);
     }
     .card-header-actions {
       display: flex;

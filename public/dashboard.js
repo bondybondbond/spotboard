@@ -2542,9 +2542,6 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       // Editable title functionality
       const titleElement = card.querySelector('.editable-title');
       titleElement.addEventListener('click', () => {
-        // Highlight on hover to show it's editable
-        titleElement.style.background = '#f0f0f0';
-        
         const currentLabel = component.customLabel || component.name || 'Unnamed Component';
         const input = document.createElement('input');
         input.type = 'text';
@@ -2567,8 +2564,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           
           // Restore title element
           input.replaceWith(titleElement);
-          titleElement.style.background = '';
-          
+
           if (newLabel && newLabel !== currentLabel) {
             // Update component in array
             component.customLabel = newLabel;
@@ -2598,14 +2594,9 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
         input.addEventListener('blur', saveLabel);
       });
       
-      // Add hover effect to show it's clickable
-      titleElement.addEventListener('mouseenter', () => {
-        titleElement.style.background = '#f0f0f0';
-      });
-      titleElement.addEventListener('mouseleave', () => {
-        titleElement.style.background = '';
-      });
-      
+      // Hover effect to show it's clickable — handled by the
+      // `.card-header .editable-title:hover` CSS rule (themed, dark-mode safe).
+
       // Clock button click handler (opens info modal)
       const clockBtn = card.querySelector('.clock-btn');
       if (clockBtn) {
