@@ -1497,7 +1497,21 @@ function handleClick(event: MouseEvent) {
       }
 
       if (alreadyExcluded) {
-        toggleExclusion(target);
+        // Mirror the exclude direction (#73): Shift+click on a cell that's part of an
+        // already-excluded table column (or generic sibling group) un-excludes the whole
+        // group, not just the one cell clicked. No hover-preview matching needed here (unlike
+        // the exclude path's #1 fail-safe) -- already-excluded elements never get a hover
+        // preview computed for them (see handleHover), so this group is always computed fresh
+        // at click time, same as the exclude path already does when Shift is pressed late.
+        const unexcludeGroup = event.shiftKey ? getSimilarSiblings(target) : null;
+        if (unexcludeGroup && unexcludeGroup.length > 1) {
+          unexcludeGroup.forEach(el => {
+            if (excludedElements.includes(el)) toggleExclusion(el);
+          });
+          log('✅ Bulk-un-excluded', unexcludeGroup.length, 'similar siblings');
+        } else {
+          toggleExclusion(target);
+        }
       } else if (willBulkExclude) {
         freshGroup!.forEach(el => {
           if (!excludedElements.includes(el)) toggleExclusion(el);
