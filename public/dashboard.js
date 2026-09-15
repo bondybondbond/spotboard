@@ -2328,6 +2328,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 ...syncEntry,
                 ...(component.requiresActiveFocus ? { requiresActiveFocus: true } : {}),
                 ...(component.requiresFixedCaptureWidth ? { requiresFixedCaptureWidth: true } : {}),
+                ...(component.structureMarker ? { structureMarker: component.structureMarker } : {}), // issue #77: preserve capture-time identity marker
                 ...(component.board ? { board: component.board } : {})
               }
             }, () => {

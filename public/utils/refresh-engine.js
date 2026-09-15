@@ -187,6 +187,28 @@ function getDominantTag(html) {
 }
 
 /**
+ * Structural-identity marker check for the feed-rotation rescue (issue #77). CNBC-class
+ * <a>-dominant feeds (every item is a link) are deliberately excluded from the dominantTag
+ * rescue below — anchor density alone can't distinguish "same feed, content rotated" from
+ * "wrong link-heavy section entirely" (confirmed live: CNBC's own nav menu has a link count
+ * in the same range as its real news river). component.structureMarker is a data-testid/
+ * data-test value captured at capture time and kept ONLY if it was globally unique on the
+ * page then (see extractStructureMarker in content.ts) — positive per-instance identity,
+ * not a generic class-name convention that can legitimately repeat across similar-but-
+ * different widgets. This only ever ADDS an acceptance path: no marker, or marker not found
+ * in this specific refresh candidate, falls through unchanged to the existing rescue below.
+ */
+function _structureMarkerMatches(component, tabDoc) {
+  const marker = component.structureMarker;
+  if (!marker || !marker.attr || !marker.value) return false;
+  try {
+    return !!tabDoc.querySelector(`[${marker.attr}="${CSS.escape(marker.value)}"]`);
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
  * How long refreshAll() waits before reloading the dashboard to show fresh content.
  * ONE timing for every outcome — a failed card no longer changes it (issue #12).
  * Kept at the historical all-success delay so the normal Refresh All feel is unchanged.
@@ -737,11 +759,18 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
         logStructureFingerprint('drift-cached-original', component.html_cache);
         logStructureFingerprint('drift-tab-refresh-result', tabHtml);
         // Feed fallback: fingerprint mismatch on a feed just means content rotated
+        const _driftTabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
+        if (_structureMarkerMatches(component, _driftTabDoc)) {
+          console.log(`[SB-REFRESH] Structural marker matched (${component.structureMarker.attr}="${component.structureMarker.value}") — accepting refresh despite fingerprint rotation`);
+          const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+          const newFingerprint = extractFingerprint(sanitizedHtml);
+          if (newFingerprint) component.headingFingerprint = newFingerprint;
+          return _buildTabSuccessResult(sanitizedHtml, component, driftActiveFocusNeeded);
+        }
         // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
         const dominantTag = getDominantTag(component.html_cache);
         if (dominantTag && dominantTag.tag !== 'a') {
-          const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
-          const newCount = tabDoc.querySelectorAll(dominantTag.tag).length;
+          const newCount = _driftTabDoc.querySelectorAll(dominantTag.tag).length;
           if (newCount >= 3) {
             console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
@@ -2132,6 +2161,26 @@ async function refreshComponent(component) {
       if (tabHtml) {
         // Fingerprint verification (skip for position-based captures)
         if (!component.positionBased && originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
+          const _fetchFailTabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
+          if (_structureMarkerMatches(component, _fetchFailTabDoc)) {
+            console.log(`[SB-REFRESH] Structural marker matched (${component.structureMarker.attr}="${component.structureMarker.value}") — accepting refresh despite fingerprint rotation`);
+            const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+            const newFingerprint = extractFingerprint(sanitizedHtml);
+            if (newFingerprint) component.headingFingerprint = newFingerprint;
+            return _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded);
+          }
+          // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
+          const dominantTag = getDominantTag(component.html_cache);
+          if (dominantTag && dominantTag.tag !== 'a') {
+            const newCount = _fetchFailTabDoc.querySelectorAll(dominantTag.tag).length;
+            if (newCount >= 3) {
+              console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
+              const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+              const newFingerprint = extractFingerprint(sanitizedHtml);
+              if (newFingerprint) component.headingFingerprint = newFingerprint;
+              return _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded);
+            }
+          }
           return {
             success: false,
             error: 'Fetch failed, tab refresh returned different element',
@@ -2343,11 +2392,18 @@ async function refreshComponent(component) {
               logStructureFingerprint('skeleton-cached-original', component.html_cache);
               logStructureFingerprint('skeleton-tab-refresh-result', tabHtml);
               // Feed fallback: fingerprint mismatch on a feed just means content rotated
+              const _skeletonTabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
+              if (_structureMarkerMatches(component, _skeletonTabDoc)) {
+                console.log(`[SB-REFRESH] Structural marker matched (${component.structureMarker.attr}="${component.structureMarker.value}") — accepting refresh despite fingerprint rotation`);
+                const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+                const newFingerprint = extractFingerprint(sanitizedHtml);
+                if (newFingerprint) component.headingFingerprint = newFingerprint;
+                return _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded);
+              }
               // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
               const dominantTag = getDominantTag(component.html_cache);
               if (dominantTag && dominantTag.tag !== 'a') {
-                const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
-                const newCount = tabDoc.querySelectorAll(dominantTag.tag).length;
+                const newCount = _skeletonTabDoc.querySelectorAll(dominantTag.tag).length;
                 if (newCount >= 3) {
                   console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
                   const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
@@ -2535,11 +2591,18 @@ async function refreshComponent(component) {
             if (!component.positionBased && originalFingerprint && !tabHtml.toLowerCase().includes(originalFingerprint.toLowerCase())) {
               console.warn('[Selector Not Found] Fingerprint mismatch - checking for feed rotation');
               // Feed fallback: fingerprint mismatch on a news feed just means content rotated
+              const _selectorTabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
+              if (_structureMarkerMatches(component, _selectorTabDoc)) {
+                console.log(`[SB-REFRESH] Structural marker matched (${component.structureMarker.attr}="${component.structureMarker.value}") — accepting refresh despite fingerprint rotation`);
+                const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
+                const newFingerprint = extractFingerprint(sanitizedHtml);
+                if (newFingerprint) component.headingFingerprint = newFingerprint;
+                return _buildTabSuccessResult(sanitizedHtml, component, selectorTabActiveFocus);
+              }
               // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
               const dominantTag = getDominantTag(component.html_cache);
               if (dominantTag && dominantTag.tag !== 'a') {
-                const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
-                const newCount = tabDoc.querySelectorAll(dominantTag.tag).length;
+                const newCount = _selectorTabDoc.querySelectorAll(dominantTag.tag).length;
                 if (newCount >= 3) {
                   console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
                   const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
@@ -2829,6 +2892,7 @@ async function refreshAll(allowedIds = null) {
           lastErrorAt: comp.lastErrorAt,
           ...(comp.requiresActiveFocus ? { requiresActiveFocus: true } : {}),
           ...(comp.requiresFixedCaptureWidth ? { requiresFixedCaptureWidth: true } : {}),
+          ...(comp.structureMarker ? { structureMarker: comp.structureMarker } : {}), // issue #77: preserve capture-time identity marker
           ...(comp.board ? { board: comp.board } : {}),
           ...(comp.created_at ? { created_at: comp.created_at } : {}) // issue #18: preserve capture-order key
         };
@@ -2867,6 +2931,7 @@ async function refreshAll(allowedIds = null) {
           ...syncEntry, // last_refresh + lastAttemptAt/lastSuccessAt/lastOutcome/lastErrorCode/lastErrorAt
           ...(updatedActiveFocus ? { requiresActiveFocus: true } : {}),
           ...(comp.requiresFixedCaptureWidth ? { requiresFixedCaptureWidth: true } : {}),
+          ...(comp.structureMarker ? { structureMarker: comp.structureMarker } : {}), // issue #77: preserve capture-time identity marker
           ...(comp.board ? { board: comp.board } : {}),
           ...(comp.created_at ? { created_at: comp.created_at } : {}) // issue #18: preserve capture-order key
         };

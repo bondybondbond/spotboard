@@ -14,6 +14,46 @@ const log = (...args: any[]) => DEBUG && console.log(...args);
 // See LEARNINGS.md REF-16 / STUDY-kalshi-charts.md Phase 2 item 8.
 const VOLATILE_FINGERPRINT_RE = /^[+-]?[$€£¢]?\s*[\d,]+(\.\d+)?\s*[%¢$]?\s*(k|m|b|pts?|p)?$/i;
 
+/**
+ * Structural-identity marker for the feed-rotation rescue (issue #77). Finds a capture-time
+ * data-testid/data-test value inside the capture root, kept only if it's globally unique on
+ * the whole page right now -- positive per-instance identity, not a generic class-name
+ * convention (a class token can legitimately repeat across similar-but-different widgets,
+ * e.g. a "related stories" rail reusing the same design-system prefix -- rejected from this
+ * mechanism after a product-proxy objection during #77's design). Consumed at refresh time by
+ * _structureMarkerMatches() in refresh-engine.js, scoped to the already-resolved refresh
+ * candidate's own subtree, not a fresh page-wide search.
+ */
+function extractStructureMarker(root: Element): { attr: string; value: string } | null {
+  // Breadth-first by depth, not document order: a shallow, deliberately-authored container id
+  // represents the captured region far better than a deeply-nested leaf badge/button that only
+  // happens to be unique right now (e.g. a single "Exclusive" article badge with a reused
+  // data-testid, vs. the region's own container-level data-test one level below its wrapper --
+  // live-reproduced on CNBC during #77's build: document-order search picked the badge). At each
+  // depth level, data-testid is checked before data-test on the same element.
+  let level: Element[] = [root];
+  while (level.length) {
+    // Attr tier is the outer loop so, at a given depth, every data-testid candidate is checked
+    // before any data-test candidate -- an explicit, deterministic tie-break across different
+    // elements at the same depth, not just within one element.
+    for (const attr of ['data-testid', 'data-test']) {
+      for (const el of level) {
+        const value = el.getAttribute(attr);
+        if (!value) continue;
+        try {
+          if (document.querySelectorAll(`[${attr}="${CSS.escape(value)}"]`).length === 1) {
+            return { attr, value };
+          }
+        } catch (_) {
+          // Malformed attribute value for a CSS selector -- skip this candidate, keep looking.
+        }
+      }
+    }
+    level = level.flatMap(el => Array.from(el.children));
+  }
+  return null;
+}
+
 let isCapturing = false;
 let lockedElement: HTMLElement | null = null; // Track element waiting for confirmation
 let excludedElements: HTMLElement[] = []; // Track child elements marked for exclusion (red)
@@ -2069,6 +2109,16 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         // Fallback: use the card name as fingerprint when no visible heading exists
         const fallbackName = name !== `Spot from ${window.location.hostname}` ? name : null;
         const headingFingerprint = fpText ? fpText.substring(0, 100) : (fallbackName ? fallbackName.substring(0, 100) : null);
+
+        // Structural-identity marker (issue #77): a capture-time data-testid/data-test value,
+        // kept only if it's globally unique on the page right now. Lets refresh's feed-rotation
+        // rescue recognize "same widget, rotated content" for <a>-dominant feeds (e.g. CNBC's
+        // news river) without trusting a volatile text fingerprint — see refresh-engine.js
+        // _structureMarkerMatches(). Deliberately attribute-only (data-testid/data-test), not a
+        // class-name convention: a class token can legitimately repeat across similar-but-
+        // different widgets on the same page (rejected in #77's design after a real product-proxy
+        // objection), while a test-id attribute is purpose-built per-instance identity.
+        const structureMarker = extractStructureMarker(fpRoot);
         // 🎯 BATCH 2: Use finalPositionBased (user's selection from Advanced panel)
         // Don't recalculate - respect user's choice even if it conflicts with heading presence
         log('📍 Using final capture mode:', finalPositionBased ? 'Position-based' : 'Header-based');
@@ -2103,6 +2153,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           customLabel: undefined,  // New captures don't have custom labels yet
           selector: component.selector,
           headingFingerprint: headingFingerprint,  // 🎯 BATCH 2: Auto-extracted for self-healing
+          structureMarker: structureMarker,  // issue #77: capture-time identity marker for feed-rotation rescue
           positionBased: finalPositionBased  // 🎯 BATCH 2: Use user's final selection from Advanced panel
           // 🎯 FIX: excludedSelectors stored in LOCAL only (too large for sync quota)
         };
@@ -2187,6 +2238,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
             customLabel: metadata.customLabel,
             selector: metadata.selector,
             headingFingerprint: metadata.headingFingerprint,
+            structureMarker: metadata.structureMarker, // issue #77: capture-time identity marker for feed-rotation rescue
             positionBased: finalPositionBased, // 🎯 BATCH 2: User's final selection from Advanced panel
             excludedSelectors: excludedSelectors, // IMPORTANT: Sync for cross-device!
             last_refresh: component.last_refresh,

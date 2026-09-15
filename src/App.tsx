@@ -25,6 +25,7 @@ interface Component {
   customLabel?: string; // User's custom label (optional)
   favicon?: string; // Site favicon URL
   headingFingerprint?: string; // 🎯 FIX: Heading text for fallback selector detection
+  structureMarker?: { attr: string; value: string } | null; // issue #77: capture-time identity marker for feed-rotation rescue
   selector?: string; // From local storage
   html_cache?: string; // From local storage
   last_refresh?: string; // From local storage
