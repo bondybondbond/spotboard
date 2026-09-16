@@ -1464,7 +1464,15 @@ function handleClick(event: MouseEvent) {
       // preview last highlighted. A mismatch means content shifted between hover and click
       // (see issue #1 -- Kalshi's live-updating table) -- exclude nothing rather than risk
       // excluding a different element than the one the user saw highlighted.
-      const alreadyExcluded = excludedElements.includes(target);
+      // Real cell markup rarely puts the click target itself in `excludedElements` -- sites
+      // commonly wrap values in nested <span>s (yr.no: <td><span class="fluid-table__cell-
+      // content"><span>...), so a real click's `target` is almost always a descendant of the
+      // actual excluded <td>, not the <td> itself (same resolve-up-to-the-cell issue documented
+      // in getTableColumnCells for #62/#67). Comparing `target` directly against
+      // `excludedElements` silently misses every real click on an excluded nested-markup cell --
+      // resolve to whichever excluded element actually contains `target` (or is `target`).
+      const excludedAncestor = excludedElements.find(el => el.contains(target));
+      const alreadyExcluded = !!excludedAncestor;
       // Shift is very commonly pressed only at click time, after the mouse has already stopped
       // moving over the target -- no further mousemove fires in that case, so a hover preview
       // computed without Shift held never got a chance to compute a group at all (real-world
@@ -1503,14 +1511,14 @@ function handleClick(event: MouseEvent) {
         // the exclude path's #1 fail-safe) -- already-excluded elements never get a hover
         // preview computed for them (see handleHover), so this group is always computed fresh
         // at click time, same as the exclude path already does when Shift is pressed late.
-        const unexcludeGroup = event.shiftKey ? getSimilarSiblings(target) : null;
+        const unexcludeGroup = event.shiftKey ? getSimilarSiblings(excludedAncestor!) : null;
         if (unexcludeGroup && unexcludeGroup.length > 1) {
           unexcludeGroup.forEach(el => {
             if (excludedElements.includes(el)) toggleExclusion(el);
           });
           log('✅ Bulk-un-excluded', unexcludeGroup.length, 'similar siblings');
         } else {
-          toggleExclusion(target);
+          toggleExclusion(excludedAncestor!);
         }
       } else if (willBulkExclude) {
         freshGroup!.forEach(el => {
@@ -1971,6 +1979,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       <div style="font-size: 14px; opacity: 0.9; font-family: inherit;">
         Click elements inside the green box to exclude them.<br>
         Shift+Click to exclude all similar siblings too.<br>
+        Click an excluded element again to bring it back (Shift+Click un-excludes the whole group).<br>
         Preview updates as you exclude.
       </div>
     </div>
