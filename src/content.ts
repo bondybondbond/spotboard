@@ -1977,9 +1977,9 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         ✅ Captured: <span class="sb-capture-name"></span>
       </div>
       <div style="font-size: 14px; opacity: 0.9; font-family: inherit;">
-        Click elements inside the green box to exclude them.<br>
-        Shift+Click to exclude all similar siblings too.<br>
-        Click an excluded element again to bring it back (Shift+Click un-excludes the whole group).<br>
+        Click an element to exclude it.<br>
+        Shift+Click to exclude all similar elements.<br>
+        Click an excluded element to bring it back.<br>
         Preview updates as you exclude.
       </div>
     </div>
