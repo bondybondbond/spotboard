@@ -56,3 +56,11 @@
 - **MIT License Text**: https://opensource.org/licenses/MIT
 - **Used in**: Onboarding playground page weather widget
 - **Location in repo**: Inline SVGs in `docs/sandbox.html`
+
+### Collapse / Expand (Double Chevron) Icons
+
+- **Source**: GitLab SVGs (https://gitlab.com/gitlab-org/gitlab-svgs), via IconDuck (https://iconduck.com)
+- **License**: MIT
+- **MIT License Text**: https://opensource.org/licenses/MIT
+- **Used in**: Capture exclusion panel's Collapse/Expand button (#60)
+- **Location in repo**: Inline SVGs in `src/content.ts` (`showCaptureConfirmation()`)

@@ -1951,8 +1951,9 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   const modal = document.createElement('div');
   modal.style.cssText = `
     position: fixed !important;
-    top: 20px !important;
+    top: 50% !important;
     right: 20px !important;
+    transform: translateY(-50%) !important;
     background: #6b46c1 !important;
     color: white !important;
     padding: 0 !important;
@@ -1972,43 +1973,26 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   `;
   
   modal.innerHTML = `
-    <div style="padding: 20px; flex-shrink: 0; font-family: inherit;">
-      <div class="sb-capture-title" style="font-size: 16px; font-weight: 600; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit;" title="">
-        ✅ Captured: <span class="sb-capture-name"></span>
-      </div>
-      <div style="font-size: 14px; opacity: 0.9; font-family: inherit;">
-        Click an element to exclude it.<br>
-        Shift+Click to exclude all similar elements.<br>
-        Click an excluded element to bring it back.<br>
-        Preview updates as you exclude.
+    <div id="spotboard-modal-header" style="padding: 20px 20px 12px; flex-shrink: 0; font-family: inherit;">
+      <div id="spotboard-modal-title" style="font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit;" title="">
+        <span class="sb-capture-title-expanded">✅ Captured: <span class="sb-capture-name"></span></span>
+        <span class="sb-capture-title-minimized" style="display: none;">Add to board?</span>
       </div>
     </div>
-    <div style="padding: 0 20px; flex-shrink: 0; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 12px; font-family: inherit;">
-      <div id="advancedToggle" style="cursor: pointer; font-size: 13px; opacity: 0.8; user-select: none; font-family: inherit;">
-        ⚙️ Advanced
+    <div id="spotboard-modal-body" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+      <div style="padding: 8px 20px 0; flex-shrink: 0; font-family: inherit;">
+        <span style="font-size: 13px; color: white; font-family: inherit;">Preview</span>
       </div>
-      <div id="advancedPanel" style="display: none; margin-top: 8px; font-size: 13px; font-family: inherit;">
-        <div style="margin-bottom: 6px; opacity: 0.9; font-family: inherit;">Capture mode:</div>
-        <label style="display: block !important; margin: 6px 0 !important; cursor: pointer !important; opacity: 0.95 !important; font-family: inherit !important;">
-          <input type="radio" name="captureMode" value="header" ${!positionBased ? 'checked' : ''} style="display: inline-block !important; margin-right: 6px !important; width: auto !important; height: auto !important; opacity: 1 !important; position: static !important;">
-          <span style="display: inline !important; vertical-align: middle !important; font-family: inherit !important;">Header-based (uses section title)</span>
-        </label>
-        <label style="display: block !important; margin: 6px 0 !important; cursor: pointer !important; opacity: 0.95 !important; font-family: inherit !important;">
-          <input type="radio" name="captureMode" value="position" ${positionBased ? 'checked' : ''} style="display: inline-block !important; margin-right: 6px !important; width: auto !important; height: auto !important; opacity: 1 !important; position: static !important;">
-          <span style="display: inline !important; vertical-align: middle !important; font-family: inherit !important;">Position-based (uses spot position on page)</span>
-        </label>
+      <div style="padding: 8px 20px 12px; flex: 1; min-height: 0; overflow-y: auto;">
+        <div id="spotboard-preview-container">
+          <iframe id="spotboard-preview-iframe"
+            sandbox="allow-same-origin"
+            style="width: 100%; height: 320px; border: none; border-radius: 6px; background: #fff; display: block; opacity: 0.5; transition: opacity 0.3s;"
+          ></iframe>
+        </div>
       </div>
     </div>
-    <div style="padding: 12px 20px; flex: 1; min-height: 0; overflow-y: auto;">
-      <div id="spotboard-preview-toggle" style="font-size: 13px; opacity: 0.8; margin-bottom: 6px; cursor: pointer; user-select: none; font-family: inherit;">▾ Preview</div>
-      <div id="spotboard-preview-container">
-        <iframe id="spotboard-preview-iframe"
-          sandbox="allow-same-origin"
-          style="width: 100%; height: 250px; border: none; border-radius: 6px; background: #fff; display: block; opacity: 0.5; transition: opacity 0.3s;"
-        ></iframe>
-      </div>
-    </div>
-    <div style="display: flex; gap: 8px; padding: 12px 20px; flex-shrink: 0; background: #6b46c1; border-radius: 0 0 12px 12px; position: sticky; bottom: 0; z-index: 1; font-family: inherit;">
+    <div id="spotboard-modal-footer" style="display: flex; flex-direction: row; gap: 8px; padding: 12px 20px; flex-shrink: 0; background: #6b46c1; position: sticky; bottom: 0; z-index: 1; font-family: inherit;">
       <button id="confirmSpot" style="flex: 1; padding: 12px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; text-transform: none !important;">
         Confirm Spot
       </button>
@@ -2016,32 +2000,67 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         Cancel
       </button>
     </div>
+    <div id="spotboard-collapse-row" style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 6px 20px 14px; flex-shrink: 0; border-radius: 0 0 12px 12px; background: #6b46c1; font-family: inherit;">
+      <span class="sb-collapse-label" style="font-size: 13px; color: white; font-family: inherit;">Collapse</span>
+      <button id="spotboard-collapse-toggle" type="button" style="flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: none; border-radius: 6px; background: #6b7280; color: #ffffff; cursor: pointer; font-family: inherit;">
+        <svg class="sb-collapse-icon-collapse" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M3.70711,2.29289 L8.70711,7.29289 C9.09763,7.68342 9.09763,8.31658 8.70711,8.70711 L3.70711,13.7071 C3.31658,14.0976 2.68342,14.0976 2.29289,13.7071 C1.90237,13.3166 1.90237,12.6834 2.29289,12.2929 L6.58579,8 L2.29289,3.70711 C1.90237,3.31658 1.90237,2.68342 2.29289,2.29289 C2.68342,1.90237 3.31658,1.90237 3.70711,2.29289 Z M8.70711,2.29289 L13.7071,7.29289 C14.0976,7.68342 14.0976,8.31658 13.7071,8.70711 L8.70711,13.7071 C8.31658,14.0976 7.68342,14.0976 7.29289,13.7071 C6.90237,13.3166 6.90237,12.6834 7.29289,12.2929 L11.5858,8 L7.29289,3.70711 C6.90237,3.31658 6.90237,2.68342 7.29289,2.29289 C7.68342,1.90237 8.31658,1.90237 8.70711,2.29289 Z"/></svg>
+        <svg class="sb-collapse-icon-expand" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" style="display: none;"><path fill="currentColor" fill-rule="evenodd" d="M2.29289,7.29289 L7.29289,2.29289 C7.68342,1.90237 8.31658,1.90237 8.70711,2.29289 C9.06759,2.65337923 9.09531923,3.22060645 8.79029769,3.61290152 L8.70711,3.70711 L4.41421,8 L8.70711,12.2929 C9.09763,12.6834 9.09763,13.3166 8.70711,13.7071 C8.34662077,14.0675615 7.77939355,14.0952893 7.38709848,13.7902834 L7.29289,13.7071 L2.29289,8.70711 C1.93241,8.34662077 1.90468077,7.77939355 2.20970231,7.38709848 L2.29289,7.29289 L7.29289,2.29289 L2.29289,7.29289 Z M7.29289,7.29289 L12.2929,2.29289 C12.6834,1.90237 13.3166,1.90237 13.7071,2.29289 C14.0675615,2.65337923 14.0952893,3.22060645 13.7902834,3.61290152 L13.7071,3.70711 L9.41421,8 L13.7071,12.2929 C14.0976,12.6834 14.0976,13.3166 13.7071,13.7071 C13.3466385,14.0675615 12.7793793,14.0952893 12.3871027,13.7902834 L12.2929,13.7071 L7.29289,8.70711 C6.93241,8.34662077 6.90468077,7.77939355 7.20970231,7.38709848 L7.29289,7.29289 L12.2929,2.29289 L7.29289,7.29289 Z"/></svg>
+      </button>
+    </div>
   `;
 
   const captureNameEl = modal.querySelector('.sb-capture-name') as HTMLElement;
-  const captureTitleEl = modal.querySelector('.sb-capture-title') as HTMLElement;
+  const captureTitleEl = modal.querySelector('#spotboard-modal-title') as HTMLElement;
   if (captureNameEl) captureNameEl.textContent = name;
   if (captureTitleEl) captureTitleEl.setAttribute('title', name);
+
+  // 🎯 #60: the "what to do" instructions live in the persistent top bar (shown for the
+  // whole exclusion-mode duration, independent of this panel's state — see
+  // showExclusionBanner below). The panel itself keeps two jobs: a previewer (Advanced +
+  // Preview, its main function, collapsed here) and Confirm/Cancel (works in both states,
+  // since confirming or cancelling the spot must stay reachable either way). Collapsing
+  // only hides the previewer and narrows the panel to a compact strip — Confirm/Cancel
+  // stack vertically to fit, matching the narrower width. Preserves in-progress
+  // exclusions/preview untouched (body is only hidden, never torn down) and resets per
+  // capture attempt (module-scoped DOM, no persisted preference). Esc-to-cancel is
+  // unaffected — its handler is document-level.
+  const collapseToggle = modal.querySelector('#spotboard-collapse-toggle') as HTMLButtonElement;
+  const collapseRow = modal.querySelector('#spotboard-collapse-row') as HTMLDivElement;
+  const modalBody = modal.querySelector('#spotboard-modal-body') as HTMLDivElement;
+  const modalFooter = modal.querySelector('#spotboard-modal-footer') as HTMLDivElement;
+  const titleExpanded = modal.querySelector('.sb-capture-title-expanded') as HTMLElement;
+  const titleMinimized = modal.querySelector('.sb-capture-title-minimized') as HTMLElement;
+  const collapseLabel = modal.querySelector('.sb-collapse-label') as HTMLElement;
+  const collapseIconCollapse = modal.querySelector('.sb-collapse-icon-collapse') as HTMLElement;
+  const collapseIconExpand = modal.querySelector('.sb-collapse-icon-expand') as HTMLElement;
+  const confirmBtnLabel = modal.querySelector('#confirmSpot') as HTMLButtonElement;
+  if (collapseToggle && collapseRow && modalBody && modalFooter) {
+    collapseToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const willMinimize = modalBody.style.display !== 'none';
+      modalBody.style.display = willMinimize ? 'none' : 'flex';
+      modalFooter.style.flexDirection = willMinimize ? 'column' : 'row';
+      titleExpanded.style.display = willMinimize ? 'none' : '';
+      titleMinimized.style.display = willMinimize ? '' : 'none';
+      collapseLabel.textContent = willMinimize ? 'Expand' : 'Collapse';
+      collapseIconCollapse.style.display = willMinimize ? 'none' : '';
+      collapseIconExpand.style.display = willMinimize ? '' : 'none';
+      if (confirmBtnLabel) confirmBtnLabel.textContent = willMinimize ? 'Confirm' : 'Confirm Spot';
+      modal.style.width = willMinimize ? '160px' : '340px';
+      // Collapsed ("Expand"): icon left of label, whole row left-aligned.
+      // Expanded ("Collapse"): label left of icon, whole row right-aligned.
+      collapseRow.style.justifyContent = willMinimize ? 'flex-start' : 'flex-end';
+      collapseLabel.style.order = willMinimize ? '1' : '0';
+      collapseToggle.style.order = willMinimize ? '0' : '1';
+    }, true);
+  }
+
+  showExclusionBanner();
 
   log('📦 Modal HTML created, appending to body...');
   shadow.appendChild(modal);
   log('✅ Modal appended to DOM successfully');
-  
-  // 🎯 Preview collapse toggle
-  const previewToggle = modal.querySelector('#spotboard-preview-toggle') as HTMLDivElement;
-  const previewContainer = modal.querySelector('#spotboard-preview-container') as HTMLDivElement;
-  if (previewToggle && previewContainer) {
-    previewToggle.addEventListener('click', () => {
-      const isHidden = previewContainer.style.display === 'none';
-      previewContainer.style.display = isHidden ? '' : 'none';
-      previewToggle.textContent = isHidden ? '▾ Preview' : '▸ Preview';
-    });
-    // Auto-collapse on small viewports (<600px height)
-    if (window.innerHeight < 600) {
-      previewContainer.style.display = 'none';
-      previewToggle.textContent = '▸ Preview';
-    }
-  }
 
   // Trigger initial preview render
   updatePreview();
@@ -2053,17 +2072,6 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
     log('🗑️ Yellow banner removed - now in exclusion mode');
   }
   
-  // 🎯 BATCH 2: Advanced toggle functionality
-  const advancedToggle = modal.querySelector('#advancedToggle') as HTMLDivElement;
-  const advancedPanel = modal.querySelector('#advancedPanel') as HTMLDivElement;
-  if (advancedToggle && advancedPanel) {
-    advancedToggle.addEventListener('click', () => {
-      const isVisible = advancedPanel.style.display === 'block';
-      advancedPanel.style.display = isVisible ? 'none' : 'block';
-      log('⚙️ Advanced panel toggled:', !isVisible ? 'visible' : 'hidden');
-    });
-  }
-  
   // Confirm button handler - use capture phase to ensure it fires first
   const confirmBtn = modal.querySelector('#confirmSpot') as HTMLButtonElement;
   if (confirmBtn) {
@@ -2071,14 +2079,16 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
             e.stopPropagation();
       e.preventDefault();
       
-      // 🎯 BATCH 2: Read selected capture mode (user may have overridden auto-detection)
-      const selectedMode = (modal.querySelector('input[name="captureMode"]:checked') as HTMLInputElement)?.value || 'header';
-      const finalPositionBased = selectedMode === 'position';
-      log('📍 Final capture mode (user selected):', finalPositionBased ? 'Position-based' : 'Header-based');
+      // 🎯 #60: the Advanced header/position-mode toggle was removed from this panel --
+      // no UI override exists anymore, so fall through to whatever auto-detection decided
+      // (the `positionBased` param this function was called with), not a hardcoded default.
+      const finalPositionBased = positionBased;
+      log('📍 Final capture mode (auto-detected):', finalPositionBased ? 'Position-based' : 'Header-based');
 
       host.remove();
+      document.getElementById('spotboard-exclusion-banner')?.remove();
       _confirmationShadow = null;
-      
+
       // ⏳ WAIT 2 SECONDS FOR JS FRAMEWORKS TO RENDER
       log('⏳ Waiting 2s for JavaScript to render...');
       
@@ -2535,6 +2545,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
             e.stopPropagation();
       e.preventDefault();
       host.remove();
+      document.getElementById('spotboard-exclusion-banner')?.remove();
       _confirmationShadow = null;
       // Clear green flash and unlock
       target.style.outline = '';
@@ -2561,6 +2572,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   const escapeHandler = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
             host.remove();
+      document.getElementById('spotboard-exclusion-banner')?.remove();
       _confirmationShadow = null;
       target.style.outline = '';
       target.style.cursor = '';
@@ -2644,6 +2656,48 @@ function showCaptureBanner() {
   document.body.appendChild(banner);
 }
 
+// 🎯 #60: shown for the whole exclusion-mode step (from when the overlay first opens) —
+// reuses the top-banner slot (rather than duplicating instructions in the overlay too) recolored
+// into an "exclusion mode" indicator. Shown for the whole exclusion-mode duration —
+// independent of the overlay's own minimize/expand — and torn down alongside the modal
+// on every exit path (confirm/cancel/Esc/capture-mode teardown). Purely informational
+// (pointer-events: none, like the yellow banner) and marked data-spotboard-ignore so
+// it's never itself treated as an exclusion target (handleClick already skips
+// [data-spotboard-ignore] before touching excludedElements).
+function showExclusionBanner() {
+  document.getElementById('spotboard-exclusion-banner')?.remove();
+
+  const banner = document.createElement('div');
+  banner.id = 'spotboard-exclusion-banner';
+  banner.setAttribute('data-spotboard-ignore', 'true');
+  banner.style.cssText = `
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    background: #6b46c1 !important;
+    color: #ffffff !important;
+    padding: 10px 20px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    font-size: 14px !important;
+    font-weight: 400 !important;
+    z-index: 2147483646 !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    pointer-events: none !important;
+  `;
+
+  const hl = 'color: #fbbf24 !important; font-weight: 700 !important;';
+  banner.innerHTML = `
+    <span style="pointer-events: none;">❎ <strong style="font-weight: 700 !important;">EXCLUSION MODE</strong> - <span style="${hl}">click</span> an element to exclude or restore an area, <span style="${hl}">[Shift] + click</span> to exclude or restore entire similar area</span>
+  `;
+
+  document.body.appendChild(banner);
+}
+
 // Lightweight, non-blocking, self-dismissing hint shown while capture mode stays active
 // (e.g. onboarding "pick a bigger section" recovery). Not showStyledNotification — that is a
 // full-screen blocking modal with a "View on SpotBoard" button, wrong for a "try again" nudge.
@@ -2710,6 +2764,7 @@ function toggleCapture(forceState?: boolean) {
     // Remove capture banner
     const banner = document.getElementById('spotboard-capture-banner');
     if (banner) banner.remove();
+    document.getElementById('spotboard-exclusion-banner')?.remove();
   }
 }
 
