@@ -604,51 +604,71 @@ function handleHover(event: MouseEvent) {
   
     
   if (lockedElement) {
-        
+
     // Keep green outline on locked element
     lockedElement.style.setProperty('outline', '5px solid #00ff00', 'important');
-    
-    // Check if hovering over a child of locked element (but not the locked element itself)
-    if (lockedElement.contains(target) && target !== lockedElement) {
-      // Clear any previously-previewed similar-siblings group before computing new state --
-      // sibling elements other than `target` don't get their own mouseout when the pointer
-      // moves to a different candidate, so this hover pass is what clears their preview.
-      if (hoveredSimilarGroup.length > 0) {
-        hoveredSimilarGroup.forEach(el => {
-          if (el !== target && !excludedElements.includes(el)) {
-            el.style.removeProperty('outline');
-            el.style.removeProperty('background');
-          }
-        });
-        hoveredSimilarGroup = [];
-      }
 
+    // See past a content-less "stretched link" overlay to whatever it's covering (#81).
+    const hitTarget = resolveExclusionHitTarget(event, lockedElement);
+    const isValidExclusionTarget = lockedElement.contains(hitTarget) && hitTarget !== lockedElement;
+
+    // Clear stale previews left by the PREVIOUS hover state whenever it no longer covers the
+    // current hit target -- including the transition to an INVALID target (e.g. the mouse moved
+    // onto the locked element's own padding, off every child). On a normal site this is mostly a
+    // no-op -- a real per-element mouseout already clears the previous element via handleExit
+    // before mouseover fires on the next one. But when the mouse never actually leaves a
+    // content-less overlay (raw event.target stays the SAME element throughout), no such
+    // mouseout ever fires for the elements underneath it, so these transitions would otherwise
+    // leave stale dashed-red previews stuck indefinitely (#81 follow-up, caught by cold review
+    // -- first for candidate-to-candidate transitions, then again for the valid-to-invalid one).
+    if (hoveredSimilarGroup.length > 0 && !hoveredSimilarGroup.includes(hitTarget)) {
+      hoveredSimilarGroup.forEach(el => {
+        if (!excludedElements.includes(el)) {
+          el.style.removeProperty('outline');
+          el.style.removeProperty('background');
+        }
+      });
+      hoveredSimilarGroup = [];
+    }
+    if (
+      hoveredExclusionCandidate &&
+      hoveredExclusionCandidate !== hitTarget &&
+      !excludedElements.includes(hoveredExclusionCandidate)
+    ) {
+      hoveredExclusionCandidate.style.removeProperty('outline');
+      hoveredExclusionCandidate.style.removeProperty('background');
+      hoveredExclusionCandidate.style.removeProperty('cursor');
+      hoveredExclusionCandidate = null;
+    }
+
+    // Check if hovering over a child of locked element (but not the locked element itself)
+    if (isValidExclusionTarget) {
       // Check if this element is already excluded
-      const isAlreadyExcluded = excludedElements.includes(target);
+      const isAlreadyExcluded = excludedElements.includes(hitTarget);
 
       if (isAlreadyExcluded) {
         // Keep the solid red styling for already-excluded elements
-        target.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
-        target.style.setProperty('outline', '2px solid #ff0000', 'important');
+        hitTarget.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
+        hitTarget.style.setProperty('outline', '2px solid #ff0000', 'important');
         hoveredExclusionCandidate = null;
-      } else if (event.shiftKey && getSimilarSiblings(target).length > 1) {
+      } else if (event.shiftKey && getSimilarSiblings(hitTarget).length > 1) {
         // Shift+hover: preview the whole similar-siblings group for bulk exclusion (#34)
-        const group = getSimilarSiblings(target);
+        const group = getSimilarSiblings(hitTarget);
         group.forEach(el => {
           if (!excludedElements.includes(el)) {
             el.style.setProperty('outline', '2px dashed #ff0000', 'important');
             el.style.setProperty('background', 'transparent', 'important');
           }
         });
-        hoveredExclusionCandidate = target;
+        hoveredExclusionCandidate = hitTarget;
         hoveredSimilarGroup = group;
       } else {
         // Show dashed red border preview for potential exclusion
-        target.style.setProperty('outline', '2px dashed #ff0000', 'important');
-        target.style.setProperty('background', 'transparent', 'important');
-        hoveredExclusionCandidate = target;
+        hitTarget.style.setProperty('outline', '2px dashed #ff0000', 'important');
+        hitTarget.style.setProperty('background', 'transparent', 'important');
+        hoveredExclusionCandidate = hitTarget;
       }
-      target.style.cursor = 'pointer';
+      hitTarget.style.cursor = 'pointer';
     }
 
     return;
@@ -659,6 +679,19 @@ function handleHover(event: MouseEvent) {
   target.style.cursor = 'crosshair';
   
   event.stopPropagation();
+}
+
+// Once a card is locked, real hit-testing keeps resolving every point inside a content-less
+// "stretched link" overlay to that SAME overlay element (see resolveExclusionHitTarget) --  and
+// because the topmost hit target never actually changes as the mouse moves around inside it,
+// 'mouseover'/'mouseout' never fire again to update the exclusion-hover preview, so a user can
+// never get past the first element they hovered (#81's "exclusion appears non-functional").
+// 'mousemove' fires on every internal move regardless of topmost-target churn, so drive the
+// post-lock exclusion-hover preview from it instead -- bailing out immediately whenever nothing
+// is locked, so this costs one cheap check per move outside the narrow window it exists for.
+function handleExclusionHover(event: MouseEvent) {
+  if (!isCapturing || !lockedElement) return;
+  handleHover(event);
 }
 
 // 2. Exit Handler (Cleanup)
@@ -1431,6 +1464,56 @@ function handleMouseDown(event: MouseEvent) {
   }
 }
 
+// Editorial card layouts (Guardian, and other similar "whole card clickable" designs) commonly
+// stretch an invisible <a> (href + aria-label, zero rendered children) over an entire visual
+// card purely so the whole card is clickable -- the real heading/image/text live in sibling
+// elements, not inside this overlay. A click anywhere on such a card resolves event.target to
+// this overlay, which has nothing of its own to capture (#81 -- Guardian preview came back
+// empty and had nothing to exclude, because the locked element genuinely had no content).
+// Climb to the nearest ancestor that actually has rendered content, capped so this can never
+// walk past a card boundary into a whole page section. Self-contained media tags are excluded
+// from the "empty" check since having no children/text is normal and correct for them.
+const MAX_EMPTY_CLIMB = 3;
+const SELF_CONTAINED_TAGS = new Set(['IMG', 'VIDEO', 'CANVAS', 'SVG', 'IFRAME', 'INPUT', 'AUDIO', 'PICTURE']);
+const hasOwnContent = (node: HTMLElement): boolean =>
+  SELF_CONTAINED_TAGS.has(node.tagName) ||
+  node.childElementCount > 0 ||
+  (node.textContent || '').trim().length > 0;
+
+function resolveMeaningfulCaptureTarget(el: HTMLElement): HTMLElement {
+  if (hasOwnContent(el)) return el;
+
+  let current = el;
+  for (let i = 0; i < MAX_EMPTY_CLIMB; i++) {
+    if (!current.parentElement || current.parentElement === document.body) break;
+    current = current.parentElement;
+    if (hasOwnContent(current)) return current;
+  }
+  // Never found an ancestor with content within the climb cap -- fail safe to the original
+  // target rather than locking onto an arbitrary, possibly still-empty, ancestor.
+  return el;
+}
+
+// The same content-less "stretched link" overlay that defeats capture-root selection above also
+// intercepts every hover/click *inside* an already-locked card: real hit-testing always resolves
+// to whichever element is topmost at that point, which is this overlay for the whole card area --
+// so a user trying to exclude the image or headline underneath it never reaches those elements at
+// all (#81's second symptom -- "clicking elements inside the green box does not mark them for
+// exclusion"). When the resolved event target is itself content-less, look at what's rendered
+// immediately beneath it via elementsFromPoint and treat that as the real hit instead.
+function resolveExclusionHitTarget(event: MouseEvent, root: HTMLElement): HTMLElement {
+  const raw = event.target as HTMLElement;
+  if (raw === root || hasOwnContent(raw)) return raw;
+  const candidates = document.elementsFromPoint(event.clientX, event.clientY)
+    .filter((el): el is HTMLElement => el instanceof HTMLElement && el !== raw && el !== root && root.contains(el));
+  // Prefer the first candidate that actually has content of its own -- a design can legitimately
+  // stack more than one content-less layer (e.g. a decorative overlay between the click-catcher
+  // and the real content), and stopping at the first non-raw element regardless of content would
+  // silently resolve to another empty node. Fall back to that first candidate only if nothing in
+  // the stack has content, so this still resolves to *something* inside root rather than nothing.
+  return candidates.find(hasOwnContent) || candidates[0] || raw;
+}
+
 function handleClick(event: MouseEvent) {
   if (!isCapturing) return;
   
@@ -1455,9 +1538,12 @@ function handleClick(event: MouseEvent) {
   
   // If we already have a locked element, check if clicking child for exclusion
   if (lockedElement) {
-        
+
+    // See past a content-less "stretched link" overlay to whatever it's covering (#81).
+    const hitTarget = resolveExclusionHitTarget(event, lockedElement);
+
     // Check if clicked element is a child of locked element (but not the locked element itself)
-    if (lockedElement.contains(target) && target !== lockedElement) {
+    if (lockedElement.contains(hitTarget) && hitTarget !== lockedElement) {
             event.preventDefault();
       event.stopPropagation();
       // Fail-safe: only honor this as an exclusion if it lands on the element the hover
@@ -1466,12 +1552,12 @@ function handleClick(event: MouseEvent) {
       // excluding a different element than the one the user saw highlighted.
       // Real cell markup rarely puts the click target itself in `excludedElements` -- sites
       // commonly wrap values in nested <span>s (yr.no: <td><span class="fluid-table__cell-
-      // content"><span>...), so a real click's `target` is almost always a descendant of the
+      // content"><span>...), so a real click's `hitTarget` is almost always a descendant of the
       // actual excluded <td>, not the <td> itself (same resolve-up-to-the-cell issue documented
-      // in getTableColumnCells for #62/#67). Comparing `target` directly against
+      // in getTableColumnCells for #62/#67). Comparing `hitTarget` directly against
       // `excludedElements` silently misses every real click on an excluded nested-markup cell --
-      // resolve to whichever excluded element actually contains `target` (or is `target`).
-      const excludedAncestor = excludedElements.find(el => el.contains(target));
+      // resolve to whichever excluded element actually contains `hitTarget` (or is `hitTarget`).
+      const excludedAncestor = excludedElements.find(el => el.contains(hitTarget));
       const alreadyExcluded = !!excludedAncestor;
       // Shift is very commonly pressed only at click time, after the mouse has already stopped
       // moving over the target -- no further mousemove fires in that case, so a hover preview
@@ -1481,9 +1567,9 @@ function handleClick(event: MouseEvent) {
       // group (hoveredSimilarGroup non-empty), the original #1 fail-safe still applies in full:
       // the fresh group must match what was previewed, or content likely shifted between hover
       // and click and bulk exclusion is skipped rather than risking excluding the wrong set.
-      const targetMatchesHoverPreview = target === hoveredExclusionCandidate;
+      const targetMatchesHoverPreview = hitTarget === hoveredExclusionCandidate;
       const freshGroup = (!alreadyExcluded && event.shiftKey && targetMatchesHoverPreview)
-        ? getSimilarSiblings(target)
+        ? getSimilarSiblings(hitTarget)
         : null;
       const groupPreviewedWithShift = hoveredSimilarGroup.length > 1;
       const groupMatchesPreview = !groupPreviewedWithShift
@@ -1496,7 +1582,7 @@ function handleClick(event: MouseEvent) {
       // otherwise those siblings' dashed outlines leak until an unrelated mouse move touches them.
       if (!willBulkExclude && hoveredSimilarGroup.length > 0) {
         hoveredSimilarGroup.forEach(el => {
-          if (el !== target && !excludedElements.includes(el)) {
+          if (el !== hitTarget && !excludedElements.includes(el)) {
             el.style.removeProperty('outline');
             el.style.removeProperty('background');
           }
@@ -1529,15 +1615,15 @@ function handleClick(event: MouseEvent) {
         // Fresh group no longer matches what the shift-hover preview showed -- content likely
         // shifted between hover and click (#1). Exclude nothing rather than risk excluding a
         // different set than the one the user saw highlighted.
-        log('🛡️ Similar-siblings group changed between hover and click -- content likely shifted, skipping bulk exclusion:', target.tagName, target.className);
+        log('🛡️ Similar-siblings group changed between hover and click -- content likely shifted, skipping bulk exclusion:', hitTarget.tagName, hitTarget.className);
       } else if (targetMatchesHoverPreview) {
-        toggleExclusion(target);
+        toggleExclusion(hitTarget);
       } else {
-        log('🛡️ Exclusion click target did not match last-hovered preview -- content likely shifted, skipping exclusion:', target.tagName, target.className);
+        log('🛡️ Exclusion click target did not match last-hovered preview -- content likely shifted, skipping exclusion:', hitTarget.tagName, hitTarget.className);
       }
       return;
     }
-    
+
         return;
   }
   
@@ -1545,10 +1631,18 @@ function handleClick(event: MouseEvent) {
   event.stopPropagation();
   
   log('🎯 Target element:', target.tagName, target.className);
-  
+
+  // Widen off an empty "whole card clickable" overlay onto the ancestor that actually holds
+  // content (#81) -- see resolveMeaningfulCaptureTarget for why this can happen.
+  const captureTarget = resolveMeaningfulCaptureTarget(target);
+  const widenedForEmptyOverlay = captureTarget !== target;
+  if (widenedForEmptyOverlay) {
+    log('🧭 Click landed on an empty overlay element -- widened capture root:', target.tagName, target.className, '->', captureTarget.tagName, captureTarget.className);
+  }
+
   // Lock this element and set green outline
-  lockedElement = target;
-  target.style.setProperty('outline', '5px solid #00ff00', 'important');
+  lockedElement = captureTarget;
+  captureTarget.style.setProperty('outline', '5px solid #00ff00', 'important');
 
   // 🎯 Playground beacon: element selected (green frame showing, confirmation modal opening)
   if (getIsPlaygroundPage()) {
@@ -1589,14 +1683,17 @@ function handleClick(event: MouseEvent) {
     return current.parentElement === wrapper ? current : null;
   };
 
-  const clickBranch = getClickBranch(event.target as HTMLElement, target);
-  const searchRoot = clickBranch || target;
+  // When we widened off an empty overlay, the real click point is a direct (empty) child of
+  // captureTarget -- a narrowed branch would just re-select that same empty node, defeating the
+  // widening. Search the whole widened root instead in that case.
+  const clickBranch = widenedForEmptyOverlay ? null : getClickBranch(event.target as HTMLElement, captureTarget);
+  const searchRoot = clickBranch || captureTarget;
 
   let name = '';
 
   // Strategy 1: Check if element itself is a heading
-  if (/^H[1-6]$/i.test(target.tagName)) {
-    const text = target.textContent?.trim();
+  if (/^H[1-6]$/i.test(captureTarget.tagName)) {
+    const text = captureTarget.textContent?.trim();
     if (text) {
       name = text.length > 50 ? text.substring(0, 50) + '...' : text;
       log('📝 Name from heading:', name);
@@ -1671,7 +1768,7 @@ function handleClick(event: MouseEvent) {
   
   // Strategy 3.5: img[alt] — off-DOM safe, guards against 1×1 trackers and UI icons
   if (!name) {
-    const images = Array.from(target.querySelectorAll('img[alt]'));
+    const images = Array.from(captureTarget.querySelectorAll('img[alt]'));
     const bestImg = images.find(img => {
       const alt = img.getAttribute('alt')?.trim() || '';
       if (alt.length <= 10) return false;
@@ -1692,7 +1789,7 @@ function handleClick(event: MouseEvent) {
 
   // Strategy 3.6: aria-label — handles trailing punctuation + UI arrows (>, », →)
   if (!name) {
-    const label = target.querySelector('[aria-label]')?.getAttribute('aria-label')?.trim() || '';
+    const label = captureTarget.querySelector('[aria-label]')?.getAttribute('aria-label')?.trim() || '';
     const isVanity = /^(read more|link to article|share|continue reading)[.\s>»→]*$/i.test(label);
     if (label.length > 10 && !isVanity) {
       name = label.length > 50 ? label.substring(0, 50) + '...' : label;
@@ -1706,9 +1803,9 @@ function handleClick(event: MouseEvent) {
     log('📝 Name fallback:', name);
   }
   
-  const selector = generateSelector(target);
+  const selector = generateSelector(captureTarget);
   log('🎯 Final selector:', selector);
-  
+
   // 🎯 BATCH 2: Pre-extract heading for position-based detection
   // Do this BEFORE modal so we can show auto-selected mode
   // Skip hidden/SEO headings (0×0 rect = not rendered, e.g. cricbuzz hidden H3s)
@@ -1720,8 +1817,8 @@ function handleClick(event: MouseEvent) {
     // keep looking rather than accepting the first match.
     if ((r.width > 0 || r.height > 0) && !VOLATILE_FINGERPRINT_RE.test((h.textContent || '').trim())) { heading = h; break; }
   }
-  if (!heading && searchRoot !== target) {
-    for (const h of target.querySelectorAll(headingSels)) {
+  if (!heading && searchRoot !== captureTarget) {
+    for (const h of captureTarget.querySelectorAll(headingSels)) {
       const r = h.getBoundingClientRect();
       if ((r.width > 0 || r.height > 0) && !VOLATILE_FINGERPRINT_RE.test((h.textContent || '').trim())) { heading = h; break; }
     }
@@ -1730,11 +1827,11 @@ function handleClick(event: MouseEvent) {
   const hasStableHeading = !!rawHeading;
   const positionBased = !hasStableHeading;
   log('📍 Pre-modal capture mode:', positionBased ? 'Position-based (no heading)' : 'Header-based (has heading)');
-  
+
   // Show top-right confirmation modal
   log('📞 About to call showCaptureConfirmation...');
   try {
-    showCaptureConfirmation(target, name, selector, positionBased, clickBranch);
+    showCaptureConfirmation(captureTarget, name, selector, positionBased, clickBranch);
     log('✅ showCaptureConfirmation returned');
   } catch (error) {
     console.error('❌ showCaptureConfirmation FAILED:', error);
@@ -2729,6 +2826,7 @@ function toggleCapture(forceState?: boolean) {
   if (isCapturing) {
     log("🟢 Capture Mode: ON");
     document.addEventListener('mouseover', handleHover, true);
+    document.addEventListener('mousemove', handleExclusionHover, true);
     document.addEventListener('mouseout', handleExit, true);
     document.addEventListener('mousedown', handleMouseDown, true);
     document.addEventListener('click', handleClick, true);
@@ -2750,6 +2848,7 @@ function toggleCapture(forceState?: boolean) {
   } else {
     log("🔴 Capture Mode: OFF");
     document.removeEventListener('mouseover', handleHover, true);
+    document.removeEventListener('mousemove', handleExclusionHover, true);
     document.removeEventListener('mouseout', handleExit, true);
     document.removeEventListener('mousedown', handleMouseDown, true);
     document.removeEventListener('click', handleClick, true);
