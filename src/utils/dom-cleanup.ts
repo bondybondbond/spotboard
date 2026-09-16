@@ -585,6 +585,16 @@ export function cleanupDuplicates(html: string): string {
     'span.container__label-metadata',        // Author byline in label: "by multiple CNN reporters"
     'span.card__live-story-timestamp',       // Live story timestamp: "4 mins ago"
     'figcaption.image__credit',              // Image credit caption: "CNN", "AP", etc.
+
+    // 🎯 REDDIT SHREDDIT-POST (#80) — shadow-DOM flatten carries through JS-hidden content
+    // that no CSS-based visibility check catches (0×0 while closed, not display:none).
+    // faceplate-screen-reader-content: Reddit's own sr-only wrapper tag (same intent as
+    //   .sr-only above) — wraps a duplicate copy of the headline inside the full-card
+    //   click-overlay link, never meant to render as visible text.
+    // faceplate-menu: the closed 3-dot "more options" panel (Follow/Award/Save/Hide/Report) —
+    //   same shape as the NPR audio-module-more-tools dropdown above.
+    'faceplate-screen-reader-content',
+    'faceplate-menu',
   ];
   
   let removedCount = 0;
