@@ -1,5 +1,5 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
-import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget } from './utils/dom-cleanup';
+import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions } from './utils/dom-cleanup';
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, classifyImages } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
 
@@ -79,6 +79,29 @@ let hoveredExclusionCandidate: HTMLElement | null = null;
 // exactly match this before committing a bulk exclusion -- extends the same fail-safe
 // reasoning as hoveredExclusionCandidate (issue #1) to a set instead of a single element.
 let hoveredSimilarGroup: HTMLElement[] = [];
+
+// #61: Grow/Shrink chain state for the single currently-active exclusion (the one most
+// recently toggled). `chain[0]` is always the originally-clicked element and is never
+// discarded, so Shrink can always get back to it exactly. There is deliberately no
+// reactivation of an older, already-committed exclusion in v1 (considered and rejected --
+// see #61's decision log: not a proven-common-enough need to justify edit-history UI).
+// Excluding a new element replaces this outright, which is exactly "committing" the old one.
+type ExclusionChainState = { chain: HTMLElement[]; activeIndex: number };
+let activeExclusionChain: ExclusionChainState | null = null;
+
+// Test-only introspection (jsdom unit tests -- see tests/grow-shrink-exclusion.test.js):
+// production code never reads state through these, only through the module-scoped variables.
+export function __getActiveExclusionChainForTest(): { chainLength: number; activeIndex: number; activeElement: HTMLElement } | null {
+  if (!activeExclusionChain) return null;
+  return {
+    chainLength: activeExclusionChain.chain.length,
+    activeIndex: activeExclusionChain.activeIndex,
+    activeElement: activeExclusionChain.chain[activeExclusionChain.activeIndex],
+  };
+}
+export function __getExcludedElementsForTest(): HTMLElement[] {
+  return excludedElements;
+}
 
 // Direct siblings sharing the same parent, tag, and exact className as `element` (element
 // included). Exact class-signature match by design -- see issue #34 decision log: loose
@@ -1371,7 +1394,7 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
 // Toggle exclusion marking on child element
 
 // Clear all exclusion markings and reset array
-function resetExclusions() {
+export function resetExclusions() {
   // Remove red markings from all excluded elements
   excludedElements.forEach(el => {
     el.style.removeProperty('background');
@@ -1381,17 +1404,23 @@ function resetExclusions() {
   excludedElements = [];
   hoveredExclusionCandidate = null;
   hoveredSimilarGroup = [];
+  activeExclusionChain = null;
   log('🧹 All exclusions cleared');
 }
 
-function toggleExclusion(element: HTMLElement) {
+export function toggleExclusion(element: HTMLElement) {
   const isExcluded = excludedElements.includes(element);
-  
+
   if (isExcluded) {
     // Remove from excluded list and remove red marking
     excludedElements = excludedElements.filter(el => el !== element);
     element.style.removeProperty('background');
     element.style.removeProperty('outline');
+    // #61: un-excluding the active exclusion's current boundary drops its chain too --
+    // un-excluding removes the whole exclusion, not just its current level.
+    if (activeExclusionChain && activeExclusionChain.chain[activeExclusionChain.activeIndex] === element) {
+      activeExclusionChain = null;
+    }
     log('✅ Element un-excluded:', element.tagName, element.className);
   } else {
     // Check if this element would create a too-generic selector
@@ -1466,17 +1495,89 @@ function toggleExclusion(element: HTMLElement) {
       log('⚠️ WARNING: Excluding heading element - may affect refresh');
     }
     
-    // Add to excluded list and mark with red
+    // Add to excluded list and mark with red (live-page exclusion-mode styling -- unchanged
+    // by #61, which only affects how the Previewer renders the *active* exclusion).
     excludedElements.push(element);
     element.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
     element.style.setProperty('outline', '2px solid #ff0000', 'important');
+    // #61: a fresh exclusion starts its own Grow/Shrink chain and becomes the active
+    // exclusion -- replacing whatever was active before, which is exactly "committing" it
+    // (v1 has no reactivation; see #61 decision log).
+    activeExclusionChain = { chain: [element], activeIndex: 0 };
     log('❌ Element excluded:', element.tagName, element.className);
   }
-  
+
   // Debounced preview refresh on exclusion toggle
   if (previewDebounceTimer) clearTimeout(previewDebounceTimer);
   previewDebounceTimer = setTimeout(() => updatePreview(), 300);
   }
+
+// #61: the single place that moves the active exclusion's boundary. Keeps `excludedElements`
+// and the live red styling in lockstep with the chain's activeIndex -- old active element is
+// un-marked and removed from the array, new active element is marked and added, in that
+// order, so there is never a frame where the array/styling and the chain index disagree
+// (gap flagged in #61's product-proxy challenge, round 1).
+function setActiveExclusionIndex(newIndex: number) {
+  const state = activeExclusionChain;
+  if (!state || newIndex < 0 || newIndex >= state.chain.length) return;
+
+  const oldActive = state.chain[state.activeIndex];
+  const newActive = state.chain[newIndex];
+  if (oldActive === newActive) return;
+
+  excludedElements = excludedElements.filter(el => el !== oldActive);
+  oldActive.style.removeProperty('background');
+  oldActive.style.removeProperty('outline');
+
+  state.activeIndex = newIndex;
+  excludedElements.push(newActive);
+  newActive.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
+  newActive.style.setProperty('outline', '2px solid #ff0000', 'important');
+
+  if (previewDebounceTimer) clearTimeout(previewDebounceTimer);
+  previewDebounceTimer = setTimeout(() => updatePreview(), 300);
+}
+
+type GrowShrinkResult = { ok: true } | { ok: false; reason: 'no-active-exclusion' | 'reached-capture-root' | 'already-at-original' };
+
+// #61: step the active exclusion's target up one DOM ancestor level. Hard-capped at the
+// capture root (`lockedElement`) -- excluding the whole capture is meaningless, and growing
+// past it would have no valid exclusion selector anyway. generateExclusionSelector's own
+// escalation chain (base class -> generateSelector -> table-column -> unique ancestor path ->
+// positional fallback) always resolves to a selector matching exactly one element within the
+// capture root (see its docblock) -- so unlike a live-page click, Grow has no separate
+// "selector rejected" failure mode; the capture-root boundary is the only real gate.
+export function growExclusion(captureRoot: HTMLElement | null): GrowShrinkResult {
+  const state = activeExclusionChain;
+  if (!state || !captureRoot) return { ok: false, reason: 'no-active-exclusion' };
+
+  const current = state.chain[state.activeIndex];
+  const candidate = state.chain[state.activeIndex + 1] ?? current.parentElement;
+
+  if (!candidate || candidate === captureRoot || !captureRoot.contains(candidate)) {
+    return { ok: false, reason: 'reached-capture-root' };
+  }
+
+  if (state.chain[state.activeIndex + 1] !== candidate) {
+    // Discard any stale levels above the current one (can happen after a Shrink) before
+    // recording the freshly-walked ancestor.
+    state.chain = state.chain.slice(0, state.activeIndex + 1);
+    state.chain.push(candidate);
+  }
+  setActiveExclusionIndex(state.activeIndex + 1);
+  return { ok: true };
+}
+
+// #61: step back down to a previously-walked (or the original) level. Replays the stored
+// chain rather than re-deriving anything, so Shrink always lands back on exactly the element
+// that was there before -- never a fresh, possibly-different DOM lookup.
+export function shrinkExclusion(): GrowShrinkResult {
+  const state = activeExclusionChain;
+  if (!state) return { ok: false, reason: 'no-active-exclusion' };
+  if (state.activeIndex === 0) return { ok: false, reason: 'already-at-original' };
+  setActiveExclusionIndex(state.activeIndex - 1);
+  return { ok: true };
+}
 
 // Shift+Click for bulk exclusion collides with the browser's own Shift+Click "extend text
 // selection" gesture -- text selection starts on mousedown, before our click handler ever
@@ -2006,6 +2107,15 @@ function getPreviewCSS(): string {
     [class*="Grid"], [class*="Flex"], [class*="Stack"] { gap: 2px !important; }
     table tr { height: auto !important; }
     table td { padding: 4px 6px !important; }
+    /* #61: the exclusion currently being Grow/Shrink-edited stays in the preview with a
+       subtle tint + dashed outline -- deliberately not the bold red used on the live page,
+       since a "finished-looking" preview shouldn't carry ugly red boxes (owner feedback,
+       #61 decision log). Every other exclusion is simply removed, as before. */
+    [data-spotboard-active-exclusion] {
+      background: rgba(245, 101, 101, 0.10) !important;
+      outline: 1px dashed #e08585 !important;
+      border-radius: 4px !important;
+    }
   `;
 }
 
@@ -2018,11 +2128,23 @@ function generatePreviewSrcdoc(html: string): string {
 <body>${html}</body></html>`;
 }
 
+// #61: keep the Previewer's Shrink/Grow buttons in sync with `activeExclusionChain` --
+// called after every Grow/Shrink click and from `updatePreview()` (which also runs whenever
+// a live-page click changes which exclusion is active).
+function syncExclusionToolbar(): void {
+  const shrinkBtn = _confirmationShadow?.querySelector('#shrinkExclusion') as HTMLButtonElement | null;
+  const growBtn = _confirmationShadow?.querySelector('#growExclusionBtn') as HTMLButtonElement | null;
+  const hasActive = !!activeExclusionChain;
+  if (shrinkBtn) shrinkBtn.disabled = !hasActive || activeExclusionChain!.activeIndex === 0;
+  if (growBtn) growBtn.disabled = !hasActive;
+}
+
 /**
  * Renders or re-renders the preview iframe inside the capture confirmation modal.
  * Uses the locked element + current exclusions to generate a dashboard-parity preview.
  */
 function updatePreview(): void {
+  syncExclusionToolbar();
   const iframe = _confirmationShadow?.querySelector('#spotboard-preview-iframe') as HTMLIFrameElement | null;
   if (!iframe || !lockedElement) return;
 
@@ -2036,8 +2158,21 @@ function updatePreview(): void {
     // Cross-origin or not yet loaded — ignore
   }
 
-  // Generate preview HTML: sanitize the locked element with current exclusions
-  const previewHTML = sanitizeHTML(lockedElement, excludedElements);
+  // #61: the active exclusion stays VISIBLE in the preview (subtle tint, via the
+  // [data-spotboard-active-exclusion] CSS rule in getPreviewCSS()) while it's being
+  // edited -- only already-committed exclusions are actually removed, so the preview still
+  // looks "finished" for everything except the one thing Grow/Shrink can currently act on.
+  const activeElement = activeExclusionChain?.chain[activeExclusionChain.activeIndex] ?? null;
+  const elementsToRemove = activeElement
+    ? excludedElements.filter(el => el !== activeElement)
+    : excludedElements;
+  if (activeElement) activeElement.setAttribute('data-spotboard-active-exclusion', 'true');
+  let previewHTML: string;
+  try {
+    previewHTML = sanitizeHTML(lockedElement, elementsToRemove);
+  } finally {
+    if (activeElement) activeElement.removeAttribute('data-spotboard-active-exclusion');
+  }
   // Apply shared cleanup for exact dashboard parity
   const cleanedHTML = cleanupDuplicates(previewHTML);
 
@@ -2113,6 +2248,14 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         </div>
       </div>
     </div>
+    <div id="spotboard-exclusion-toolbar" style="display: flex; justify-content: flex-end; gap: 8px; padding: 8px 20px; flex-shrink: 0; background: #eef0f3; border-top: 1px solid #e3e0ec; border-bottom: 1px solid #e3e0ec; font-family: inherit;">
+      <button id="shrinkExclusion" type="button" disabled style="border: 1px solid #cbd5e0; background: transparent; color: #4b5563; border-radius: 6px; font-size: 11px; font-weight: 700; padding: 6px 10px; cursor: pointer; font-family: inherit;">
+        Shrink
+      </button>
+      <button id="growExclusionBtn" type="button" disabled style="border: none; background: #4b5563; color: #fff; border-radius: 6px; font-size: 11px; font-weight: 700; padding: 6px 10px; cursor: pointer; font-family: inherit;">
+        Grow exclusion
+      </button>
+    </div>
     <div id="spotboard-modal-footer" style="display: flex; flex-direction: row; gap: 8px; padding: 12px 20px; flex-shrink: 0; background: #6b46c1; position: sticky; bottom: 0; z-index: 1; font-family: inherit;">
       <button id="confirmSpot" style="flex: 1; padding: 12px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; text-transform: none !important;">
         Confirm Spot
@@ -2149,18 +2292,39 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   const collapseRow = modal.querySelector('#spotboard-collapse-row') as HTMLDivElement;
   const modalBody = modal.querySelector('#spotboard-modal-body') as HTMLDivElement;
   const modalFooter = modal.querySelector('#spotboard-modal-footer') as HTMLDivElement;
+  const exclusionToolbar = modal.querySelector('#spotboard-exclusion-toolbar') as HTMLDivElement;
   const titleExpanded = modal.querySelector('.sb-capture-title-expanded') as HTMLElement;
   const titleMinimized = modal.querySelector('.sb-capture-title-minimized') as HTMLElement;
   const collapseLabel = modal.querySelector('.sb-collapse-label') as HTMLElement;
   const collapseIconCollapse = modal.querySelector('.sb-collapse-icon-collapse') as HTMLElement;
   const collapseIconExpand = modal.querySelector('.sb-collapse-icon-expand') as HTMLElement;
   const confirmBtnLabel = modal.querySelector('#confirmSpot') as HTMLButtonElement;
+
+  // #61: Shrink/Grow act on whichever exclusion is active; both stay disabled when there's
+  // none (nothing excluded yet, or the panel is collapsed and the toolbar itself is hidden).
+  const shrinkBtn = modal.querySelector('#shrinkExclusion') as HTMLButtonElement;
+  const growBtn = modal.querySelector('#growExclusionBtn') as HTMLButtonElement;
+  // (button state syncs once the modal is attached and `updatePreview()` runs below)
+  shrinkBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    shrinkExclusion();
+    syncExclusionToolbar();
+  });
+  growBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    growExclusion(lockedElement);
+    syncExclusionToolbar();
+  });
+
   if (collapseToggle && collapseRow && modalBody && modalFooter) {
     collapseToggle.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
       const willMinimize = modalBody.style.display !== 'none';
       modalBody.style.display = willMinimize ? 'none' : 'flex';
+      if (exclusionToolbar) exclusionToolbar.style.display = willMinimize ? 'none' : 'flex';
       modalFooter.style.flexDirection = willMinimize ? 'column' : 'row';
       titleExpanded.style.display = willMinimize ? 'none' : '';
       titleMinimized.style.display = willMinimize ? '' : 'none';
@@ -2228,7 +2392,22 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           excludedSelectors.push(selector);
         });
         console.log('🎯 Generated', excludedSelectors.length, 'exclusion selectors');
-        
+
+        // #61: prove each selector actually matches something when re-applied by
+        // dom-cleanup.ts's applyExclusions() against the SERIALIZED capture HTML -- the exact
+        // function + input shape used at refresh time. generateExclusionSelector only proved
+        // uniqueness against the live `target` element, a different code path; only this check
+        // catches the live-vs-serialized desync that caused #1 (a selector that validates at
+        // capture time but matches nothing once refresh hands it a fresh HTML string instead of
+        // a live element). Non-blocking: a mismatch is logged, not fatal, since the capture
+        // itself is otherwise already using the elements it excluded.
+        const rawCaptureHTML = target.outerHTML;
+        excludedSelectors.forEach(sel => {
+          if (applyExclusions(rawCaptureHTML, [sel], selector) === rawCaptureHTML) {
+            console.warn('⚠️ Exclusion selector did not match on the serialized capture HTML -- may not survive refresh:', sel);
+          }
+        });
+
         // ✨ SANITIZE HTML BEFORE STORING (after JS renders)
         // Pass excluded elements so they can be removed from saved HTML
         const rawCaptureLength = target.innerHTML.length; // pristine baseline for drift guard (raw-to-raw); light DOM is the consistent source after slot flattening
