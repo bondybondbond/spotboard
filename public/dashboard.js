@@ -582,6 +582,7 @@ function setupGridReorder(grid) {
   }
 
   grid.addEventListener('dragstart', e => {
+    if (sortMode === 'az') { e.preventDefault(); return; } // issue #76: manual reorder is disabled while A-Z sort is active
     const card = e.target.closest && e.target.closest('.component-card');
     if (!card) return;
     draggingId = card.dataset.cardId;
@@ -789,6 +790,207 @@ function filterCardsToBoard(boardId) {
 
   // issue #17: apply the per-board card order (or restore natural order for 'all')
   reorderGridDom(grid, boardId);
+
+  // issue #76: sort/filter pills are a presentation layer on top of board visibility
+  applyViewControls();
+}
+
+// ══════════════════════════════════════════════
+// VIEW CONTROLS MODULE — sort + filter pills (issue #76)
+// Presentation-only transforms layered after board visibility (filterCardsToBoard) and
+// manual order (reorderGridDom). Never write to cardOrderCache — toggling sort off always
+// restores the exact stored manual order for free, since nothing was mutated.
+// Global across every tab (All + every board), persisted in localStorage like sb-theme —
+// a device-local UI preference, not synced card data.
+// ══════════════════════════════════════════════
+let sortMode = 'default'; // 'default' | 'az'
+let viewFilter = { active: true, paused: true }; // both true = no filter (default)
+let openViewDropdown = null; // { el, trigger, kind, closeListener } — at most one open at a time
+
+function loadViewControlsState() {
+  try {
+    if (localStorage.getItem('sb_sortMode') === 'az') sortMode = 'az';
+    const storedFilter = localStorage.getItem('sb_filter');
+    if (storedFilter) {
+      const parsed = JSON.parse(storedFilter);
+      if (typeof parsed.active === 'boolean') viewFilter.active = parsed.active;
+      if (typeof parsed.paused === 'boolean') viewFilter.paused = parsed.paused;
+      if (!viewFilter.active && !viewFilter.paused) { viewFilter.active = true; viewFilter.paused = true; }
+    }
+  } catch (e) { /* localStorage unavailable */ }
+}
+
+function saveViewControlsState() {
+  try {
+    localStorage.setItem('sb_sortMode', sortMode);
+    localStorage.setItem('sb_filter', JSON.stringify(viewFilter));
+  } catch (e) { /* localStorage unavailable */ }
+}
+
+function isSortActive() { return sortMode === 'az'; }
+function isFilterActive() { return !(viewFilter.active && viewFilter.paused); }
+
+// Filter + sort pass. Filter visibility is computed from card data (component.refreshPaused)
+// on every call — never inferred from the board pass's current style.display — so repeated
+// calls (board switch, pause toggle, filter change) can't confuse "hidden by board" with
+// "hidden by filter". Sort is a pure DOM reorder of currently-visible cards; it never
+// touches cardOrderCache, so switching sort back to 'default' just restores stored order.
+function applyViewControls() {
+  const grid = document.querySelector('#components-container .components-grid');
+  if (!grid) return;
+
+  const cards = Array.from(grid.querySelectorAll('.component-card[data-board-id]'));
+  let anyBoardVisible = false;
+  let anyFilterVisible = false;
+  cards.forEach(card => {
+    if (card.style.display === 'none') { card.classList.remove('sb-filter-hidden'); return; }
+    anyBoardVisible = true;
+    const comp = allComponents.find(c => c.id === card.dataset.cardId);
+    const paused = !!(comp && comp.refreshPaused);
+    const show = paused ? viewFilter.paused : viewFilter.active;
+    card.classList.toggle('sb-filter-hidden', !show);
+    if (show) anyFilterVisible = true;
+  });
+
+  if (sortMode === 'az') {
+    const visible = cards.filter(c => c.style.display !== 'none' && !c.classList.contains('sb-filter-hidden'));
+    visible.sort((a, b) => {
+      const ca = allComponents.find(c => c.id === a.dataset.cardId);
+      const cb = allComponents.find(c => c.id === b.dataset.cardId);
+      const na = (ca && (ca.customLabel || ca.name)) || '';
+      const nb = (cb && (cb.customLabel || cb.name)) || '';
+      return na.localeCompare(nb, undefined, { sensitivity: 'base' });
+    });
+    visible.forEach(el => grid.appendChild(el));
+    grid.querySelectorAll('.ghost-card, .sb-board-empty').forEach(el => grid.appendChild(el));
+  } else {
+    reorderGridDom(grid, activeBoard);
+  }
+
+  // "No cards match this filter" — distinct from the board-empty message so a user
+  // doesn't think their cards vanished when it's just an active filter.
+  let filterEmptyMsg = grid.querySelector('.sb-filter-empty');
+  const showFilterEmpty = anyBoardVisible && !anyFilterVisible;
+  if (showFilterEmpty) {
+    if (!filterEmptyMsg) {
+      filterEmptyMsg = document.createElement('div');
+      filterEmptyMsg.className = 'sb-filter-empty';
+      filterEmptyMsg.style.cssText = 'grid-column:1/-1;padding:56px 24px;text-align:center;color:var(--text-faint);font-size:14px;line-height:1.6;';
+      filterEmptyMsg.textContent = '🔍 No cards match this filter';
+    }
+    grid.appendChild(filterEmptyMsg); // re-append last so it trails any sort/order moves above
+    filterEmptyMsg.style.display = '';
+  } else if (filterEmptyMsg) {
+    filterEmptyMsg.style.display = 'none';
+  }
+
+  updateViewPillHighlights();
+}
+
+function updateViewPillHighlights() {
+  const sortPill = document.getElementById('sort-pill');
+  const filterPill = document.getElementById('filter-pill');
+  if (sortPill) sortPill.classList.toggle('active', isSortActive());
+  if (filterPill) filterPill.classList.toggle('active', isFilterActive());
+}
+
+function closeViewDropdown() {
+  if (!openViewDropdown) return;
+  openViewDropdown.el.remove();
+  document.removeEventListener('click', openViewDropdown.closeListener, true);
+  document.removeEventListener('scroll', openViewDropdown.scrollListener, true);
+  document.removeEventListener('keydown', openViewDropdown.keyListener);
+  openViewDropdown.trigger.setAttribute('aria-expanded', 'false');
+  openViewDropdown = null;
+}
+
+// Re-render the currently open filter dropdown's checkmarks from state, rather than
+// trusting stale DOM — the sort dropdown closes itself after each click so it never needs this.
+function refreshOpenDropdownOptions() {
+  if (!openViewDropdown || openViewDropdown.kind !== 'filter') return;
+  const state = [viewFilter.active, viewFilter.paused];
+  openViewDropdown.el.querySelectorAll('.sb-view-dropdown-option').forEach((btn, i) => {
+    const pressed = state[i];
+    btn.setAttribute('aria-pressed', String(pressed));
+    btn.querySelector('.sb-check').textContent = pressed ? '✓' : '';
+  });
+}
+
+function toggleViewDropdown(triggerEl, kind) {
+  if (openViewDropdown) {
+    const wasSameTrigger = openViewDropdown.trigger === triggerEl;
+    closeViewDropdown();
+    if (wasSameTrigger) return; // clicking the open pill again just closes it
+  }
+
+  const menu = document.createElement('div');
+  menu.className = 'sb-board-menu sb-view-dropdown';
+
+  const renderOption = (label, pressed, onClick) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sb-view-dropdown-option';
+    btn.setAttribute('aria-pressed', String(pressed));
+    const check = document.createElement('span');
+    check.className = 'sb-check';
+    check.textContent = pressed ? '✓' : '';
+    const text = document.createElement('span');
+    text.textContent = label;
+    btn.appendChild(check);
+    btn.appendChild(text);
+    btn.addEventListener('click', ev => { ev.stopPropagation(); onClick(); });
+    menu.appendChild(btn);
+  };
+
+  if (kind === 'sort') {
+    renderOption('A → Z', sortMode === 'az', () => {
+      sortMode = sortMode === 'az' ? 'default' : 'az';
+      saveViewControlsState();
+      applyViewControls();
+      closeViewDropdown();
+    });
+  } else {
+    renderOption('Active', viewFilter.active, () => {
+      if (viewFilter.active && !viewFilter.paused) return; // keep at least one option on
+      viewFilter.active = !viewFilter.active;
+      saveViewControlsState();
+      applyViewControls();
+      refreshOpenDropdownOptions();
+    });
+    renderOption('Paused', viewFilter.paused, () => {
+      if (viewFilter.paused && !viewFilter.active) return;
+      viewFilter.paused = !viewFilter.paused;
+      saveViewControlsState();
+      applyViewControls();
+      refreshOpenDropdownOptions();
+    });
+  }
+
+  const rect = triggerEl.getBoundingClientRect();
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.left = rect.left + 'px';
+  document.body.appendChild(menu);
+  triggerEl.setAttribute('aria-expanded', 'true');
+
+  const closeListener = ev => { if (!menu.contains(ev.target) && ev.target !== triggerEl) closeViewDropdown(); };
+  const scrollListener = () => closeViewDropdown();
+  const keyListener = ev => { if (ev.key === 'Escape') closeViewDropdown(); };
+  setTimeout(() => document.addEventListener('click', closeListener, true), 0);
+  document.addEventListener('scroll', scrollListener, { once: true, capture: true });
+  document.addEventListener('keydown', keyListener, { once: true });
+
+  openViewDropdown = { el: menu, trigger: triggerEl, kind, closeListener, scrollListener, keyListener };
+}
+
+function setupViewControls() {
+  loadViewControlsState();
+
+  const sortPill = document.getElementById('sort-pill');
+  const filterPill = document.getElementById('filter-pill');
+  if (sortPill) sortPill.addEventListener('click', e => { e.stopPropagation(); toggleViewDropdown(sortPill, 'sort'); });
+  if (filterPill) filterPill.addEventListener('click', e => { e.stopPropagation(); toggleViewDropdown(filterPill, 'filter'); });
+
+  updateViewPillHighlights();
 }
 
 async function handleTabDrop(e, boardId) {
@@ -2255,7 +2457,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
         } else {
           card.classList.remove('paused');
         }
-        
+        applyViewControls(); // issue #76: live pause toggle must respect an active active/paused filter
+
         // Save to sync storage
         chrome.storage.sync.get(`comp-${component.id}`, (result) => {
           const compData = result[`comp-${component.id}`];
@@ -2804,6 +3007,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       // issue #17: when the active view is All, setActiveBoard() isn't called — apply the
       // master order on first paint so a saved All arrangement shows immediately.
       if (!restored) reorderGridDom(grid, 'all');
+      applyViewControls(); // issue #76: apply stored sort/filter on first paint too
 
       // #19: "View on SpotBoard" handoff — scroll to + briefly glow the just-captured card.
       try {
@@ -2986,6 +3190,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (header) {
     document.documentElement.style.setProperty('--header-h', header.offsetHeight + 'px');
   }
+
+  setupViewControls(); // issue #76: sort + filter pills
 
   initThemeToggle();
   initAdvancedMenu();
