@@ -2322,10 +2322,17 @@
       color: var(--text-primary);
     }
     /* ── SORT / FILTER PILLS (#76) ── */
+    /* Grouped tray + thicker accent border (owner-selected combo, prototyped as "Option 6"
+       against 6 alternatives) — visually separates these from the board-tab pills, which
+       share the same base pill shape/fill but use a neutral border and no tray. */
     #view-controls {
       display: flex;
       align-items: center;
       gap: 6px;
+      padding: 4px;
+      border-radius: 99px;
+      background: var(--surface-inset);
+      border: 1px solid var(--border-subtle);
       flex-shrink: 0;
       margin-left: 8px;
       position: relative;
@@ -2340,19 +2347,20 @@
       white-space: nowrap;
       font-family: inherit;
       flex-shrink: 0;
-      border: 1.5px solid rgba(0,0,0,0.13);
+      border: 2.5px solid var(--accent);
       background: var(--pill-inactive);
       color: var(--pill-inactive-text);
       display: flex;
       align-items: center;
       gap: 6px;
-      transition: background 0.15s, box-shadow 0.15s;
+      transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
       box-shadow: 0 1px 3px var(--card-shadow);
     }
     .sb-view-pill:hover { background: var(--pill-inactive-hover); }
     .sb-view-pill.active {
       background: var(--pill-active);
       color: var(--pill-active-text);
+      border-color: rgba(0,0,0,0.13);
       box-shadow: 0 2px 8px var(--pill-active-glow);
     }
     .sb-view-pill-icon { width: 14px; height: 14px; flex-shrink: 0; }
