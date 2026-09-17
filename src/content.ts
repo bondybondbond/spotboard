@@ -294,6 +294,30 @@ function generateSelector(element: HTMLElement): string {
  * @returns a selector that matches exactly one element within `root`
  */
 function generateExclusionSelector(el: HTMLElement, root: HTMLElement): string {
+  // #71: prefer a selector unique WITHIN root over generateSelector()'s page-global result.
+  // generateSelector() checks uniqueness against the WHOLE PAGE and, when a class isn't
+  // page-unique (e.g. sibling sections sharing one CSS-module heading class -- theverge.com's
+  // "Most Popular"/"Most Discussed" both use h2.pnbklw1), escalates to a page-anchored
+  // ancestor-path selector like "section.foo:nth-of-type(3) > h2.bar". That candidate then
+  // trivially passes the root-uniqueness check below too (globally unique implies root-unique),
+  // so it used to get accepted here -- but refresh only ever hands applyExclusions a
+  // single-element FRAGMENT (just the extracted section, no page/sibling context), which has no
+  // ":nth-of-type(3)" sibling position to match, and that same ":nth-of-type(3)" also breaks
+  // applyExclusions' scopedFor() prefix-rewrite (it sits between the class chain and the child
+  // combinator, so the selector no longer starts with `component.selector` literally) -- so the
+  // stored selector matched 0 elements on EVERY refresh and the exclusion never re-applied.
+  // Confirmed live: excluding a section's own heading came back after every real refresh.
+  const rootScopedBase = buildBaseSelector(el);
+  if (!/^[a-z]+$/i.test(rootScopedBase.trim())) {
+    try {
+      if (root.querySelectorAll(rootScopedBase).length === 1) {
+        return rootScopedBase;
+      }
+    } catch (e) {
+      log('⚠️ Exclusion base selector invalid, escalating:', rootScopedBase, e);
+    }
+  }
+
   const candidate = generateSelector(el);
 
   try {
