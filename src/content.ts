@@ -2248,13 +2248,16 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         </div>
       </div>
     </div>
-    <div id="spotboard-exclusion-toolbar" style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 9px 20px; flex-shrink: 0; background: #6b46c1; border-bottom: 1px solid rgba(255,255,255,0.35); font-family: inherit;">
-      <button id="shrinkExclusion" type="button" disabled style="box-sizing: border-box; border: none; background: rgba(255,255,255,0.28); color: #fff; border-radius: 6px; font-size: 11px; font-weight: 400; line-height: 1; padding: 7px 11px; cursor: pointer; font-family: inherit;">
-        Shrink
-      </button>
-      <button id="growExclusionBtn" type="button" disabled style="box-sizing: border-box; border: none; background: rgba(255,255,255,0.92); color: #4c2f96; border-radius: 6px; font-size: 11px; font-weight: 400; line-height: 1; padding: 7px 11px; cursor: pointer; font-family: inherit;">
-        Grow exclusion
-      </button>
+    <div id="spotboard-exclusion-toolbar" style="display: flex; flex-direction: column; flex-shrink: 0; background: #6b46c1; font-family: inherit;">
+      <div style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 4px 20px 8px; transform: translateX(10px);">
+        <button id="shrinkExclusion" type="button" disabled style="box-sizing: border-box; border: none; background: rgba(255,255,255,0.28); color: #fff; border-radius: 6px; font-size: 11px; font-weight: 400; line-height: 1; padding: 7px 11px; cursor: pointer; font-family: inherit;">
+          Shrink
+        </button>
+        <button id="growExclusionBtn" type="button" disabled style="box-sizing: border-box; border: none; background: rgba(255,255,255,0.92); color: #4c2f96; border-radius: 6px; font-size: 11px; font-weight: 400; line-height: 1; padding: 7px 11px; cursor: pointer; font-family: inherit;">
+          Grow exclusion
+        </button>
+      </div>
+      <div style="height: 1px; margin: 0 20px; background: #fff;"></div>
     </div>
     <div id="spotboard-modal-footer" style="display: flex; flex-direction: row; gap: 8px; padding: 12px 20px; flex-shrink: 0; background: #6b46c1; position: sticky; bottom: 0; z-index: 1; font-family: inherit;">
       <button id="confirmSpot" style="flex: 1; padding: 12px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; text-transform: none !important;">
