@@ -582,7 +582,10 @@ function setupGridReorder(grid) {
   }
 
   grid.addEventListener('dragstart', e => {
-    if (sortMode === 'az') { e.preventDefault(); return; } // issue #76: manual reorder is disabled while A-Z sort is active
+    // issue #76: in-grid manual reorder is disabled while A-Z sort is active, but the drag
+    // itself must proceed uncancelled — calling preventDefault() here would abort the whole
+    // drag operation (HTML5 DnD spec), breaking drag-to-tab reassignment too, not just reorder.
+    if (sortMode === 'az') return;
     const card = e.target.closest && e.target.closest('.component-card');
     if (!card) return;
     draggingId = card.dataset.cardId;
