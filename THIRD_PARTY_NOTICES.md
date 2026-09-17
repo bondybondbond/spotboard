@@ -64,3 +64,19 @@
 - **MIT License Text**: https://opensource.org/licenses/MIT
 - **Used in**: Capture exclusion panel's Collapse/Expand button (#60)
 - **Location in repo**: Inline SVGs in `src/content.ts` (`showCaptureConfirmation()`)
+
+### Sort Icon
+
+- **Source**: Salesforce Lightning Design System (https://lightningdesignsystem.com/), via IconDuck (https://iconduck.com)
+- **License**: CC Attribution (CC BY 4.0)
+- **License Text**: https://creativecommons.org/licenses/by/4.0/
+- **Used in**: Dashboard "Sort" pill (#76)
+- **Location in repo**: Inline SVG in `public/dashboard.html`
+
+### Filter Icon
+
+- **Source**: VMware Clarity Assets (https://github.com/vmware/clarity-assets)
+- **License**: MIT
+- **MIT License Text**: https://opensource.org/licenses/MIT
+- **Used in**: Dashboard "Filter" pill (#76)
+- **Location in repo**: Inline SVG in `public/dashboard.html`
