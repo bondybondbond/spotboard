@@ -2221,23 +2221,46 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         // Skip hidden/SEO headings (0×0 rect = display:none, not rendered)
         const fpRoot = clickBranch || target;
         const fpHeadingSels = 'h1, h2, h3, h4, caption, [class*="heading"], [class*="title"], [class*="header"], [data-testid*="heading"], [data-testid*="title"]';
+        // #71: never anchor the refresh fingerprint on a heading the user just excluded (or one
+        // nested inside an excluded ancestor) -- otherwise headingFingerprint stores the excluded
+        // text, and refresh-engine.js's self-healing heading-fallback can later reconstruct the
+        // section anchored on exactly the element the user asked to hide, breaking the stored
+        // exclusion selector's scope and letting it silently reappear.
+        const isExcludedOrInsideExcluded = (el: Element): boolean =>
+          excludedElements.some(ex => ex === el || ex.contains(el));
         let fpHeading: Element | null = null;
         for (const h of fpRoot.querySelectorAll(fpHeadingSels)) {
           const r = h.getBoundingClientRect();
           // Skip volatile candidates (a bare value like "54%" is not a stable identity) — keep
           // looking rather than storing the tracked value itself as the fingerprint.
-          if ((r.width > 0 || r.height > 0) && !VOLATILE_FINGERPRINT_RE.test((h.textContent || '').trim())) { fpHeading = h; break; }
+          if ((r.width > 0 || r.height > 0) && !VOLATILE_FINGERPRINT_RE.test((h.textContent || '').trim()) && !isExcludedOrInsideExcluded(h)) { fpHeading = h; break; }
         }
         if (!fpHeading && fpRoot !== target) {
           for (const h of target.querySelectorAll(fpHeadingSels)) {
             const r = h.getBoundingClientRect();
-            if ((r.width > 0 || r.height > 0) && !VOLATILE_FINGERPRINT_RE.test((h.textContent || '').trim())) { fpHeading = h; break; }
+            if ((r.width > 0 || r.height > 0) && !VOLATILE_FINGERPRINT_RE.test((h.textContent || '').trim()) && !isExcludedOrInsideExcluded(h)) { fpHeading = h; break; }
           }
         }
         // Limit to 100 chars to avoid exceeding sync storage quota (8KB per item)
         const fpText = fpHeading?.textContent?.trim() || null;
-        // Fallback: use the card name as fingerprint when no visible heading exists
-        const fallbackName = name !== `Spot from ${window.location.hostname}` ? name : null;
+        // Fallback: use the card name as fingerprint when no visible heading exists.
+        // #71: the name is computed at lock-time, before the user has excluded anything, so it
+        // can independently equal the very heading text just excluded -- same leak as fpHeading,
+        // just via a different data path. Refuse the fallback in that case too.
+        // Names over 50 chars are truncated to "<50 chars>..." at name-generation time (see the
+        // heading/text-node strategies above) -- replicate that truncation before comparing, or a
+        // long excluded heading's truncated name would never string-match its own full-text
+        // element and the leak would slip through anyway.
+        // Compare against the actual h1-6 element `name` was derived from (Strategy 1/2 above),
+        // not the excluded element's own text -- a user can exclude a WRAPPER around the heading
+        // (e.g. a byline+heading container) rather than the bare heading tag; that wrapper's full
+        // textContent won't string-equal the shorter heading-only `name`, but the heading nested
+        // inside it is still `isExcludedOrInsideExcluded`, so resolve through the real element.
+        const truncateLikeName = (t: string): string => t.length > 50 ? t.substring(0, 50) + '...' : t;
+        const nameSourceHeading = Array.from(target.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+          .find(h => truncateLikeName((h.textContent || '').trim()) === name);
+        const nameMatchesExcludedHeading = !!nameSourceHeading && isExcludedOrInsideExcluded(nameSourceHeading);
+        const fallbackName = (name !== `Spot from ${window.location.hostname}` && !nameMatchesExcludedHeading) ? name : null;
         const headingFingerprint = fpText ? fpText.substring(0, 100) : (fallbackName ? fallbackName.substring(0, 100) : null);
 
         // Structural-identity marker (issue #77): a capture-time data-testid/data-test value,
