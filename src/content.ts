@@ -2249,10 +2249,10 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       </div>
     </div>
     <div id="spotboard-exclusion-toolbar" style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 9px 20px; flex-shrink: 0; background: #6b46c1; font-family: inherit;">
-      <button id="shrinkExclusion" type="button" disabled style="box-sizing: border-box; border: none; background: rgba(255,255,255,0.28); color: #fff; border-radius: 6px; font-size: 11px; font-weight: 700; line-height: 1; padding: 7px 11px; cursor: pointer; font-family: inherit;">
+      <button id="shrinkExclusion" type="button" disabled style="box-sizing: border-box; border: none; background: rgba(255,255,255,0.28); color: #fff; border-radius: 6px; font-size: 11px; font-weight: 400; line-height: 1; padding: 7px 11px; cursor: pointer; font-family: inherit;">
         Shrink
       </button>
-      <button id="growExclusionBtn" type="button" disabled style="box-sizing: border-box; border: none; background: rgba(255,255,255,0.92); color: #4c2f96; border-radius: 6px; font-size: 11px; font-weight: 800; line-height: 1; padding: 7px 11px; cursor: pointer; font-family: inherit;">
+      <button id="growExclusionBtn" type="button" disabled style="box-sizing: border-box; border: none; background: rgba(255,255,255,0.92); color: #4c2f96; border-radius: 6px; font-size: 11px; font-weight: 400; line-height: 1; padding: 7px 11px; cursor: pointer; font-family: inherit;">
         Grow exclusion
       </button>
     </div>
