@@ -1214,14 +1214,16 @@ export function fixRelativeUrls(container: HTMLElement, sourceUrl: string): void
     // ESPN and many news sites use <source data-srcset="..."> with JS (lazyload.js) copying to
     // srcset when in-view. At direct-fetch time JS hasn't run, so srcset is empty and the
     // <picture> displays nothing. Copying data-srcset → srcset activates the image in dashboard.
-    container.querySelectorAll('source[data-srcset]').forEach(source => {
-      if (!source.getAttribute('srcset')) {
-        const dataSrcset = source.getAttribute('data-srcset') || '';
-        if (dataSrcset.trim()) {
-          source.setAttribute('srcset', dataSrcset);
-        }
+    // Sky Sports (#86) ships srcset="data:image/png;base64,..." (a 1x1 placeholder) alongside the
+    // real data-srcset, so "empty srcset" is not enough — a data: URI srcset counts as unset too.
+    container.querySelectorAll('source[data-srcset], img[data-srcset]').forEach(el => {
+      const current = (el.getAttribute('srcset') || '').trim()
+      if (current && !current.startsWith('data:')) return
+      const dataSrcset = el.getAttribute('data-srcset') || ''
+      if (dataSrcset.trim()) {
+        el.setAttribute('srcset', dataSrcset)
       }
-    });
+    })
 
     // 🎯 FIX PLACEHOLDER DIMENSIONS: Remove aspect ratio markers (AS.com uses width="4" height="3")
     // These are NOT actual pixel dimensions - they're 4:3 aspect ratio markers
