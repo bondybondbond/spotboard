@@ -533,7 +533,8 @@ export function cleanupDuplicates(html: string): string {
     '[class*="show-mobile"]',     // Shown-on-mobile-only duplicates (e.g., "hide show-mobile", "show-mobile-only")
                                   // NOT "[class*="-mobile"]" — that also hits "hide-mobile" which means
                                   // "hidden on mobile" (i.e., desktop-visible content we want to keep).
-    '[class*="mobile-"]',         // Generic mobile classes (e.g., "mobile-content", "mobile-title")
+    // Generic "mobile-*" classes (e.g. "mobile-content", "mobile-title") are handled by the
+    // token check below the loop, not a CSS substring selector (#70).
     
     // Shortened/abbreviated content (mobile versions)
     '[class*="-short"]',          // Generic short classes (e.g., "team-name--short", "title-short")
@@ -622,6 +623,19 @@ export function cleanupDuplicates(html: string): string {
     const matches = temp.querySelectorAll(selector);
     removedCount += matches.length;
     matches.forEach(el => el.remove());
+  });
+
+  // Generic "mobile-*" duplicate classes (e.g. "mobile-content", "card__mobile-title").
+  // A token counts only when "mobile-" is NOT directly preceded by "--": a BEM modifier
+  // (Sky Sports' "glints-box--mobile-edge") describes layout/state of a block, not a
+  // duplicated mobile copy, and a plain substring match deleted every tile (#70).
+  // Class-token check in JS because CSS selectors can't express the lookbehind.
+  // Known limit: modifiers like "x--is-mobile-hidden" still match.
+  temp.querySelectorAll('[class*="mobile-"]').forEach(el => {
+    if (Array.from(el.classList).some(token => /(?<!--)mobile-/.test(token))) {
+      removedCount++;
+      el.remove();
+    }
   });
 
   // 🎯 CNN FUSION CMS — duplicate label strip (per-article sibling check)
