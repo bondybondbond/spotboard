@@ -253,6 +253,25 @@ export function applyExclusions(html: string, excludedSelectors?: string[], card
 }
 
 /**
+ * Detects a fetched block that is only a client-side loading shell: several empty grey filler
+ * divs (Tailwind `bg-gray-200` etc.) and no links, images or real text. Sites like DailyFaceoff
+ * SSR this in place of a feed that a post-hydration JS fetch fills in, so direct-fetch can never
+ * succeed and the tab tiers must run (#75). Structural and baseline-independent (does not read the
+ * cache, so it can't be poisoned by an earlier degraded capture -- see #72).
+ */
+export function looksLikePlaceholderShell(root: Element): boolean {
+  if (root.querySelector('a, img, picture, svg, video')) return false
+  if ((root.textContent || '').trim().length >= 30) return false
+
+  const fillers = Array.from(root.querySelectorAll('div, span')).filter(el =>
+    /(^|\s)bg-(gray|slate|neutral|zinc|stone)-\d+(\s|$)/.test(el.getAttribute('class') || '') &&
+    el.children.length === 0 &&
+    (el.textContent || '').trim() === ''
+  )
+  return fillers.length >= 3
+}
+
+/**
  * Detect catastrophic content loss between a cached card and a fresh refresh result.
  * The output-side guard: refresh has ~8 input-side guards (skeleton, drift, fingerprint,
  * proxy) but none of them inspect what actually got stored. This is the one that does.

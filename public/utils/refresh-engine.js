@@ -2464,10 +2464,15 @@ async function refreshComponent(component) {
                                      /animate-[\w-]*(shimmer|pulse|skeleton)/i.test(extractedHtml);
         const isBailoutPage = fullHtml.includes('BAILOUT_TO_CLIENT_SIDE_RENDERING');
 
+        // GREY-FILLER LOADING SHELL (#75, DailyFaceoff sidebar feed): plain bg-gray-* divs, no
+        // heading, no animation class, no "skeleton" name -- matches none of the signals above.
+        const isPlaceholderShell = typeof looksLikePlaceholderShell === 'function' &&
+          looksLikePlaceholderShell(tempDiv);
+
         // Skeleton check triggers: skeleton class, empty container, missing images, wrapper skeleton,
         // Suspense boundary, React client-side-rendering bailout
 
-        if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing || hasSuspenseBoundary || isBailoutPage) {
+        if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing || hasSuspenseBoundary || isBailoutPage || isPlaceholderShell) {
           // Extract fingerprint FIRST to pass to tab refresh
           const originalFingerprint = extractFingerprint(component.html_cache);
 
