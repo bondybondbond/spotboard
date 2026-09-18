@@ -188,17 +188,24 @@ async function applyImportedBoard(payload) {
     // on the exact path meant to restore metadata, and would rot as new fields are
     // added to the app without this list being updated too.
     const { html_cache, rawCaptureLength, ...syncFields } = card;
-    syncWrites[`comp-${id}`] = {
-      ...syncFields,
-      excludedSelectors: syncFields.excludedSelectors || [],
-      positionBased: syncFields.positionBased || false,
-      refreshPaused: syncFields.refreshPaused || false,
-      cardSize: syncFields.cardSize || '1x1'
-    };
+    // #90: the export carries the resolved exclusions inline; fitCompForSync decides
+    // whether they stay in the sync record or go local-only. Local always keeps a copy.
+    const exportedExclusions = Array.isArray(syncFields.excludedSelectors) ? syncFields.excludedSelectors : null;
+    syncWrites[`comp-${id}`] = fitCompForSync(
+      { id, excludedSelectors: exportedExclusions || undefined, exclusionsStorage: exportedExclusions ? undefined : syncFields.exclusionsStorage },
+      {
+        ...syncFields,
+        excludedSelectors: exportedExclusions || [],
+        positionBased: syncFields.positionBased || false,
+        refreshPaused: syncFields.refreshPaused || false,
+        cardSize: syncFields.cardSize || '1x1'
+      }
+    );
 
     componentsData[id] = {
       html_cache: card.html_cache,
       last_refresh: card.last_refresh,
+      ...(exportedExclusions ? { excludedSelectors: exportedExclusions } : {}),
       ...(rawCaptureLength ? { rawCaptureLength } : {})
     };
   });
@@ -2412,6 +2419,11 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             </a>
           </div>
         ` : ''}
+        ${window.ExclusionStorage.exclusionsAreUnknown(component) ? `
+          <div class="card-exclusions-note" style="padding: 6px 12px; font-size: 12px; color: inherit; opacity: 0.75;">
+            Your exclusions for this card are saved on another device. Re-exclude here if hidden content reappears.
+          </div>
+        ` : ''}
         <div class="component-content">
           ${cleanupDuplicates(component.html_cache) || '<div class="card-empty-placeholder"><div style="font-size: 18px; margin-bottom: 8px;">📭</div><div style="font-weight: 600; margin-bottom: 4px;">No content yet</div><div style="font-size: 13px;">Click "Refresh All" to fetch latest content</div></div>'}
         </div>
@@ -2519,7 +2531,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             // Persist — one write path for every outcome. Sync gets caller-owned metadata
             // merged with the refresh-owned syncEntry; local gets the (possibly unchanged) html.
             chrome.storage.sync.set({
-              [`comp-${component.id}`]: {
+              [`comp-${component.id}`]: fitCompForSync(component, {
                 id: component.id,
                 name: component.name,
                 url: component.url,
@@ -2527,7 +2539,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 customLabel: component.customLabel,
                 headingFingerprint: component.headingFingerprint,
                 selector: component.selector,
-                excludedSelectors: component.excludedSelectors || [],
+                excludedSelectors: component.excludedSelectors,
                 positionBased: component.positionBased || false,
                 refreshPaused: component.refreshPaused || false,
                 cardSize: component.cardSize || '1x1',
@@ -2536,7 +2548,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 ...(component.requiresFixedCaptureWidth ? { requiresFixedCaptureWidth: true } : {}),
                 ...(component.structureMarker ? { structureMarker: component.structureMarker } : {}), // issue #77: preserve capture-time identity marker
                 ...(component.board ? { board: component.board } : {})
-              }
+              })
             }, () => {
               if (chrome.runtime.lastError) console.warn('Sync write error:', chrome.runtime.lastError);
             });

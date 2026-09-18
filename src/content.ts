@@ -2,6 +2,7 @@ console.log("🚀 SpotBoard: Content Script Loaded");
 import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, effectiveSrcset } from './utils/dom-cleanup';
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, classifyImages } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
+import { fitSyncRecord, SAVE_TOO_BIG_MESSAGE, friendlySaveError } from './utils/exclusion-storage';
 
 // Debug mode - set to true for detailed logging
 const DEBUG = false;
@@ -2576,9 +2577,10 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           headingFingerprint: headingFingerprint,  // 🎯 BATCH 2: Auto-extracted for self-healing
           structureMarker: structureMarker,  // issue #77: capture-time identity marker for feed-rotation rescue
           positionBased: finalPositionBased  // 🎯 BATCH 2: Use user's final selection from Advanced panel
-          // 🎯 FIX: excludedSelectors stored in LOCAL only (too large for sync quota)
+          // #90: excludedSelectors ride in sync when they fit; otherwise fitSyncRecord() below
+          // drops them from the sync record. Local ALWAYS keeps a copy (componentsData).
         };
-        console.log('💾 Storing metadata in sync storage (~300 bytes), exclusions in local storage');
+        console.log('💾 Storing metadata in sync storage, exclusions in local storage (and sync if they fit)');
 
         // 🎯 Playground capture: save to storage.local ONLY (avoid sync quota pressure)
         if (getIsPlaygroundPage()) {
@@ -2600,7 +2602,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           chrome.storage.local.set(playgroundData, () => {
             if (chrome.runtime.lastError) {
               console.error('❌ Playground save failed:', chrome.runtime.lastError);
-              showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
+              showStyledNotification(`❌ ${friendlySaveError(chrome.runtime.lastError.message)}`, 'error');
               return;
             }
 
@@ -2650,8 +2652,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
 
         // NEW: Save with per-component key instead of array
         const syncKey = `comp-${component.id}`;
-        const syncData = {
-          [syncKey]: {
+        const fittedSync = fitSyncRecord(syncKey, {
             id: component.id,
             name: metadata.name,
             url: metadata.url,
@@ -2661,11 +2662,16 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
             headingFingerprint: metadata.headingFingerprint,
             structureMarker: metadata.structureMarker, // issue #77: capture-time identity marker for feed-rotation rescue
             positionBased: finalPositionBased, // 🎯 BATCH 2: User's final selection from Advanced panel
-            excludedSelectors: excludedSelectors, // IMPORTANT: Sync for cross-device!
+            excludedSelectors: excludedSelectors, // synced for cross-device when it fits (#90)
             last_refresh: component.last_refresh,
             created_at: component.created_at // Track creation time for analytics
-          }
-        };
+          });
+        if (!fittedSync.fits) {
+          console.error('❌ Card record over the sync cap even without exclusions');
+          showStyledNotification(`❌ ${SAVE_TOO_BIG_MESSAGE}`, 'error');
+          return;
+        }
+        const syncData = { [syncKey]: fittedSync.record };
 
         log('💾 Saving component with key:', syncKey);
 
@@ -2673,7 +2679,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         chrome.storage.sync.set(syncData, () => {
             if (chrome.runtime.lastError) {
               console.error('❌ Sync storage set error:', chrome.runtime.lastError);
-              showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
+              showStyledNotification(`❌ ${friendlySaveError(chrome.runtime.lastError.message)}`, 'error');
               return;
             }
 
@@ -2702,7 +2708,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
               chrome.storage.local.set({ componentsData: localData }, () => {
                 if (chrome.runtime.lastError) {
                   console.error('❌ Local storage set error:', chrome.runtime.lastError);
-                  showStyledNotification(`❌ Save failed: ${chrome.runtime.lastError.message}`, 'error');
+                  showStyledNotification(`❌ ${friendlySaveError(chrome.runtime.lastError.message)}`, 'error');
                   return;
                 }
 

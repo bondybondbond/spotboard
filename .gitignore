@@ -54,3 +54,6 @@ nul
 # ai-dev-kit approach-A pilot overlay (reversible)
 .claude/
 /AGENTS.md
+
+# Auto-generated from src/utils/exclusion-storage.ts (esbuild pre-build)
+public/utils/exclusion-storage.js

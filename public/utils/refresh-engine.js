@@ -581,6 +581,20 @@ function _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded = fa
 const MIN_VALID_HTML_LEN = 50;
 
 /**
+ * #90: build the comp-{id} sync record with excludedSelectors inline when it fits under the
+ * sync per-item cap, or omitted (marker exclusionsStorage:'local') when not. Every writer that
+ * rebuilds a sync record from a merged component goes through this. See exclusion-storage.ts.
+ */
+function fitCompForSync(comp, record) {
+  const ES = window.ExclusionStorage
+  const { record: fitted, fits } = ES.fitSyncRecord(`comp-${comp.id}`, record, {
+    exclusionsUnknown: ES.exclusionsAreUnknown(comp)
+  })
+  if (!fits) console.warn('[SB-REFRESH] comp record still over the sync cap without exclusions:', comp.id)
+  return fitted
+}
+
+/**
  * The single safe way to turn a refreshComponent() result into the { syncEntry, localEntry }
  * a caller persists. Shared by refreshAll()'s per-card apply loop and dashboard.js's
  * single-card handler so the "a failed refresh never destroys last-known-good content" rule
@@ -623,9 +637,11 @@ function applyRefreshResult(component, result) {
   const localEntry = {
     selector: component.selector,
     html_cache: committed ? result.html_cache : component.html_cache,
-    last_refresh: committed ? result.last_refresh : component.last_refresh,
-    excludedSelectors: component.excludedSelectors || []
+    last_refresh: committed ? result.last_refresh : component.last_refresh
   };
+  // #90: leave excludedSelectors unset when unknown (kept local on another device) so
+  // the "unknown" state isn't overwritten with an empty list.
+  if (Array.isArray(component.excludedSelectors)) localEntry.excludedSelectors = component.excludedSelectors;
   // rawCaptureLength baseline: only advance it on a real commit that supplied a new value.
   // A rejected/failed refresh must never poison the drift baseline (see REF-11).
   const rawCapture = committed
@@ -2965,7 +2981,7 @@ async function refreshAll(allowedIds = null) {
       // Handle paused components - keep existing data unchanged
       if (!result) {
         // Component was paused - preserve all existing data
-        syncUpdates[`comp-${comp.id}`] = {
+        syncUpdates[`comp-${comp.id}`] = fitCompForSync(comp, {
           id: comp.id,
           name: comp.name,
           url: comp.url,
@@ -2973,7 +2989,7 @@ async function refreshAll(allowedIds = null) {
           customLabel: comp.customLabel,
           headingFingerprint: comp.headingFingerprint,
           selector: comp.selector,
-          excludedSelectors: comp.excludedSelectors || [],
+          excludedSelectors: comp.excludedSelectors,
           positionBased: comp.positionBased || false, // 🎯 BATCH 5 FIX: Preserve capture method
           refreshPaused: comp.refreshPaused, // Preserve paused state!
           last_refresh: comp.last_refresh,
@@ -2989,14 +3005,14 @@ async function refreshAll(allowedIds = null) {
           ...(comp.structureMarker ? { structureMarker: comp.structureMarker } : {}), // issue #77: preserve capture-time identity marker
           ...(comp.board ? { board: comp.board } : {}),
           ...(comp.created_at ? { created_at: comp.created_at } : {}) // issue #18: preserve capture-order key
-        };
+        });
 
         const pausedEntry = {
           selector: comp.selector,
           html_cache: comp.html_cache,
-          last_refresh: comp.last_refresh,
-          excludedSelectors: comp.excludedSelectors || []
+          last_refresh: comp.last_refresh
         };
+        if (Array.isArray(comp.excludedSelectors)) pausedEntry.excludedSelectors = comp.excludedSelectors;
         if (comp.rawCaptureLength) pausedEntry.rawCaptureLength = comp.rawCaptureLength;
         updatedLocalData[comp.id] = pausedEntry;
       } else {
@@ -3010,7 +3026,7 @@ async function refreshAll(allowedIds = null) {
         // refreshes skip background+offscreen and go straight to tryActiveTab.
         // Once set, the flag is preserved (never cleared) — comp.requiresActiveFocus from storage.
         const updatedActiveFocus = result.requiresActiveFocus || comp.requiresActiveFocus || false;
-        syncUpdates[`comp-${comp.id}`] = {
+        syncUpdates[`comp-${comp.id}`] = fitCompForSync(comp, {
           id: comp.id,
           name: comp.name,
           url: comp.url,
@@ -3018,7 +3034,7 @@ async function refreshAll(allowedIds = null) {
           customLabel: comp.customLabel,
           headingFingerprint: comp.headingFingerprint,
           selector: comp.selector,
-          excludedSelectors: comp.excludedSelectors || [],
+          excludedSelectors: comp.excludedSelectors,
           positionBased: comp.positionBased || false, // 🎯 BATCH 5 FIX: Preserve capture method
           refreshPaused: comp.refreshPaused, // Preserve state
           cardSize: comp.cardSize || '1x1', // 🔧 FIX: Preserve card size on refresh
@@ -3028,15 +3044,19 @@ async function refreshAll(allowedIds = null) {
           ...(comp.structureMarker ? { structureMarker: comp.structureMarker } : {}), // issue #77: preserve capture-time identity marker
           ...(comp.board ? { board: comp.board } : {}),
           ...(comp.created_at ? { created_at: comp.created_at } : {}) // issue #18: preserve capture-order key
-        };
+        });
 
         updatedLocalData[comp.id] = localEntry;
       }
     });
     
     // Save to both storages (sync gets per-component keys, local gets HTML)
+    // #90: surface sync failures (was silently ignored). Non-fatal -- local has the data.
     await new Promise(resolve => {
-      chrome.storage.sync.set(syncUpdates, resolve);
+      chrome.storage.sync.set(syncUpdates, () => {
+        if (chrome.runtime.lastError) console.warn('[SB-REFRESH] Sync write error:', chrome.runtime.lastError.message)
+        resolve()
+      });
     });
     
     await new Promise(resolve => {

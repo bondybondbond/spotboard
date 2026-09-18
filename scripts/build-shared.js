@@ -51,3 +51,17 @@ await build({
 });
 fs.copyFileSync('public/utils/dom-snapshot.js', 'dist/utils/dom-snapshot.js');
 console.log('✅ Built public/utils/dom-snapshot.js from src/utils/dom-snapshot.ts');
+
+// exclusion-storage (#90)
+await build({
+  entryPoints: ['src/utils/exclusion-storage.ts'],
+  outfile: 'public/utils/exclusion-storage.js',
+  bundle: true,
+  format: 'iife',
+  globalName: 'ExclusionStorage',
+  footer: { js: 'window.ExclusionStorage = ExclusionStorage;' },
+  target: 'chrome120',
+  banner: { js: '// AUTO-GENERATED from src/utils/exclusion-storage.ts — DO NOT EDIT' },
+});
+fs.copyFileSync('public/utils/exclusion-storage.js', 'dist/utils/exclusion-storage.js');
+console.log('✅ Built public/utils/exclusion-storage.js from src/utils/exclusion-storage.ts');
