@@ -121,12 +121,73 @@ function getSimilarSiblings(element: HTMLElement): HTMLElement[] {
 
   const parent = element.parentElement;
   if (!parent) return [element];
-  return Array.from(parent.children).filter(
+  const siblings = Array.from(parent.children).filter(
     (el): el is HTMLElement =>
       el instanceof HTMLElement &&
       el.tagName === element.tagName &&
       el.className === element.className
   );
+  if (siblings.length > 1) return siblings
+
+  // Cross-parent fallback (#87): repeated per-article furniture (byline, date, headline) sits
+  // one-per-article in separate parents, so the same-parent group above is a group of 1.
+  // Widen to the captured container only (never the whole page), still exact-match -- no
+  // text/regex signals (#63). See getCrossParentGroup for the two signals.
+  if (lockedElement) {
+    const group = getCrossParentGroup(element, lockedElement)
+    if (group.length > 1) return group
+  }
+  return siblings
+}
+
+// Cross-parent matching inside the locked section (#87). Two narrow signals only:
+//  1. <time>: a semantic "this is a date" tag -- every <time> in the section.
+//  2. Nearest classed anchor: the element itself (or, if classless, the nearest ancestor within
+//     3 levels that has a class) matched by tag + EXACT className, then the same child-index path
+//     down to the clicked element. The parent's class is deliberately NOT required (sites
+//     vary it per article); exact class on the anchor is the fail-safe.
+// Anything with no classed anchor, or a group of 1, returns [element].
+function getCrossParentGroup(element: HTMLElement, locked: HTMLElement): HTMLElement[] {
+  if (!locked.contains(element) || element === locked) return [element]
+
+  if (element.tagName === 'TIME') {
+    const times = Array.from(locked.querySelectorAll<HTMLElement>('time'))
+    return times.length > 1 && times.includes(element) ? times : [element]
+  }
+
+  const indexPath: number[] = []
+  let anchor: HTMLElement | null = element
+  for (let depth = 0; anchor && anchor !== locked && depth <= 3; depth++) {
+    if (typeof anchor.className === 'string' && anchor.className.trim()) break
+    const par: HTMLElement | null = anchor.parentElement
+    if (!par) return [element]
+    indexPath.unshift(Array.from(par.children).indexOf(anchor))
+    anchor = par
+  }
+  if (indexPath.length > 3 || !anchor || anchor === locked || typeof anchor.className !== 'string' || !anchor.className.trim()) return [element]
+
+  const matches: HTMLElement[] = []
+  locked.querySelectorAll<HTMLElement>(anchor.tagName).forEach(candidate => {
+    if (candidate.className !== anchor!.className) return
+    let node: HTMLElement | undefined = candidate
+    for (const idx of indexPath) {
+      node = node?.children[idx] as HTMLElement | undefined
+      if (!node) return
+    }
+    if (node && node.tagName === element.tagName) matches.push(node)
+  })
+  const outermost = matches.filter(el => !matches.some(other => other !== el && other.contains(el)))
+  return outermost.length > 1 && outermost.includes(element) ? outermost : [element]
+}
+
+export function __getSimilarSiblingsForTest(element: HTMLElement, locked: HTMLElement): HTMLElement[] {
+  const prev = lockedElement
+  lockedElement = locked
+  try {
+    return getSimilarSiblings(element)
+  } finally {
+    lockedElement = prev
+  }
 }
 
 // Initialize onboarding module — stores toggleCapture reference via dependency injection.
