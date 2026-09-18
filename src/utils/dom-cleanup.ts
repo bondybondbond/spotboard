@@ -1765,6 +1765,16 @@ function getMaxSrcsetWidth(el: Element): number {
 }
 
 /**
+ * The srcset a lazy-loading page will actually use: `srcset`, unless it's empty or a data: URI
+ * placeholder (Sky Sports, #86), in which case the real `data-srcset`.
+ */
+export function effectiveSrcset(el: Element): string {
+  const current = (el.getAttribute('srcset') || '').trim()
+  if (current && !current.startsWith('data:')) return current
+  return (el.getAttribute('data-srcset') || '').trim() || current
+}
+
+/**
  * Forces the largest available <source> URL into img.src for card storage.
  * Selects by actual image pixel width (CDN URL dimensions, w-descriptor) — NOT by min-width
  * breakpoint. NBC/Cloudinary pattern: (min-width:758px)→t_focal-1000x563 is larger than
@@ -1773,14 +1783,14 @@ function getMaxSrcsetWidth(el: Element): number {
  * Returns true if the picture was flattened (sources removed).
  */
 function resolveLargestPictureSourceForCard(picture: Element, img: HTMLImageElement): boolean {
-  const sources = [...picture.querySelectorAll<HTMLSourceElement>('source[srcset]')];
+  const sources = [...picture.querySelectorAll<HTMLSourceElement>('source[srcset], source[data-srcset]')];
   if (!sources.length) return false;
 
   let largestUrl: string | null = null;
   let bestActualWidth = -1;
 
   for (const source of sources) {
-    const srcset = source.getAttribute('srcset') || '';
+    const srcset = effectiveSrcset(source);
     const parts = srcset.trim().split(/\s+/);
     const url = parts[0];
     if (!url || !url.startsWith('http')) continue;
@@ -1804,8 +1814,10 @@ function resolveLargestPictureSourceForCard(picture: Element, img: HTMLImageElem
 
   // Fallback: no valid URLs found → use first source's srcset URL
   if (!largestUrl) {
-    largestUrl = (sources[0].getAttribute('srcset') || '').trim().split(/\s+/)[0] || null;
+    largestUrl = effectiveSrcset(sources[0]).trim().split(/\s+/)[0] || null;
   }
+  // Never flatten to a data: placeholder — that would replace a good src and delete the real sources (#86)
+  if (largestUrl?.startsWith('data:')) return false;
 
   const originalSrc = img.getAttribute('src');
   if (largestUrl && largestUrl !== originalSrc) {

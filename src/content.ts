@@ -1,5 +1,5 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
-import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions } from './utils/dom-cleanup';
+import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, effectiveSrcset } from './utils/dom-cleanup';
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, classifyImages } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
 
@@ -1167,12 +1167,12 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
   clone.querySelectorAll('picture').forEach(pic => {
     const img = pic.querySelector('img');
     if (!img) return;
-    const sources = [...pic.querySelectorAll<HTMLSourceElement>('source[srcset]')];
+    const sources = [...pic.querySelectorAll<HTMLSourceElement>('source[srcset], source[data-srcset]')];
     if (!sources.length) return;
     let largestUrl: string | null = null;
     let bestActualWidth = -1;
     for (const source of sources) {
-      const srcset = source.getAttribute('srcset') || '';
+      const srcset = effectiveSrcset(source);
       const parts = srcset.trim().split(/\s+/);
       const url = parts[0];
       if (!url || !url.startsWith('http')) continue;
@@ -1205,7 +1205,8 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
         largestUrl = url;
       }
     }
-    if (!largestUrl) largestUrl = (sources[0].getAttribute('srcset') || '').trim().split(/\s+/)[0] || null;
+    if (!largestUrl) largestUrl = effectiveSrcset(sources[0]).trim().split(/\s+/)[0] || null;
+    if (largestUrl?.startsWith('data:')) return; // never flatten to a placeholder (#86)
     const originalSrc = img.getAttribute('src');
     if (largestUrl && largestUrl !== originalSrc) {
       img.setAttribute('src', largestUrl);
