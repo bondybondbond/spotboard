@@ -162,6 +162,30 @@ export function applyExclusions(html: string, excludedSelectors?: string[], card
     }
   };
 
+  // #89: resolve EVERY selector against the same untouched markup, remove only at the end.
+  // Removing as we went let an earlier exclusion shift `:nth-child` positions, so later
+  // positional selectors matched nothing (element came back) or the wrong sibling.
+  // `pendingRemoval` is what earlier selectors already claimed; budgets are measured with it
+  // applied (virtually) so a chain of modest exclusions still can't compound into erasure.
+  const pendingRemoval = new Set<Element>();
+  const measure = (skip: Set<Element>) => {
+    let text = '';
+    let struct = 0;
+    let img = 0;
+    const walk = (node: Node) => {
+      if (node.nodeType === 3) { text += node.nodeValue || ''; return; }
+      if (node.nodeType !== 1) return;
+      const elNode = node as Element;
+      if (skip.has(elNode)) return;
+      if (elNode.matches(STRUCTURAL_SEL)) struct++;
+      if (elNode.tagName === 'IMG') img++;
+      elNode.childNodes.forEach(walk);
+    };
+    // Descendants only (like the old querySelectorAll tallies) -- the card root itself never counts
+    queryRoot.childNodes.forEach(walk);
+    return { text: text.trim().length, struct, img };
+  };
+
   excludedSelectors.forEach(selector => {
     try {
       // 🚨 SAFETY CHECK: Detect ultra-generic selectors that would remove everything
@@ -187,65 +211,62 @@ export function applyExclusions(html: string, excludedSelectors?: string[], card
       // guarantees this), yet legitimate exclusions were being skipped because that one element
       // was 24-67% of the card's text. Match count -- not size -- is the actual signal for
       // "did this selector generalize beyond what the user clicked".
-      const matchCountBefore = queryRoot.querySelectorAll(effectiveSelector).length;
+      const matches = Array.from(queryRoot.querySelectorAll(effectiveSelector));
 
-      if (matchCountBefore === 0) {
+      if (matches.length === 0) {
         // Selector no longer resolves against the refreshed markup (dynamic classes, changed
         // SSR structure, or a stale positional path). Safe failure mode -- the excluded region
         // simply stays visible rather than risking a wrong removal -- but log it so residual
         // markup-drift misses are visible during testing (issue #14).
-        console.warn('  \u26a0\ufe0f Exclusion selector matched nothing on refresh (left visible):', selector);
+        console.warn('  ⚠️ Exclusion selector matched nothing on refresh (left visible):', selector);
         return;
       }
 
-      if (matchCountBefore > 1 && isTrustedTableColumn(effectiveSelector)) {
-        queryRoot.querySelectorAll(effectiveSelector).forEach(el => el.remove());
+      if (matches.length > 1 && isTrustedTableColumn(effectiveSelector)) {
+        matches.forEach(el => pendingRemoval.add(el));
         return;
       }
 
-      if (matchCountBefore > 1) {
-        // Measure by construction (clone -> remove -> compare) so nested matches can't be
-        // double-counted -- the DOM can only remove a subtree once. Evaluated sequentially
-        // against the CURRENT state of queryRoot, so a chain of individually-modest exclusions
+      if (matches.length > 1) {
+        // Measure the removal virtually (skip-set walk) so nested matches can't be
+        // double-counted -- a subtree is only skipped once. Evaluated against everything
+        // earlier selectors already claimed, so a chain of individually-modest exclusions
         // can't silently compound into total erasure.
-        const probe = queryRoot.cloneNode(true) as HTMLElement;
-        probe.querySelectorAll(effectiveSelector).forEach(el => el.remove());
+        const before = measure(pendingRemoval);
+        const withThis = new Set<Element>(pendingRemoval);
+        matches.forEach(el => withThis.add(el));
+        const after = measure(withThis);
 
-        const textBefore = (queryRoot.textContent || '').trim().length;
-        const textAfter = (probe.textContent || '').trim().length;
-        const structBefore = queryRoot.querySelectorAll(STRUCTURAL_SEL).length;
-        const structAfter = probe.querySelectorAll(STRUCTURAL_SEL).length;
-        const imgBefore = queryRoot.querySelectorAll('img').length;
-        const imgAfter = probe.querySelectorAll('img').length;
-
-        const textRemovedPct = textBefore > 0 ? (textBefore - textAfter) / textBefore : 0;
-        const structRemovedPct = structBefore > 0 ? (structBefore - structAfter) / structBefore : 0;
-        const wipesAllImages = imgBefore > 0 && imgAfter === 0;
+        const textRemovedPct = before.text > 0 ? (before.text - after.text) / before.text : 0;
+        const structRemovedPct = before.struct > 0 ? (before.struct - after.struct) / before.struct : 0;
+        const wipesAllImages = before.img > 0 && after.img === 0;
 
         // Threshold calibrated against the real Kalshi reproduction: the actual over-broad
         // selector from the bug (matches 27 elements, deletes every percentage in the card)
         // removes 29% of the card's total text -- the structural clause gives zero protection
         // here because this card is pure Tailwind divs, no li/tr/article at all. 30% would have
         // let the literal reproduced bug through. 20% catches it with margin.
-        const overTextBudget = textBefore > 0 && textRemovedPct > 0.2;
-        const overStructBudget = structBefore > 0 && structRemovedPct > 0.4;
+        const overTextBudget = before.text > 0 && textRemovedPct > 0.2;
+        const overStructBudget = before.struct > 0 && structRemovedPct > 0.4;
 
         if (overTextBudget || overStructBudget || wipesAllImages) {
           console.warn(
             `🚨 SKIPPING exclusion selector that exceeds its removal budget: "${selector}" ` +
-            `(matches=${matchCountBefore}, text -${Math.round(textRemovedPct * 100)}%, structural -${Math.round(structRemovedPct * 100)}%, ` +
+            `(matches=${matches.length}, text -${Math.round(textRemovedPct * 100)}%, structural -${Math.round(structRemovedPct * 100)}%, ` +
             `wipesAllImages=${wipesAllImages})`
           );
           return; // Skip -- do not commit this selector's removal
         }
       }
 
-      // Within budget (or a single precise match, which is always trusted) -- commit
-      queryRoot.querySelectorAll(effectiveSelector).forEach(el => el.remove());
+      // Within budget (or a single precise match, which is always trusted) -- claim it
+      matches.forEach(el => pendingRemoval.add(el));
     } catch (e) {
-      console.warn('  \u26a0\ufe0f Could not remove excluded element:', selector, e);
+      console.warn('  ⚠️ Could not remove excluded element:', selector, e);
     }
   });
+
+  pendingRemoval.forEach(el => el.remove());
 
   // Single-element input -> queryRoot IS that element; its outerHTML is byte-equivalent to the
   // old `container.innerHTML`. Multi-root fragment -> unchanged behaviour.
