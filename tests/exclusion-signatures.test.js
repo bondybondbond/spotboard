@@ -118,8 +118,8 @@ test('pipeline: verdict is left on the component, non-enumerable, and never seri
     excludedSelectors: ['div.does-not-exist'],
     exclusionSignatures: [{ sel: 'div.does-not-exist', sig: 'excluded words here', keep: 0 }],
   }
-  const html = applySanitizationPipeline('<div class="card"><p>Keep</p><p>Excluded words here</p></div>', component)
-  assert.ok(html.includes('Excluded words here')) // selector matched nothing -> left visible ...
+  const html = applySanitizationPipeline('<div class="card"><p>Keep</p><p>Excluded words here today</p></div>', component)
+  assert.ok(html.includes('Excluded words here today')) // selector matched nothing -> left visible ...
   assert.deepEqual(component.__exclusionCheck.leaked, ['div.does-not-exist']) // ... and now detected
   assert.ok(!Object.keys(component).includes('__exclusionCheck'))
   assert.ok(!JSON.stringify(component).includes('__exclusionCheck'))

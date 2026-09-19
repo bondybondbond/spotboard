@@ -96,7 +96,7 @@ export function applyExclusions(html: string, excludedSelectors?: string[], card
  * the removal budget. Those are the exclusions whose content is still visible in `html`.
  * The refresh engine uses this to tell "exclusions applied" from "silently left visible".
  */
-export function applyExclusionsWithStats(html: string, excludedSelectors?: string[], cardSelector?: string): { html: string; unresolved: string[] } {
+export function applyExclusionsWithStats(html: string, excludedSelectors?: string[], cardSelector?: string, signatures?: ExclusionSignature[]): { html: string; unresolved: string[] } {
   const unresolved: string[] = [];
   if (!html || !excludedSelectors || excludedSelectors.length === 0) {
     return { html, unresolved };
@@ -293,6 +293,58 @@ export function applyExclusionsWithStats(html: string, excludedSelectors?: strin
       unresolved.push(selector);
     }
   });
+
+  // #99: text-anchor fallback for exclusions no selector could resolve (position-only chains
+  // that encode the capture-time layout). Each unresolved exclusion has a stored text signature
+  // (#96); if exactly the expected number of elements on THIS render carry that whole text, they
+  // are the excluded elements. Deliberately narrow -- anything ambiguous stays unresolved so
+  // #96's gate still fails safe instead of removing a guess:
+  //  - full-length signature only (>= SIGNATURE_MAX_LEN was truncated, equality is meaningless)
+  //  - keep === 0 (the captured card kept no copy, so every copy is excluded content)
+  //  - element's WHOLE normalised text equals the signature (nothing extra swallowed)
+  //  - outermost of each equal-text chain, counted as one; never the card root or its only content
+  //  - chain count must not exceed the number of unresolved exclusions sharing the signature
+  //    (extra copies, hidden duplicates, new rows -> fail safe)
+  if (haveRealRoot && signatures && signatures.length > 0 && unresolved.length > 0) {
+    const sigBySel = new Map<string, ExclusionSignature>()
+    signatures.forEach(s => sigBySel.set(s.sel, s))
+    const selsBySig = new Map<string, string[]>()
+    Array.from(new Set(unresolved)).forEach(sel => {
+      const entry = sigBySel.get(sel)
+      if (!entry || entry.keep !== 0 || entry.sig.length >= SIGNATURE_MAX_LEN) return
+      selsBySig.set(entry.sig, [...(selsBySig.get(entry.sig) || []), sel])
+    })
+
+    if (selsBySig.size > 0) {
+      const rootText = normalizeSignatureText(queryRoot.textContent || '')
+      const insidePending = (el: Element): boolean => {
+        for (let p: Element | null = el; p; p = p.parentElement) if (pendingRemoval.has(p)) return true
+        return false
+      }
+      const resolvedSels = new Set<string>()
+      selsBySig.forEach((sels, sig) => {
+        if (sig === rootText) return // would erase the card's only content
+        // also skip wrappers OF an already-claimed element: their text still includes it, and
+        // removing the wrapper would over-remove what that selector never targeted
+        const claimed = Array.from(pendingRemoval)
+        const equalText = Array.from(queryRoot.querySelectorAll('*')).filter(el =>
+          !insidePending(el) && !claimed.some(p => el.contains(p)) && normalizeSignatureText(el.textContent || '') === sig
+        )
+        const chains = equalText.filter(el => !equalText.some(other => other !== el && other.contains(el)))
+        if (chains.length === 0 || chains.length > sels.length) return
+        // never leave the card with no text at all once earlier removals + these are applied
+        const afterAll = new Set<Element>(pendingRemoval)
+        chains.forEach(el => afterAll.add(el))
+        if (measure(afterAll).text === 0) return
+        chains.forEach(el => pendingRemoval.add(el))
+        sels.forEach(sel => resolvedSels.add(sel))
+        console.warn(`  #99 text-anchor removed ${chains.length} element(s) for signature "${sig}"`)
+      })
+      if (resolvedSels.size > 0) {
+        for (let i = unresolved.length - 1; i >= 0; i--) if (resolvedSels.has(unresolved[i])) unresolved.splice(i, 1)
+      }
+    }
+  }
 
   pendingRemoval.forEach(el => el.remove());
 
@@ -2208,7 +2260,7 @@ export function signatureText(html: string): string {
 
 /** Lowercase, drop digits (prices/counts churn between refreshes), collapse whitespace. */
 export function normalizeSignatureText(text: string): string {
-  return text.toLowerCase().replace(/[0-9]+/g, '').replace(/\s+/g, ' ').trim();
+  return text.toLowerCase().replace(/[\u200b-\u200d\ufeff]/g, '').replace(/[0-9]+/g, '').replace(/\s+/g, ' ').trim();
 }
 
 /** Signature for one excluded element's outerHTML, or null when it has too little text to verify. */
@@ -2297,7 +2349,7 @@ export function applySanitizationPipeline(inputHtml: string, component: Sanitiza
   // the image-classification passes below all assign this HTML to .innerHTML, which would
   // otherwise fire (and CSP-block) any on* handler the captured page carried.
   const safeHtml = stripEventHandlers(inputHtml);
-  const { html: withExclusions, unresolved } = applyExclusionsWithStats(safeHtml, component.excludedSelectors, component.selector);
+  const { html: withExclusions, unresolved } = applyExclusionsWithStats(safeHtml, component.excludedSelectors, component.selector, component.exclusionSignatures);
   const withBgImages = extractBackgroundImages(withExclusions);
   const withPreserved = preserveImageClassifications(withBgImages, component.html_cache || '');
   const withImageClassification = classifyImagesForRefresh(withPreserved);

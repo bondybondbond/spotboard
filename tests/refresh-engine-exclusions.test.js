@@ -25,7 +25,7 @@ function comp(extra = {}) {
 
 test('gate: leaked exclusion rejects the refresh, keeps original, flags exclusionLeak', () => {
   const c = comp()
-  const html = g.applySanitizationPipeline('<div class="card"><h2>T</h2><p>Body text here for the card</p><ul><li>a</li><li>b</li><li>c</li></ul><div>Yes 90¢ No 11¢</div></div>', c)
+  const html = g.applySanitizationPipeline('<div class="card"><h2>T</h2><p>Body text here for the card</p><ul><li>a</li><li>b</li><li>c</li></ul><div>Yes 90¢ No 11¢ tap to trade</div></div>', c)
   const r = g._finalizeSuccess(html, c, {})
   assert.equal(r.success, false)
   assert.equal(r.exclusionLeak, true)
@@ -43,7 +43,7 @@ test('gate: no leak (excluded text absent) commits normally', () => {
 
 test('gate: a verdict computed for a DIFFERENT html string is ignored (no cross-pass contamination)', () => {
   const c = comp()
-  g.applySanitizationPipeline('<div class="card"><p>Body here</p><div>Yes 90¢ No 11¢</div></div>', c) // leaking pass
+  g.applySanitizationPipeline('<div class="card"><p>Body here</p><div>Yes 90¢ No 11¢ tap to trade</div></div>', c) // leaking pass
   assert.ok(c.__exclusionCheck.leaked.length > 0)
   const r = g._finalizeSuccess(goodHtml, c, {}) // finalising some other, clean html
   assert.equal(r.success, true)
@@ -51,7 +51,7 @@ test('gate: a verdict computed for a DIFFERENT html string is ignored (no cross-
 
 test('gate: legacy card with no signatures never fails on this gate', () => {
   const c = comp({ exclusionSignatures: undefined })
-  const html = g.applySanitizationPipeline('<div class="card"><p>Body text for card, long enough</p><ul><li>a</li><li>b</li><li>c</li></ul><div>Yes 90¢ No 11¢</div></div>', c)
+  const html = g.applySanitizationPipeline('<div class="card"><p>Body text for card, long enough</p><ul><li>a</li><li>b</li><li>c</li></ul><div>Yes 90¢ No 11¢ tap to trade</div></div>', c)
   assert.equal(g._finalizeSuccess(html, c, {}).success, true)
 })
 
@@ -67,7 +67,7 @@ test('gate: content-loss guard still runs first and is unchanged', () => {
 
 test('leak: refreshComponent fails safe immediately -- no extra tab/popup attempts', async () => {
   // direct fetch returns a card whose excluded text is back and whose selector no longer matches
-  const page = '<html><body><div class="card"><h2>Title</h2><p>Body text for the card, long enough to count.</p><ul><li><a href="/1">one</a></li><li><a href="/2">two</a></li><li><a href="/3">three</a></li></ul><div>Yes 90¢ No 11¢</div></div></body></html>'
+  const page = '<html><body><div class="card"><h2>Title</h2><p>Body text for the card, long enough to count.</p><ul><li><a href="/1">one</a></li><li><a href="/2">two</a></li><li><a href="/3">three</a></li></ul><div>Yes 90¢ No 11¢ tap to trade</div></div></body></html>'
   global.fetch = async () => ({ ok: true, status: 200, statusText: 'OK', text: async () => page })
   let tabCalls = 0
   g.tabBasedRefresh = async () => { tabCalls++; return { html: null, activeFocusNeeded: false } }
