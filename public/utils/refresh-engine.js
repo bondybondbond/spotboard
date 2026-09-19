@@ -86,6 +86,9 @@ function classifyError(errorString) {
 
   const errorLower = errorString.toLowerCase();
 
+  if (errorLower.includes('excluded content')) {
+    return 'exclusions_unapplied';  // #96: user-excluded content came back in the refreshed card
+  }
   if (errorLower.includes('skeleton') || errorLower.includes('empty container')) {
     return 'skeleton';  // Site didn't load completely
   }
@@ -114,6 +117,7 @@ function getErrorLabel(errorCode) {
     'layout_changed': "Site layout changed",
     'content_drift': "Content changed significantly",
     'content_lost': "Card came back empty",
+    'exclusions_unapplied': "Excluded content came back — re-capture this card",
     'unknown': "Refresh failed"
   };
   return labels[errorCode] || "Refresh failed";
@@ -550,6 +554,27 @@ function _finalizeSuccess(sanitizedHtml, component, extras = {}) {
       keepOriginal: true
     };
   }
+  // #96 exclusion-integrity gate: applySanitizationPipeline() left its verdict on the component.
+  // If an exclusion that did not apply on this render has its captured text back in the card,
+  // committing would silently re-show something the user deliberately removed -- keep the last
+  // good content instead. Deliberately NO retry on richer tiers here: measured on Kalshi, no tier
+  // resolved every exclusion, so retries only cost time (and popups) without changing the outcome.
+  // The verdict only counts for the exact HTML it was computed on (a later pipeline pass on a
+  // different candidate must not be judged by an earlier pass's result, or vice versa).
+  const _xcRaw = component && component.__exclusionCheck;
+  const _xc = _xcRaw && _xcRaw.html === sanitizedHtml ? _xcRaw : null;
+  if (_xc && _xc.leaked && _xc.leaked.length > 0) {
+    console.warn(`[SB-REFRESH] Exclusion guard: ${_xc.leaked.length} excluded element(s) came back for ${component && component.name}`, _xc.leaked);
+    return {
+      success: false,
+      error: 'Excluded content came back',
+      keepOriginal: true,
+      exclusionLeak: true
+    };
+  }
+  if (DEBUG && _xc && _xc.unverified && _xc.unverified.length > 0) {
+    console.log(`[SB-REFRESH] ${_xc.unverified.length} unapplied exclusion(s) cannot be verified (no captured text) for ${component && component.name}`);
+  }
   const r = {
     success: true,
     html_cache: sanitizedHtml,
@@ -649,6 +674,9 @@ function applyRefreshResult(component, result) {
     : component.rawCaptureLength;
   if (rawCapture) localEntry.rawCaptureLength = rawCapture;
   if (component.originalCaptureLength) localEntry.originalCaptureLength = component.originalCaptureLength;
+  // #96: capture-time exclusion signatures are local-only and must survive every refresh write
+  // (localEntry replaces the stored record wholesale); absent just means "unverified".
+  if (Array.isArray(component.exclusionSignatures)) localEntry.exclusionSignatures = component.exclusionSignatures;
 
   const syncEntry = {
     last_refresh: localEntry.last_refresh,
@@ -684,6 +712,7 @@ const _GA4_ERROR_LABEL = {
   layout_changed: 'selector_not_found',
   content_drift: 'content_drift', // NEW (was 'unknown' before)
   content_lost: 'content_lost',   // NEW (was 'unknown' before)
+  exclusions_unapplied: 'exclusions_unapplied', // #96
   unknown: 'unknown'
 };
 
@@ -2214,7 +2243,7 @@ async function refreshComponent(component) {
     // Include credentials to maintain login sessions (e.g., Yahoo Finance, authenticated sites)
     let fullHtml;
     let fetchError = null;
-    
+
     try {
       const response = await fetch(component.url, {
         method: 'GET',
@@ -2317,6 +2346,17 @@ async function refreshComponent(component) {
       }
       if (matches.length > 0) {
         let element = null;
+
+        // #96: never pick an empty loading shell. Kalshi's server HTML has 2 empty skeleton
+        // blocks matching the card selector before the real one; with no headingFingerprint the
+        // tiebreakers below fell through to matches[0] (a shell), every exclusion then matched
+        // nothing and the refresh was rejected as empty. Drop text-less, media-less candidates
+        // first -- but only when that leaves at least one real candidate.
+        const _hasContent = (el) => (el.textContent || '').trim().length > 0 ||
+          !!el.querySelector('img, picture, svg, canvas, video, iframe, input, select, textarea') ||
+          /background(-image)?\s*:/i.test(el.outerHTML.slice(0, 4000)); // inline background art
+        const _contentful = Array.from(matches).filter(_hasContent);
+        if (_contentful.length > 0 && _contentful.length < matches.length) matches = _contentful;
         
         // If multiple matches, use fingerprint to find the right one
         if (matches.length > 1) {
@@ -3014,6 +3054,8 @@ async function refreshAll(allowedIds = null) {
         };
         if (Array.isArray(comp.excludedSelectors)) pausedEntry.excludedSelectors = comp.excludedSelectors;
         if (comp.rawCaptureLength) pausedEntry.rawCaptureLength = comp.rawCaptureLength;
+        // #96: local-only exclusion signatures must survive a paused card's Refresh All write too
+        if (Array.isArray(comp.exclusionSignatures)) pausedEntry.exclusionSignatures = comp.exclusionSignatures;
         updatedLocalData[comp.id] = pausedEntry;
       } else {
         // Component was refreshed — persist via the shared safe apply path. applyRefreshResult()

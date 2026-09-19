@@ -14,6 +14,8 @@
 
 ### Fixed
 
+- **Excluded items no longer silently reappear after a refresh** (#96): SpotBoard now remembers what each excluded element contained, and on refresh checks that the content you removed hasn't come back. If it has (a site rendered differently on the refresh), it keeps your last good card and shows "Excluded content came back — re-capture this card" instead of quietly showing what you removed. A promo you excluded that has genuinely disappeared from the site does not cause a failure. Also fixes refresh picking an empty loading placeholder instead of the real card on some sites, and position-based exclusions that stopped applying. Cards captured before this update keep working exactly as before (`src/utils/dom-cleanup.ts`, `public/utils/refresh-engine.js`, `src/content.ts`).
+
 - **Excluded items coming back after a refresh** (#89): if you excluded several things in one card (e.g. a heading, then the rank numbers, then the bylines on The Verge's "Most Popular"), some of them could quietly reappear on refresh because removing the first ones shifted the positions the later ones were found by. Exclusions are now all located first and removed together, so what you excluded stays excluded whatever order you clicked in (`src/utils/dom-cleanup.ts`).
 
 - **Sky Sports card images turning into tiny "." placeholders after a refresh** (#86): Sky (and similar sites) ship a 1x1 dummy image alongside the real image address and rely on the page's own scripts to swap it in. Refresh reads the page without running those scripts, so the dummy won. SpotBoard now treats a dummy image as "not set" and uses the real address (`src/utils/dom-cleanup.ts`).

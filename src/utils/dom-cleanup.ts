@@ -87,8 +87,19 @@ export function isColumnSafeToTarget(table: HTMLElement, colIndex: number): bool
  * Used in: Direct fetch refresh, tab-based refresh, skeleton fallback
  */
 export function applyExclusions(html: string, excludedSelectors?: string[], cardSelector?: string): string {
+  return applyExclusionsWithStats(html, excludedSelectors, cardSelector).html;
+}
+
+/**
+ * Same as applyExclusions, but also reports which stored selectors did NOT take effect
+ * (#96): matched nothing on this markup, were skipped as ultra-generic, or were refused by
+ * the removal budget. Those are the exclusions whose content is still visible in `html`.
+ * The refresh engine uses this to tell "exclusions applied" from "silently left visible".
+ */
+export function applyExclusionsWithStats(html: string, excludedSelectors?: string[], cardSelector?: string): { html: string; unresolved: string[] } {
+  const unresolved: string[] = [];
   if (!html || !excludedSelectors || excludedSelectors.length === 0) {
-    return html;
+    return { html, unresolved };
   }
 
   const container = document.createElement('div');
@@ -193,10 +204,11 @@ export function applyExclusions(html: string, excludedSelectors?: string[], card
 
       if (isBareTag) {
         console.warn(`🚨 SKIPPING ultra-generic selector that would remove too much: "${selector}"`);
+        unresolved.push(selector);
         return; // Skip this selector entirely
       }
 
-      const effectiveSelector = scopedFor(selector);
+      let effectiveSelector = scopedFor(selector);
 
       // 🎯 EXCLUSION BUDGET: refresh-time removal is querySelectorAll-based (all matches),
       // not the exact element references the user clicked at capture time. A 3-class selector
@@ -211,7 +223,20 @@ export function applyExclusions(html: string, excludedSelectors?: string[], card
       // guarantees this), yet legitimate exclusions were being skipped because that one element
       // was 24-67% of the card's text. Match count -- not size -- is the actual signal for
       // "did this selector generalize beyond what the user clicked".
-      const matches = Array.from(queryRoot.querySelectorAll(effectiveSelector));
+      let matches = Array.from(queryRoot.querySelectorAll(effectiveSelector));
+
+      // #96: scopedFor() anchors a pure :nth-child chain with `:scope >` on the assumption it
+      // starts at a direct child of the card root. A chain that does not (e.g. the multi-match
+      // icon chains found on Kalshi) then matches nothing scoped but resolves fine as written.
+      // Only when the anchored form found nothing do we retry the stored selector verbatim;
+      // the budget checks below still apply to whatever it matches.
+      if (matches.length === 0 && effectiveSelector !== selector && effectiveSelector.startsWith(':scope > ')) {
+        const verbatim = Array.from(queryRoot.querySelectorAll(selector));
+        if (verbatim.length > 0) {
+          effectiveSelector = selector;
+          matches = verbatim;
+        }
+      }
 
       if (matches.length === 0) {
         // Selector no longer resolves against the refreshed markup (dynamic classes, changed
@@ -219,6 +244,7 @@ export function applyExclusions(html: string, excludedSelectors?: string[], card
         // simply stays visible rather than risking a wrong removal -- but log it so residual
         // markup-drift misses are visible during testing (issue #14).
         console.warn('  ⚠️ Exclusion selector matched nothing on refresh (left visible):', selector);
+        unresolved.push(selector);
         return;
       }
 
@@ -255,6 +281,7 @@ export function applyExclusions(html: string, excludedSelectors?: string[], card
             `(matches=${matches.length}, text -${Math.round(textRemovedPct * 100)}%, structural -${Math.round(structRemovedPct * 100)}%, ` +
             `wipesAllImages=${wipesAllImages})`
           );
+          unresolved.push(selector);
           return; // Skip -- do not commit this selector's removal
         }
       }
@@ -263,6 +290,7 @@ export function applyExclusions(html: string, excludedSelectors?: string[], card
       matches.forEach(el => pendingRemoval.add(el));
     } catch (e) {
       console.warn('  ⚠️ Could not remove excluded element:', selector, e);
+      unresolved.push(selector);
     }
   });
 
@@ -270,7 +298,7 @@ export function applyExclusions(html: string, excludedSelectors?: string[], card
 
   // Single-element input -> queryRoot IS that element; its outerHTML is byte-equivalent to the
   // old `container.innerHTML`. Multi-root fragment -> unchanged behaviour.
-  return queryRoot === container ? container.innerHTML : queryRoot.outerHTML;
+  return { html: queryRoot === container ? container.innerHTML : queryRoot.outerHTML, unresolved };
 }
 
 /**
@@ -2141,6 +2169,116 @@ interface SanitizationComponent {
   excludedSelectors?: string[];
   html_cache?: string;
   selector?: string;
+  exclusionSignatures?: ExclusionSignature[];
+}
+
+// ---------------------------------------------------------------------------------------
+// #96 -- exclusion integrity: "did excluded content come back?"
+//
+// Refresh tiers render different DOMs than capture (server HTML / hydrated tab / 300px popup),
+// so a stored selector can stop matching for two very different reasons: the excluded thing is
+// genuinely gone from the site today (a promo that ended -- fine), or the layout drifted and the
+// thing the user removed is back on screen (not fine). Selectors alone can't tell these apart.
+// So at capture we also store a small TEXT signature of each excluded element; at refresh, an
+// exclusion whose selector did not apply is only a problem if its signature text is present in
+// the refreshed card. Icon/image-only exclusions have no text, so they cannot be verified and
+// are treated as unverified (never a failure) -- a known v1 limitation.
+// ---------------------------------------------------------------------------------------
+
+export interface ExclusionSignature {
+  /** the stored exclusion selector this signature belongs to */
+  sel: string;
+  /** normalised (lowercase, digits stripped, whitespace collapsed) text of the excluded element */
+  sig: string;
+  /** how many times `sig` still appears in the captured card AFTER exclusions (non-excluded copies) */
+  keep: number;
+}
+
+const SIGNATURE_MIN_LETTERS = 3;  // below this the text is too generic to prove anything
+const SIGNATURE_MAX_LEN = 80;
+
+/** Visible-ish text of an HTML string: scripts/styles/noscript ignored, then normalised. */
+export function signatureText(html: string): string {
+  if (!html) return '';
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  div.querySelectorAll('script, style, noscript, template').forEach(n => n.remove());
+  return normalizeSignatureText(div.textContent || '');
+}
+
+/** Lowercase, drop digits (prices/counts churn between refreshes), collapse whitespace. */
+export function normalizeSignatureText(text: string): string {
+  return text.toLowerCase().replace(/[0-9]+/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/** Signature for one excluded element's outerHTML, or null when it has too little text to verify. */
+export function exclusionSignatureOf(elementHtml: string): string | null {
+  const text = signatureText(elementHtml).slice(0, SIGNATURE_MAX_LEN).trim();
+  const letters = (text.match(/\p{L}/gu) || []).length;
+  return letters >= SIGNATURE_MIN_LETTERS ? text : null;
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return 0;
+  let count = 0;
+  let from = 0;
+  for (;;) {
+    const at = haystack.indexOf(needle, from);
+    if (at === -1) return count;
+    count++;
+    from = at + needle.length;
+  }
+}
+
+/**
+ * Capture time: one signature per excluded element that has verifiable text.
+ * @param excluded - {sel, elementHtml} for each excluded element, sel being its stored selector
+ * @param cleanedCaptureHtml - the card HTML that was stored (exclusions already removed)
+ */
+export function buildExclusionSignatures(excluded: { sel: string; elementHtml: string }[], cleanedCaptureHtml: string): ExclusionSignature[] {
+  const cleanedText = signatureText(cleanedCaptureHtml);
+  const bySel = new Map<string, ExclusionSignature>();
+  excluded.forEach(({ sel, elementHtml }) => {
+    if (bySel.has(sel)) return;
+    const sig = exclusionSignatureOf(elementHtml);
+    if (!sig) return;
+    bySel.set(sel, { sel, sig, keep: countOccurrences(cleanedText, sig) });
+  });
+  return Array.from(bySel.values());
+}
+
+export interface ExclusionCheck {
+  /** unresolved selectors whose excluded text is back in the refreshed card */
+  leaked: string[];
+  /** unresolved selectors we had no signature for (cannot tell if their content is back) */
+  unverified: string[];
+}
+
+/**
+ * Refresh time: which unresolved exclusions have their content back in `outputHtml`?
+ * Present means MORE copies of the signature than the captured card legitimately kept.
+ */
+export function findLeakedExclusions(outputHtml: string, unresolved: string[], signatures?: ExclusionSignature[]): ExclusionCheck {
+  const check: ExclusionCheck = { leaked: [], unverified: [] };
+  if (unresolved.length === 0) return check;
+  const sigBySel = new Map<string, ExclusionSignature>();
+  (signatures || []).forEach(s => sigBySel.set(s.sel, s));
+  const outputText = signatureText(outputHtml);
+  const seen = new Set<string>();
+  unresolved.forEach(sel => {
+    if (seen.has(sel)) return;
+    seen.add(sel);
+    const entry = sigBySel.get(sel);
+    if (!entry) { check.unverified.push(sel); return; }
+    if (countOccurrences(outputText, entry.sig) > entry.keep) check.leaked.push(sel);
+  });
+  return check;
+}
+
+/** Hand the result of the latest pipeline run to the refresh engine without persisting it. */
+function recordExclusionCheck(component: SanitizationComponent, check: ExclusionCheck, html: string): void {
+  // `html` pins the verdict to the exact card it judged; the engine ignores it for any other string
+  Object.defineProperty(component, '__exclusionCheck', { value: { ...check, html }, writable: true, configurable: true, enumerable: false });
 }
 
 /**
@@ -2159,9 +2297,12 @@ export function applySanitizationPipeline(inputHtml: string, component: Sanitiza
   // the image-classification passes below all assign this HTML to .innerHTML, which would
   // otherwise fire (and CSP-block) any on* handler the captured page carried.
   const safeHtml = stripEventHandlers(inputHtml);
-  const withExclusions = applyExclusions(safeHtml, component.excludedSelectors, component.selector);
+  const { html: withExclusions, unresolved } = applyExclusionsWithStats(safeHtml, component.excludedSelectors, component.selector);
   const withBgImages = extractBackgroundImages(withExclusions);
   const withPreserved = preserveImageClassifications(withBgImages, component.html_cache || '');
   const withImageClassification = classifyImagesForRefresh(withPreserved);
-  return cleanupDuplicates(withImageClassification);
+  const finalHtml = cleanupDuplicates(withImageClassification);
+  // #96: judged on the FINAL card, since that's what the user will see
+  recordExclusionCheck(component, findLeakedExclusions(finalHtml, unresolved, component.exclusionSignatures), finalHtml);
+  return finalHtml;
 }

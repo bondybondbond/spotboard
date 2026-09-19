@@ -1,5 +1,5 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
-import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, effectiveSrcset } from './utils/dom-cleanup';
+import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, effectiveSrcset } from './utils/dom-cleanup';
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, classifyImages } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
 import { fitSyncRecord, SAVE_TOO_BIG_MESSAGE, friendlySaveError } from './utils/exclusion-storage';
@@ -2480,6 +2480,15 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         const cleanedHTML = sanitizeHTML(target, excludedElements);
         log('🧹 HTML sanitized, length:', cleanedHTML.length, 'chars');
 
+        // #96: remember what each exclusion actually hid (text only), so refresh can tell
+        // "the excluded thing is gone from the site" from "the excluded thing came back".
+        // Computed here, synchronously, while excludedElements still lines up 1:1 with
+        // excludedSelectors and the elements are still live.
+        const exclusionSignatures = buildExclusionSignatures(
+          excludedElements.map((el, i) => ({ sel: excludedSelectors[i], elementHtml: el.outerHTML })),
+          cleanedHTML
+        );
+
         // #9: Output-side emptiness guard. The whole save path below is wrapped in
         // commitCapture() so it can be gated behind a "capture anyway?" warning when the
         // sanitized result is unambiguously empty. commitCapture() IS the unchanged save
@@ -2700,7 +2709,9 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                 html_cache: component.html_cache,
                 last_refresh: component.last_refresh,
                 excludedSelectors: excludedSelectors,
-                rawCaptureLength: component.rawCaptureLength
+                rawCaptureLength: component.rawCaptureLength,
+                // #96: local-only (device-specific like html_cache); absent = "unverified"
+                exclusionSignatures: exclusionSignatures
               };
 
               localData[component.id] = dataToSave;

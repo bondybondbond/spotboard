@@ -187,7 +187,8 @@ async function applyImportedBoard(payload) {
     // silently drop anything not on it (e.g. legacy onboarding cards' `created_at`)
     // on the exact path meant to restore metadata, and would rot as new fields are
     // added to the app without this list being updated too.
-    const { html_cache, rawCaptureLength, ...syncFields } = card;
+    // #96: exclusionSignatures is local-only (like html_cache) -- keep it out of the sync record
+    const { html_cache, rawCaptureLength, exclusionSignatures, ...syncFields } = card;
     // #90: the export carries the resolved exclusions inline; fitCompForSync decides
     // whether they stay in the sync record or go local-only. Local always keeps a copy.
     const exportedExclusions = Array.isArray(syncFields.excludedSelectors) ? syncFields.excludedSelectors : null;
@@ -206,7 +207,8 @@ async function applyImportedBoard(payload) {
       html_cache: card.html_cache,
       last_refresh: card.last_refresh,
       ...(exportedExclusions ? { excludedSelectors: exportedExclusions } : {}),
-      ...(rawCaptureLength ? { rawCaptureLength } : {})
+      ...(rawCaptureLength ? { rawCaptureLength } : {}),
+      ...(Array.isArray(exclusionSignatures) ? { exclusionSignatures } : {})
     };
   });
 
