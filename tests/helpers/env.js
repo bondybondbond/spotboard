@@ -23,6 +23,7 @@ export function installDomEnv(html = '<!doctype html><html><body></body></html>'
   global.chrome = {
     runtime: {
       sendMessage: () => {},
+      getURL: (path) => `chrome-extension://test/${path}`,
       onMessage: { addListener: () => {} },
     },
     storage: {

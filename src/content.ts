@@ -57,6 +57,22 @@ function extractStructureMarker(root: Element): { attr: string; value: string } 
 
 let isCapturing = false;
 let lockedElement: HTMLElement | null = null; // Track element waiting for confirmation
+
+// #42: capture-root refinement. Between the first click and the previewer, the clicked element is
+// only a *proposed* capture root the user can Grow/Shrink (or replace by clicking elsewhere).
+// `lockedElement` deliberately stays null for this whole stage -- it is the signal every hover/
+// click handler uses for "exclusion mode", which must not start until Continue.
+type RefineState = {
+  chain: HTMLElement[]; // [initial click target, ...grown ancestors]; index points at the current root
+  index: number;
+  clickTarget: HTMLElement; // raw element the user clicked, kept for name/fingerprint narrowing
+  widened: boolean; // click landed on an empty overlay and was already widened (#81)
+  startedAt: number;
+  growCount: number; // accepted Grow presses, cumulative across re-selects
+  reselects: number;
+  path: string[]; // every element visited, in order, e.g. ["div:100x50", "ul:320x560"]
+};
+let refineState: RefineState | null = null;
 let excludedElements: HTMLElement[] = []; // Track child elements marked for exclusion (red)
 let previewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -783,6 +799,9 @@ function handleHover(event: MouseEvent) {
     return;
   }
   
+  // #42: never overpaint the proposed capture root's green outline with the red hover box.
+  if (refineState && target === refineState.chain[refineState.index]) return;
+
   // Normal capture mode: show red outline for element selection
   target.style.setProperty('outline', '5px solid red', 'important');
   target.style.cursor = 'crosshair';
@@ -841,6 +860,9 @@ function handleExit(event: MouseEvent) {
     return;
   }
   
+  // #42: leaving the proposed capture root must not wipe its green outline.
+  if (refineState && target === refineState.chain[refineState.index]) return;
+
   // Normal mode: clear hover styling
   target.style.outline = '';
 }
@@ -1642,6 +1664,68 @@ export function shrinkExclusion(): GrowShrinkResult {
   return { ok: true };
 }
 
+// #42: Grow Selection for the capture root. A plain parentElement walk, made predictable by two
+// mechanical (not semantic) rules -- no sibling/similarity inference, no per-site logic:
+//   1. Hard boundaries: <body>/<html>/<main>, a fixed-position ancestor (jumping to it means
+//      jumping to header/viewport chrome), and a shadow-root or iframe edge. `parentElement` is
+//      null at a shadow-root top and never crosses into an iframe document, so both fall out as
+//      "no candidate" without special code. Sticky is NOT a boundary: a sticky right-hand rail
+//      is exactly the kind of container a user wants to grow to.
+//   2. Skip ancestors that add nothing visible over the current selection: a wrapper with no
+//      box (display: contents, zero area, hidden) or one whose box is within 1px of the current
+//      selection AND that paints nothing of its own. If there is any doubt (unrecognised
+//      background syntax, clipping, shadow, opacity...) the ancestor is NOT skipped -- the user
+//      just presses Grow once more, which beats silently growing past a real boundary.
+const GROW_BOX_TOLERANCE_PX = 1;
+const GROW_BOUNDARY_TAGS = new Set(['BODY', 'HTML', 'MAIN']);
+// Empty string = a non-browser environment (jsdom) that reports no computed background.
+const TRANSPARENT_BACKGROUND_RE = /^(|transparent|rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\))$/;
+
+function paintsOwnBox(style: CSSStyleDeclaration): boolean {
+  if (!TRANSPARENT_BACKGROUND_RE.test(style.backgroundColor.trim())) return true;
+  if (style.backgroundImage && style.backgroundImage !== 'none') return true;
+  if (['Top', 'Right', 'Bottom', 'Left'].some(side => {
+    const borderStyle = style.getPropertyValue(`border-${side.toLowerCase()}-style`);
+    const borderWidth = parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`) || '0');
+    return borderStyle && borderStyle !== 'none' && borderStyle !== 'hidden' && borderWidth > 0;
+  })) return true;
+  if (style.boxShadow && style.boxShadow !== 'none') return true;
+  if (style.outlineStyle && style.outlineStyle !== 'none' && parseFloat(style.outlineWidth || '0') > 0) return true;
+  if ((style.overflowX && style.overflowX !== 'visible') || (style.overflowY && style.overflowY !== 'visible')) return true;
+  if (style.opacity && style.opacity !== '1') return true;
+  if (style.transform && style.transform !== 'none') return true;
+  if (style.filter && style.filter !== 'none') return true;
+  return false;
+}
+
+// Returns the element Grow should move to from `current`, or null when there is nowhere
+// sensible left to go (the caller disables the Grow button).
+export function getGrowCandidate(current: HTMLElement): HTMLElement | null {
+  if (!current.isConnected) return null;
+  if (getComputedStyle(current).position === 'fixed') return null;
+
+  const currentRect = current.getBoundingClientRect();
+  let node = current.parentElement;
+  while (node) {
+    if (GROW_BOUNDARY_TAGS.has(node.tagName)) return null;
+    const style = getComputedStyle(node);
+    if (style.position === 'fixed') return null;
+
+    const rect = node.getBoundingClientRect();
+    const hasNoBox = style.display === 'contents' || style.display === 'none'
+      || style.visibility === 'hidden' || rect.width === 0 || rect.height === 0;
+    const sameBoxAsCurrent =
+      Math.abs(rect.left - currentRect.left) <= GROW_BOX_TOLERANCE_PX &&
+      Math.abs(rect.top - currentRect.top) <= GROW_BOX_TOLERANCE_PX &&
+      Math.abs(rect.width - currentRect.width) <= GROW_BOX_TOLERANCE_PX &&
+      Math.abs(rect.height - currentRect.height) <= GROW_BOX_TOLERANCE_PX;
+
+    if (!hasNoBox && !(sameBoxAsCurrent && !paintsOwnBox(style))) return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 // Shift+Click for bulk exclusion collides with the browser's own Shift+Click "extend text
 // selection" gesture -- text selection starts on mousedown, before our click handler ever
 // runs, so preventDefault() there is the only place that can stop it (field feedback, #34).
@@ -1828,9 +1912,227 @@ function handleClick(event: MouseEvent) {
     log('🧭 Click landed on an empty overlay element -- widened capture root:', target.tagName, target.className, '->', captureTarget.tagName, captureTarget.className);
   }
 
+  // #42: don't open the previewer yet -- propose this as the capture root and let the user
+  // Grow/Shrink it (or click elsewhere to re-select). continueRefinement() picks up from here.
+  startRefinement(captureTarget, target, widenedForEmptyOverlay);
+}
+
+const REFINE_OUTLINE = '5px solid #00ff00';
+
+function describeForPath(el: HTMLElement): string {
+  const r = el.getBoundingClientRect();
+  return `${el.tagName.toLowerCase()}:${Math.round(r.width)}x${Math.round(r.height)}`;
+}
+
+function sendRefineEvent(state: RefineState, outcome: 'continue' | 'cancel' | 'detached') {
+  const root = state.chain[state.index];
+  log('🧭 Grow path:', state.path.join(' > '), '| outcome:', outcome);
+  chrome.runtime.sendMessage({
+    type: 'GA4_EVENT',
+    eventName: 'capture_refine',
+    params: {
+      url_domain: new URL(window.location.href).hostname,
+      outcome,
+      grew: state.growCount > 0,
+      grow_count: state.growCount,
+      reselects: state.reselects,
+      final_tag: root.tagName.toLowerCase(),
+      ms_to_end: Date.now() - state.startedAt,
+      path: state.path.join('>').slice(0, 100)
+    }
+  });
+}
+
+// Called for the first click of a capture attempt AND for every re-select click while the bar
+// is up. A re-select resets the Grow/Shrink history but keeps the attempt's timer and totals.
+export function startRefinement(root: HTMLElement, clickTarget: HTMLElement, widened: boolean) {
+  const prev = refineState;
+  if (prev) prev.chain[prev.index].style.removeProperty('outline');
+  refineState = {
+    chain: [root],
+    index: 0,
+    clickTarget,
+    widened,
+    startedAt: prev?.startedAt ?? Date.now(),
+    growCount: prev?.growCount ?? 0,
+    reselects: prev ? prev.reselects + 1 : 0,
+    path: [describeForPath(root)]
+  };
+  root.style.setProperty('outline', REFINE_OUTLINE, 'important');
+  showRefineBar();
+  updateRefineBar();
+}
+
+function setRefineIndex(index: number) {
+  const state = refineState;
+  if (!state) return;
+  state.chain[state.index].style.removeProperty('outline');
+  state.index = index;
+  const root = state.chain[index];
+  root.style.setProperty('outline', REFINE_OUTLINE, 'important');
+  state.path.push(describeForPath(root));
+  updateRefineBar();
+}
+
+export function growRefinement() {
+  const state = refineState;
+  if (!state) return;
+  const current = state.chain[state.index];
+  if (!current.isConnected) {
+    endRefinement('detached');
+    showCaptureHint('The selected area changed on the page. Click it again.');
+    return;
+  }
+  const next = state.chain[state.index + 1] ?? getGrowCandidate(current);
+  if (!next) {
+    updateRefineBar();
+    return;
+  }
+  if (state.chain[state.index + 1] !== next) {
+    // Drop stale levels above the current one (left over after a Shrink) before recording.
+    state.chain = state.chain.slice(0, state.index + 1);
+    state.chain.push(next);
+  }
+  state.growCount++;
+  setRefineIndex(state.index + 1);
+}
+
+export function shrinkRefinement() {
+  const state = refineState;
+  if (!state || state.index === 0) return;
+  setRefineIndex(state.index - 1);
+}
+
+// Leaves the refinement stage without proceeding to the previewer (Esc / capture-mode teardown /
+// the selected node vanished). Capture mode itself is left to the caller.
+export function endRefinement(outcome: 'cancel' | 'detached') {
+  const state = refineState;
+  if (!state) return;
+  sendRefineEvent(state, outcome);
+  state.chain[state.index].style.removeProperty('outline');
+  removeRefineBar();
+  refineState = null;
+}
+
+// Test seam (mirrors __getActiveExclusionChainForTest): inspect refinement state without exporting the let.
+export const __getRefineStateForTest = () => refineState;
+
+let _refineShadow: ShadowRoot | null = null;
+
+function removeRefineBar() {
+  document.getElementById('spotboard-refine-bar')?.remove();
+  _refineShadow = null;
+  document.getElementById('spotboard-capture-banner')?.style.removeProperty('display');
+}
+
+// Sits in the same top strip as the yellow capture banner (which it hides while up) so the
+// capture stage reads as one continuous state. Shadow-hosted like the other overlays so host-page
+// CSS can't reach the buttons.
+function showRefineBar() {
+  if (_refineShadow) return;
+  const { host, shadow } = createOverlayShadowHost('spotboard-refine-bar');
+  _refineShadow = shadow;
+  host.style.setProperty('right', '0', 'important');
+
+  const bar = document.createElement('div');
+  bar.style.cssText = `
+    position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important;
+    background: #FFFF00 !important; color: #000000 !important; padding: 8px 20px !important;
+    display: flex !important; align-items: center !important; gap: 10px !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    font-size: 14px !important; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    pointer-events: auto !important; text-transform: none !important;
+  `;
+
+  const icon = document.createElement('img');
+  icon.src = chrome.runtime.getURL('icon-16.png');
+  icon.style.cssText = 'width: 20px; height: 20px;';
+
+  const heading = document.createElement('span');
+  const strong = document.createElement('strong');
+  strong.style.fontWeight = '700';
+  strong.textContent = 'Selected: ';
+  const label = document.createElement('span');
+  label.id = 'sb-refine-label';
+  heading.append(strong, label);
+
+  const controls = document.createElement('span');
+  controls.style.cssText = 'margin-left: auto; display: flex; align-items: center; gap: 8px;';
+
+  const buttonBase = 'box-sizing: border-box; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; line-height: 1; padding: 8px 14px; cursor: pointer; font-family: inherit;';
+  const makeButton = (id: string, text: string, style: string, action: () => void) => {
+    const button = document.createElement('button');
+    button.id = id;
+    button.type = 'button';
+    button.textContent = text;
+    button.style.cssText = buttonBase + style;
+    // Keep focus where it was so a later Enter reaches our keydown handler rather than
+    // re-activating whichever bar button was last clicked.
+    button.addEventListener('mousedown', e => e.preventDefault());
+    button.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); action(); });
+    return button;
+  };
+  const secondary = ' background: rgba(0,0,0,0.12); color: #000;';
+  const kbd = (text: string) => {
+    const k = document.createElement('span');
+    k.textContent = text;
+    k.style.cssText = 'padding: 2px 6px; background: rgba(0,0,0,0.15); border-radius: 3px; font-family: monospace;';
+    return k;
+  };
+  const hint = document.createElement('span');
+  hint.style.fontSize = '12px';
+  hint.append('Press ', kbd('Enter'), ' to continue · ', kbd('Esc'), ' to cancel');
+
+  controls.append(
+    makeButton('sb-refine-shrink', 'Shrink', secondary, shrinkRefinement),
+    makeButton('sb-refine-grow', 'Grow', secondary, growRefinement),
+    makeButton('sb-refine-continue', 'Continue →', ' background: #1c1c1e; color: #fff;', continueRefinement),
+    hint
+  );
+
+  bar.append(icon, heading, controls);
+  shadow.appendChild(bar);
+  document.getElementById('spotboard-capture-banner')?.style.setProperty('display', 'none', 'important');
+}
+
+function updateRefineBar() {
+  const state = refineState;
+  if (!state || !_refineShadow) return;
+  const current = state.chain[state.index];
+  const canGrow = !!(state.chain[state.index + 1] ?? getGrowCandidate(current));
+  const r = current.getBoundingClientRect();
+  const label = _refineShadow.querySelector('#sb-refine-label') as HTMLElement;
+  label.textContent = `${current.tagName.toLowerCase()} ${Math.round(r.width)}×${Math.round(r.height)}` +
+    (canGrow ? ' — Grow to include more, or click another element' : ' — nothing larger to grow to');
+  const setEnabled = (id: string, enabled: boolean) => {
+    const b = _refineShadow!.querySelector(id) as HTMLButtonElement;
+    b.disabled = !enabled;
+    b.style.setProperty('opacity', enabled ? '1' : '0.4');
+    b.style.setProperty('cursor', enabled ? 'pointer' : 'default');
+  };
+  setEnabled('#sb-refine-shrink', state.index > 0);
+  setEnabled('#sb-refine-grow', canGrow);
+}
+
+// #42: user pressed Continue (button or Enter). Locks the current root -- the same state the
+// old first-click produced -- and hands over to the existing previewer flow unchanged.
+function continueRefinement() {
+  const state = refineState;
+  if (!state) return;
+  const root = state.chain[state.index];
+  if (!root.isConnected) {
+    endRefinement('detached');
+    showCaptureHint('The selected area changed on the page. Click it again.');
+    return;
+  }
+  sendRefineEvent(state, 'continue');
+  removeRefineBar();
+  refineState = null;
+
   // Lock this element and set green outline
-  lockedElement = captureTarget;
-  captureTarget.style.setProperty('outline', '5px solid #00ff00', 'important');
+  lockedElement = root;
+  root.style.setProperty('outline', '5px solid #00ff00', 'important');
+
 
   // 🎯 Playground beacon: element selected (green frame showing, confirmation modal opening)
   if (getIsPlaygroundPage()) {
@@ -1842,7 +2144,19 @@ function handleClick(event: MouseEvent) {
     }
   }
   if (getIsOnboardingMode()) advanceOnboardingCoach('selected');
-  
+
+  // A grown root must behave exactly as if the user had clicked it directly: name/fingerprint
+  // narrowing to "the branch you clicked" only makes sense when the root IS what they clicked
+  // (index 0). After Grow, that branch would be one story inside the column they chose.
+  const grown = state.index > 0;
+  proceedToPreviewer(root, grown ? root : state.clickTarget, grown ? false : state.widened);
+}
+
+// #42: everything that follows "the capture root has been decided" -- name, selector, position
+// mode, then the confirmation modal. Split out of handleClick so a refinement step (Grow/Shrink)
+// can decide the root first and then hand it over here unchanged. `clickTarget` is the element
+// the user actually clicked, used to narrow the name/fingerprint search to their branch.
+function proceedToPreviewer(captureTarget: HTMLElement, clickTarget: HTMLElement, widenedForEmptyOverlay: boolean) {
   // Generate smart label using Option 1 strategy
 
   // Spatial helper: true if child's CENTER POINT falls within parent's rendered rect (10px tolerance).
@@ -1874,7 +2188,7 @@ function handleClick(event: MouseEvent) {
   // When we widened off an empty overlay, the real click point is a direct (empty) child of
   // captureTarget -- a narrowed branch would just re-select that same empty node, defeating the
   // widening. Search the whole widened root instead in that case.
-  const clickBranch = widenedForEmptyOverlay ? null : getClickBranch(event.target as HTMLElement, captureTarget);
+  const clickBranch = widenedForEmptyOverlay ? null : getClickBranch(clickTarget, captureTarget);
   const searchRoot = clickBranch || captureTarget;
 
   let name = '';
@@ -3003,6 +3317,25 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
 
 // 4. Escape Key Handler
 function handleKeydown(event: KeyboardEvent) {
+  // The Enter/Esc that commits or cancels an IME composition arrives as a keydown too
+  // (isComposing / keyCode 229) -- it belongs to the text being composed, not to us (#42).
+  if (event.isComposing || event.keyCode === 229) return;
+
+  // #42: Enter = Continue, but only while the refinement bar is up and the user isn't typing
+  // into a page field (search boxes etc.) -- never hijack Enter there.
+  if (event.key === "Enter" && isCapturing && refineState) {
+    // Enter on a keyboard-focused bar button activates that button (Shrink/Grow/Continue).
+    if ((event.target as HTMLElement | null)?.id === 'spotboard-refine-bar') return;
+    // Walk into open shadow roots: inside a web component, activeElement is just the host.
+    let active = document.activeElement as HTMLElement | null;
+    while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement as HTMLElement;
+    if (active && (active.matches('input, textarea, select') || active.isContentEditable)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    continueRefinement();
+    return;
+  }
+
   if (event.key === "Escape" && isCapturing) {
     if (getIsOnboardingMode()) return;
     // 📊 GA4: Track selector-stage cancellation (no preview was shown)
@@ -3011,7 +3344,7 @@ function handleKeydown(event: KeyboardEvent) {
       eventName: 'capture_cancelled',
       params: {
         url_domain: new URL(window.location.href).hostname,
-        stage: 'selector_open',
+        stage: refineState ? 'refining' : 'selector_open',
         method: 'escape',
         had_preview: false,
         had_exclusions: false
@@ -3161,7 +3494,10 @@ function toggleCapture(forceState?: boolean) {
     document.removeEventListener('mousedown', handleMouseDown, true);
     document.removeEventListener('click', handleClick, true);
     document.removeEventListener('keydown', handleKeydown, true);
-    
+
+    // #42: capture ended (Esc / popup toggle) while still refining -- report and tear down the bar.
+    endRefinement('cancel');
+
     // Force cleanup all visuals
     document.querySelectorAll('*').forEach(el => {
       (el as HTMLElement).style.outline = '';
