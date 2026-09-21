@@ -169,7 +169,7 @@ function injectOnboardingCoach() {
     'Click the SpotBoard icon in your toolbar, then choose Save a Spot. SpotBoard keeps the section you choose updated for you.',
     '\uD83D\uDCA1 Don\u2019t see it? Click the \uD83E\uDDE9 puzzle piece, then pin SpotBoard.'));
   const card2 = _makeCard('sb-card-step2', 'Step 2 of 3', 'Click any section to track it',
-    'A red frame follows your cursor \u2014 click the block you want to save.');
+    'A dashed green frame follows your cursor \u2014 click the block you want to save.');
   card2.classList.add('pos-center');
   shadow.appendChild(card2);
   const card3 = _makeCard('sb-card-step3', 'Step 3 of 3', 'Confirm your capture',

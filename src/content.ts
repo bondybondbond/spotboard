@@ -706,7 +706,7 @@ function buildPathFromUniqueAncestor(element: HTMLElement, baseSelector: string)
   return null;
 }
 
-// 1. Hover Handler (The Red Box)
+// 1. Hover Handler (dashed lime box in capture mode, dashed red in exclusion mode)
 function handleHover(event: MouseEvent) {
   if (!isCapturing) return;
   
@@ -799,11 +799,13 @@ function handleHover(event: MouseEvent) {
     return;
   }
   
-  // #42: never overpaint the proposed capture root's green outline with the red hover box.
+  // #42: never overpaint the proposed capture root's green outline with the hover box.
   if (refineState && target === refineState.chain[refineState.index]) return;
 
-  // Normal capture mode: show red outline for element selection
-  target.style.setProperty('outline', '5px solid red', 'important');
+  // Normal capture mode: dashed lime-family outline for the element under the cursor. Red is
+  // reserved for "excluded" (exclusion mode); solid bright green means "selected". #65a30d rather
+  // than the banner lime because pale lime is invisible on a white page.
+  target.style.setProperty('outline', '4px dashed #65a30d', 'important');
   target.style.cursor = 'crosshair';
   
   event.stopPropagation();
@@ -2021,45 +2023,74 @@ let _refineShadow: ShadowRoot | null = null;
 
 function removeRefineBar() {
   document.getElementById('spotboard-refine-bar')?.remove();
+  document.getElementById('spotboard-refine-banner')?.remove();
   _refineShadow = null;
   document.getElementById('spotboard-capture-banner')?.style.removeProperty('display');
 }
 
-// Sits in the same top strip as the yellow capture banner (which it hides while up) so the
-// capture stage reads as one continuous state. Shadow-hosted like the other overlays so host-page
-// CSS can't reach the buttons.
+// Capture mode is lime, exclusion mode is purple. The refinement stage mirrors exclusion mode's
+// two pieces: a passive centred instruction strip across the top (pointer-events none, like the
+// banners) and a small panel with the three controls, parked where the previewer opens so that
+// Continue reads as "the panel turns into the previewer". The panel is shadow-hosted like the
+// other overlays so host-page CSS can't reach the buttons.
+const CAPTURE_LIME = '#a3e635';
+const OVERLAY_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
 function showRefineBar() {
   if (_refineShadow) return;
-  const { host, shadow } = createOverlayShadowHost('spotboard-refine-bar');
+  const { shadow } = createOverlayShadowHost('spotboard-refine-bar');
   _refineShadow = shadow;
-  host.style.setProperty('right', '0', 'important');
 
-  const bar = document.createElement('div');
-  bar.style.cssText = `
+  const bold = (text: string) => {
+    const b = document.createElement('strong');
+    b.style.fontWeight = '700';
+    b.textContent = text;
+    return b;
+  };
+  const kbd = (text: string) => {
+    const k = document.createElement('span');
+    k.textContent = text;
+    k.style.cssText = 'padding: 2px 6px; background: rgba(0,0,0,0.15); border-radius: 3px; font-family: monospace; font-size: 12px;';
+    return k;
+  };
+
+  const strip = document.createElement('div');
+  strip.id = 'spotboard-refine-banner';
+  strip.setAttribute('data-spotboard-ignore', 'true');
+  strip.style.cssText = `
     position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important;
-    background: #FFFF00 !important; color: #000000 !important; padding: 8px 20px !important;
-    display: flex !important; align-items: center !important; gap: 10px !important;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
-    font-size: 14px !important; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-    pointer-events: auto !important; text-transform: none !important;
+    background: ${CAPTURE_LIME} !important; color: #000000 !important; padding: 10px 20px !important;
+    display: flex !important; align-items: center !important; justify-content: center !important;
+    text-align: center !important; font-family: ${OVERLAY_FONT} !important;
+    font-size: 14px !important; font-weight: 400 !important; z-index: 2147483646 !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important; pointer-events: none !important;
+  `;
+  const stripText = document.createElement('span');
+  stripText.append(
+    '🎯 ', bold('SELECT MODE'), ' - ', bold('Grow'), ' to include more, or ', bold('click'),
+    ' another element to start again · ', kbd('Enter'), ' to continue · ', kbd('Esc'), ' to cancel'
+  );
+  strip.appendChild(stripText);
+  document.body.appendChild(strip);
+
+  const panel = document.createElement('div');
+  panel.style.cssText = `
+    position: fixed !important; top: 50% !important; right: 20px !important;
+    transform: translateY(-50%) !important; width: 210px !important; box-sizing: border-box !important;
+    background: ${CAPTURE_LIME} !important; color: #000000 !important; padding: 14px 16px !important;
+    border-radius: 12px !important; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+    display: flex !important; flex-direction: column !important; gap: 10px !important;
+    font-family: ${OVERLAY_FONT} !important; pointer-events: auto !important; text-transform: none !important;
   `;
 
-  const icon = document.createElement('img');
-  icon.src = chrome.runtime.getURL('icon-16.png');
-  icon.style.cssText = 'width: 20px; height: 20px;';
-
-  const heading = document.createElement('span');
-  const strong = document.createElement('strong');
-  strong.style.fontWeight = '700';
-  strong.textContent = 'Selected: ';
-  const label = document.createElement('span');
+  const label = document.createElement('div');
   label.id = 'sb-refine-label';
-  heading.append(strong, label);
+  label.style.cssText = 'font-size: 14px; font-weight: 600; line-height: 1.3; word-break: break-word;';
+  const hint = document.createElement('div');
+  hint.id = 'sb-refine-hint';
+  hint.style.cssText = 'font-size: 12px; line-height: 1.3;';
 
-  const controls = document.createElement('span');
-  controls.style.cssText = 'margin-left: auto; display: flex; align-items: center; gap: 8px;';
-
-  const buttonBase = 'box-sizing: border-box; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; line-height: 1; padding: 8px 14px; cursor: pointer; font-family: inherit;';
+  const buttonBase = 'box-sizing: border-box; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; line-height: 1; padding: 9px 12px; cursor: pointer; font-family: inherit;';
   const makeButton = (id: string, text: string, style: string, action: () => void) => {
     const button = document.createElement('button');
     button.id = id;
@@ -2067,31 +2098,26 @@ function showRefineBar() {
     button.textContent = text;
     button.style.cssText = buttonBase + style;
     // Keep focus where it was so a later Enter reaches our keydown handler rather than
-    // re-activating whichever bar button was last clicked.
+    // re-activating whichever panel button was last clicked.
     button.addEventListener('mousedown', e => e.preventDefault());
     button.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); action(); });
     return button;
   };
-  const secondary = ' background: rgba(0,0,0,0.12); color: #000;';
-  const kbd = (text: string) => {
-    const k = document.createElement('span');
-    k.textContent = text;
-    k.style.cssText = 'padding: 2px 6px; background: rgba(0,0,0,0.15); border-radius: 3px; font-family: monospace;';
-    return k;
-  };
-  const hint = document.createElement('span');
-  hint.style.fontSize = '12px';
-  hint.append('Press ', kbd('Enter'), ' to continue · ', kbd('Esc'), ' to cancel');
+  const secondary = ' background: rgba(0,0,0,0.14); color: #000; flex: 1;';
 
-  controls.append(
+  const row = document.createElement('div');
+  row.style.cssText = 'display: flex; gap: 8px;';
+  row.append(
     makeButton('sb-refine-shrink', 'Shrink', secondary, shrinkRefinement),
-    makeButton('sb-refine-grow', 'Grow', secondary, growRefinement),
-    makeButton('sb-refine-continue', 'Continue →', ' background: #1c1c1e; color: #fff;', continueRefinement),
-    hint
+    makeButton('sb-refine-grow', 'Grow', secondary, growRefinement)
   );
-
-  bar.append(icon, heading, controls);
-  shadow.appendChild(bar);
+  panel.append(
+    label,
+    hint,
+    row,
+    makeButton('sb-refine-continue', 'Continue →', ' background: #1c1c1e; color: #fff; padding: 11px 12px;', continueRefinement)
+  );
+  shadow.appendChild(panel);
   document.getElementById('spotboard-capture-banner')?.style.setProperty('display', 'none', 'important');
 }
 
@@ -2101,9 +2127,10 @@ function updateRefineBar() {
   const current = state.chain[state.index];
   const canGrow = !!(state.chain[state.index + 1] ?? getGrowCandidate(current));
   const r = current.getBoundingClientRect();
-  const label = _refineShadow.querySelector('#sb-refine-label') as HTMLElement;
-  label.textContent = `${current.tagName.toLowerCase()} ${Math.round(r.width)}×${Math.round(r.height)}` +
-    (canGrow ? ' — Grow to include more, or click another element' : ' — nothing larger to grow to');
+  (_refineShadow.querySelector('#sb-refine-label') as HTMLElement).textContent =
+    `Selected: ${current.tagName.toLowerCase()} ${Math.round(r.width)}×${Math.round(r.height)}`;
+  (_refineShadow.querySelector('#sb-refine-hint') as HTMLElement).textContent =
+    canGrow ? 'Grow for a bigger area' : 'Nothing larger to grow to';
   const setEnabled = (id: string, enabled: boolean) => {
     const b = _refineShadow!.querySelector(id) as HTMLButtonElement;
     b.disabled = !enabled;
@@ -3357,7 +3384,7 @@ function handleKeydown(event: KeyboardEvent) {
 
 // Main Toggle Logic
 
-// Show persistent yellow banner when capture mode is active
+// Show persistent lime banner when capture mode is active (capture = lime, exclusion = purple)
 function showCaptureBanner() {
   // Don't create duplicate
   if (document.getElementById('spotboard-capture-banner')) return;
@@ -3370,7 +3397,7 @@ function showCaptureBanner() {
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
-    background: #FFFF00 !important;
+    background: #a3e635 !important;
     color: #000000 !important;
     padding: 10px 20px !important;
     display: flex !important;
@@ -3473,7 +3500,7 @@ function toggleCapture(forceState?: boolean) {
     document.addEventListener('click', handleClick, true);
     document.addEventListener('keydown', handleKeydown, true);
     
-    // 🎯 Show persistent yellow banner at top
+    // 🎯 Show persistent lime banner at top
     showCaptureBanner();
 
     // Update playground beacon: capture mode activated
