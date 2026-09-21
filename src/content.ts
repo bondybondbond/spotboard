@@ -2081,7 +2081,7 @@ function showRefineBar() {
   _refineShadow = shadow;
 
   document.body.appendChild(createCaptureStrip('spotboard-refine-banner', 2, [
-    stripBold('Grow'), ' to include more, or ', stripBold('click'), ' another element to start again \u00b7 ',
+    stripBold('Grow'), ' to include more, or ', stripBold('click'), ' another element to re-select \u00b7 ',
     stripKbd('Enter'), ' to continue \u00b7 ', stripKbd('Esc'), ' to cancel'
   ]));
 
@@ -2138,12 +2138,12 @@ function updateRefineBar() {
   if (!state || !_refineShadow) return;
   const current = state.chain[state.index];
   const canGrow = !!(state.chain[state.index + 1] ?? getGrowCandidate(current));
-  const r = current.getBoundingClientRect();
-  (_refineShadow.querySelector('#sb-refine-label') as HTMLElement).textContent =
-    `Selected: ${current.tagName.toLowerCase()} ${Math.round(r.width)}×${Math.round(r.height)}`;
+  // No tag name / pixel size in the UI: the outline already shows what is selected, and "ol 1248x288"
+  // is developer language (the same detail is in the DEBUG "Grow path" log).
+  (_refineShadow.querySelector('#sb-refine-label') as HTMLElement).textContent = 'Selected area';
   (_refineShadow.querySelector('#sb-refine-hint') as HTMLElement).textContent =
     (canGrow ? 'Grow for a bigger area.' : 'Nothing larger to grow to.') +
-    (state.index === 0 ? ' Shrink undoes Grow - click another element to go smaller.' : '');
+    ' Shrink to undo. Click another element to re-select.';
   // Enabled = filled with a 2px dark border (the fill alone is only 1.4:1 against lime, so the
   // border is what makes it read as a button). Disabled = no fill, dashed lighter border, still-
   // legible text (5:1) and a tooltip saying why -- not just faded, which read as "broken".
