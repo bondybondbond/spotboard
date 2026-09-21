@@ -2036,26 +2036,26 @@ function removeRefineBar() {
 const CAPTURE_LIME = '#a3e635';
 const OVERLAY_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
-function showRefineBar() {
-  if (_refineShadow) return;
-  const { shadow } = createOverlayShadowHost('spotboard-refine-bar');
-  _refineShadow = shadow;
+const stripBold = (text: string) => {
+  const b = document.createElement('strong');
+  b.style.fontWeight = '700';
+  b.textContent = text;
+  return b;
+};
+const stripKbd = (text: string) => {
+  const k = document.createElement('span');
+  k.textContent = text;
+  k.style.cssText = 'padding: 2px 6px; background: rgba(0,0,0,0.15); border-radius: 3px; font-family: monospace; font-size: 12px;';
+  return k;
+};
 
-  const bold = (text: string) => {
-    const b = document.createElement('strong');
-    b.style.fontWeight = '700';
-    b.textContent = text;
-    return b;
-  };
-  const kbd = (text: string) => {
-    const k = document.createElement('span');
-    k.textContent = text;
-    k.style.cssText = 'padding: 2px 6px; background: rgba(0,0,0,0.15); border-radius: 3px; font-family: monospace; font-size: 12px;';
-    return k;
-  };
-
+// Shared shell for the lime top strip. Capture mode is ONE mode in two steps -- 1: click what you
+// want, 2: adjust it (Grow/Shrink) and continue -- so both steps use the same strip, centred like
+// the purple exclusion strip, differing only in the step number and instructions. Passive
+// (pointer-events none) and marked data-spotboard-ignore so it is never itself captured.
+function createCaptureStrip(id: string, step: 1 | 2, instructions: (Node | string)[]): HTMLElement {
   const strip = document.createElement('div');
-  strip.id = 'spotboard-refine-banner';
+  strip.id = id;
   strip.setAttribute('data-spotboard-ignore', 'true');
   strip.style.cssText = `
     position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important;
@@ -2065,13 +2065,25 @@ function showRefineBar() {
     font-size: 14px !important; font-weight: 400 !important; z-index: 2147483646 !important;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important; pointer-events: none !important;
   `;
-  const stripText = document.createElement('span');
-  stripText.append(
-    '🎯 ', bold('SELECT MODE'), ' - ', bold('Grow'), ' to include more, or ', bold('click'),
-    ' another element to start again · ', kbd('Enter'), ' to continue · ', kbd('Esc'), ' to cancel'
-  );
-  strip.appendChild(stripText);
-  document.body.appendChild(strip);
+  const logo = document.createElement('img');
+  logo.src = chrome.runtime.getURL('icon-16.png');
+  logo.style.cssText = 'width: 20px; height: 20px; vertical-align: middle; margin-right: 8px; pointer-events: none;';
+  const text = document.createElement('span');
+  text.style.pointerEvents = 'none';
+  text.append(logo, stripBold('CAPTURE MODE'), ` \u00b7 Step ${step} of 2 - `, ...instructions);
+  strip.appendChild(text);
+  return strip;
+}
+
+function showRefineBar() {
+  if (_refineShadow) return;
+  const { shadow } = createOverlayShadowHost('spotboard-refine-bar');
+  _refineShadow = shadow;
+
+  document.body.appendChild(createCaptureStrip('spotboard-refine-banner', 2, [
+    stripBold('Grow'), ' to include more, or ', stripBold('click'), ' another element to start again \u00b7 ',
+    stripKbd('Enter'), ' to continue \u00b7 ', stripKbd('Esc'), ' to cancel'
+  ]));
 
   const panel = document.createElement('div');
   panel.style.cssText = `
@@ -2090,7 +2102,7 @@ function showRefineBar() {
   hint.id = 'sb-refine-hint';
   hint.style.cssText = 'font-size: 12px; line-height: 1.3;';
 
-  const buttonBase = 'box-sizing: border-box; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; line-height: 1; padding: 9px 12px; cursor: pointer; font-family: inherit;';
+  const buttonBase = 'box-sizing: border-box; border: 2px solid transparent; border-radius: 6px; font-size: 13px; font-weight: 500; line-height: 1; padding: 9px 12px; cursor: pointer; font-family: inherit;';
   const makeButton = (id: string, text: string, style: string, action: () => void) => {
     const button = document.createElement('button');
     button.id = id;
@@ -2130,15 +2142,22 @@ function updateRefineBar() {
   (_refineShadow.querySelector('#sb-refine-label') as HTMLElement).textContent =
     `Selected: ${current.tagName.toLowerCase()} ${Math.round(r.width)}×${Math.round(r.height)}`;
   (_refineShadow.querySelector('#sb-refine-hint') as HTMLElement).textContent =
-    canGrow ? 'Grow for a bigger area' : 'Nothing larger to grow to';
-  const setEnabled = (id: string, enabled: boolean) => {
+    (canGrow ? 'Grow for a bigger area.' : 'Nothing larger to grow to.') +
+    (state.index === 0 ? ' Shrink undoes Grow - click another element to go smaller.' : '');
+  // Enabled = filled with a 2px dark border (the fill alone is only 1.4:1 against lime, so the
+  // border is what makes it read as a button). Disabled = no fill, dashed lighter border, still-
+  // legible text (5:1) and a tooltip saying why -- not just faded, which read as "broken".
+  const setEnabled = (id: string, enabled: boolean, reason: string) => {
     const b = _refineShadow!.querySelector(id) as HTMLButtonElement;
     b.disabled = !enabled;
-    b.style.setProperty('opacity', enabled ? '1' : '0.4');
-    b.style.setProperty('cursor', enabled ? 'pointer' : 'default');
+    b.style.setProperty('background', enabled ? 'rgba(0,0,0,0.14)' : 'transparent');
+    b.style.setProperty('border', enabled ? '2px solid rgba(0,0,0,0.65)' : '2px dashed rgba(0,0,0,0.45)');
+    b.style.setProperty('color', enabled ? '#000' : 'rgba(0,0,0,0.6)');
+    b.style.setProperty('cursor', enabled ? 'pointer' : 'not-allowed');
+    b.title = enabled ? '' : reason;
   };
-  setEnabled('#sb-refine-shrink', state.index > 0);
-  setEnabled('#sb-refine-grow', canGrow);
+  setEnabled('#sb-refine-shrink', state.index > 0, 'Nothing to shrink yet - Shrink undoes Grow');
+  setEnabled('#sb-refine-grow', canGrow, 'Nothing larger to grow to');
 }
 
 // #42: user pressed Continue (button or Enter). Locks the current root -- the same state the
@@ -2635,7 +2654,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
   modal.innerHTML = `
     <div id="spotboard-modal-header" style="padding: 20px 20px 12px; flex-shrink: 0; font-family: inherit;">
       <div id="spotboard-modal-title" style="font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit;" title="">
-        <span class="sb-capture-title-expanded">✅ Captured: <span class="sb-capture-name"></span></span>
+        <span class="sb-capture-title-expanded">✅ Selected: <span class="sb-capture-name"></span></span>
         <span class="sb-capture-title-minimized" style="display: none;">Add to board?</span>
       </div>
     </div>
@@ -3388,37 +3407,9 @@ function handleKeydown(event: KeyboardEvent) {
 function showCaptureBanner() {
   // Don't create duplicate
   if (document.getElementById('spotboard-capture-banner')) return;
-  
-  const banner = document.createElement('div');
-  banner.id = 'spotboard-capture-banner';
-  banner.setAttribute('data-spotboard-ignore', 'true'); // Mark as non-capturable
-  banner.style.cssText = `
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    background: #a3e635 !important;
-    color: #000000 !important;
-    padding: 10px 20px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    gap: 12px !important;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
-    font-size: 14px !important;
-    font-weight: 400 !important;
-    z-index: 2147483646 !important;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-    pointer-events: none !important;
-  `;
-  
-  banner.innerHTML = `
-    <img src="${chrome.runtime.getURL('icon-16.png')}" style="width: 20px; height: 20px; pointer-events: none;">
-    <span style="pointer-events: none;"><strong style="font-weight: 700 !important;">Capture Mode Active</strong> - Click on any content you want to add to your board</span>
-    <span style="margin-left: auto; pointer-events: none;">Press <span style="padding: 2px 6px; background: rgba(0, 0, 0, 0.15); border-radius: 3px; font-family: monospace; font-size: 12px;">[Esc]</span> to cancel capture</span>
-  `;
-  
-  document.body.appendChild(banner);
+  document.body.appendChild(createCaptureStrip('spotboard-capture-banner', 1, [
+    stripBold('click'), ' on any content you want to add to your board \u00b7 ', stripKbd('Esc'), ' to cancel'
+  ]));
 }
 
 // 🎯 #60: shown for the whole exclusion-mode step (from when the overlay first opens) —
