@@ -368,10 +368,23 @@ description: Stop clicking through pages daily. Capture website sections, refres
             margin-bottom: var(--space-sm);
         }
 
+        .cases-carousel {
+            position: relative;
+        }
+
         .cases-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            display: flex;
             gap: var(--space-md);
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+            padding: 0.25rem 0.25rem var(--space-sm);
+            margin: -0.25rem -0.25rem 0;
+        }
+
+        .cases-grid::-webkit-scrollbar {
+            display: none;
         }
 
         .case-card {
@@ -382,6 +395,37 @@ description: Stop clicking through pages daily. Capture website sections, refres
             transition: all 0.3s ease;
             position: relative;
             overflow: hidden;
+            flex: 0 0 clamp(240px, 30vw, 300px);
+            scroll-snap-align: start;
+        }
+
+        .cases-carousel-controls {
+            display: flex;
+            justify-content: center;
+            gap: var(--space-sm);
+            margin-top: var(--space-sm);
+        }
+
+        .case-arrow {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 1px solid var(--color-border);
+            background: var(--color-card);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            line-height: 1;
+            color: var(--color-ink);
+            transition: all 0.2s ease;
+        }
+
+        .case-arrow:hover {
+            background: var(--color-accent);
+            color: white;
+            border-color: var(--color-accent);
         }
 
         .case-card::before {
@@ -1070,6 +1114,7 @@ description: Stop clicking through pages daily. Capture website sections, refres
             <h2>Use Cases</h2>
         </div>
 
+        <div class="cases-carousel">
         <div class="cases-grid">
             <div class="case-card">
                 <span class="case-icon">📰</span>
@@ -1110,6 +1155,11 @@ description: Stop clicking through pages daily. Capture website sections, refres
                     Product launches on Product Hunt, weather updates, Reddit notifications, GitHub releases. Your personal command centre.
                 </p>
             </div>
+        </div>
+        <div class="cases-carousel-controls">
+            <button class="case-arrow prev" aria-label="Previous use case">‹</button>
+            <button class="case-arrow next" aria-label="Next use case">›</button>
+        </div>
         </div>
     </section>
 
@@ -1386,6 +1436,24 @@ description: Stop clicking through pages daily. Capture website sections, refres
 
             // Start auto-rotate on page load
             startAutoRotate();
+        })();
+
+        // Use Cases carousel
+        (function() {
+            const track = document.querySelector('.cases-grid');
+            const prevBtn = document.querySelector('.case-arrow.prev');
+            const nextBtn = document.querySelector('.case-arrow.next');
+            if (!track || !prevBtn || !nextBtn) return;
+
+            function scrollByCard(direction) {
+                const card = track.querySelector('.case-card');
+                if (!card) return;
+                const gap = parseFloat(getComputedStyle(track).gap) || 0;
+                track.scrollBy({ left: direction * (card.getBoundingClientRect().width + gap), behavior: 'smooth' });
+            }
+
+            prevBtn.addEventListener('click', () => scrollByCard(-1));
+            nextBtn.addEventListener('click', () => scrollByCard(1));
         })();
     </script>
 
