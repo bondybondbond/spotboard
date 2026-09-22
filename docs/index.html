@@ -513,8 +513,9 @@ description: Stop clicking through pages daily. Capture website sections, refres
         }
 
         .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
             gap: var(--space-lg);
         }
 
@@ -522,6 +523,8 @@ description: Stop clicking through pages daily. Capture website sections, refres
             display: flex;
             gap: var(--space-sm);
             align-items: flex-start;
+            flex: 1 1 300px;
+            max-width: 340px;
         }
 
         .feature-icon {
@@ -1191,7 +1194,7 @@ description: Stop clicking through pages daily. Capture website sections, refres
                 <div class="feature-icon">✓</div>
                 <div class="feature-content">
                     <h4>Unlimited Captures</h4>
-                    <p>Save up to 10 components per board. No limits, no paywalls, completely free.</p>
+                    <p>No limits, no paywalls, completely free.</p>
                 </div>
             </div>
 
@@ -1200,14 +1203,6 @@ description: Stop clicking through pages daily. Capture website sections, refres
                 <div class="feature-content">
                     <h4>Manual Refresh Only</h4>
                     <p>No background updates, no doomscrolling. You decide when to check for new content.</p>
-                </div>
-            </div>
-
-            <div class="feature">
-                <div class="feature-icon">✓</div>
-                <div class="feature-content">
-                    <h4>Cross-Device Sync</h4>
-                    <p>Component lists sync via Chrome. Access your board wherever you log in.</p>
                 </div>
             </div>
 
@@ -1345,7 +1340,7 @@ description: Stop clicking through pages daily. Capture website sections, refres
         </div>
 
         <div class="footer-bottom">
-            <p>&copy; 2025 SpotBoard. Open source under MIT License.</p>
+            <p>&copy; 2026 SpotBoard. Open source under MIT License.</p>
         </div>
     </footer>
 
