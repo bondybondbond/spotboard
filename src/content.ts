@@ -1498,83 +1498,95 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
   return clone.outerHTML;
 }
 
-// #112: what each exclusion looked like when it was clicked (selector unique within the capture
-// root + normalised text), so it can be recognised again if the page unmounts and re-mounts
-// the node (virtualised lists recycle rows as the user scrolls). Live node refs alone go stale.
-export interface ExclusionRecord { sel: string; text: string }
-let exclusionRecords = new Map<HTMLElement, ExclusionRecord>();
+// #112: the user's exclusion decisions, kept independently of live page nodes. Virtualised lists
+// (react-virtuoso and similar) unmount and re-mount rows as the user scrolls, so a node reference
+// alone goes stale. Each entry remembers what was excluded (tag + normalised text, plus a
+// structural signature when it came from a Shift+click group); `el` is its current live node, or
+// null while the page is not showing it. Entries are never dropped just because the node left --
+// they are re-applied when matching content re-mounts, so the decision persists.
+export interface LedgerEntry { el: HTMLElement | null; tag: string; text: string; sig: string | null }
+let exclusionLedger: LedgerEntry[] = [];
+let bulkExclusionInProgress = false;
+
+function classOf(el: Element | null): string {
+  return el && typeof el.className === 'string' ? el.className : '';
+}
+
+/** Structural identity of "this kind of element in this kind of place" -- tag, class and two ancestor levels. */
+export function similarSignature(el: HTMLElement): string {
+  if (el.tagName === 'TIME') return 'time';
+  const parent = el.parentElement;
+  const grand = parent ? parent.parentElement : null;
+  return [el.tagName, classOf(el), parent && parent.tagName, classOf(parent), grand && grand.tagName, classOf(grand)].join('|');
+}
 
 function recordExclusion(el: HTMLElement) {
-  if (!lockedElement) return;
-  exclusionRecords.set(el, {
-    sel: generateExclusionSelector(el, lockedElement),
+  exclusionLedger.push({
+    el,
+    tag: el.tagName,
     text: normalizeSignatureText(el.textContent || ''),
+    sig: bulkExclusionInProgress ? similarSignature(el) : null,
   });
+}
+
+function dropFromLedger(el: HTMLElement) {
+  const entry = exclusionLedger.find(e => e.el === el);
+  exclusionLedger = exclusionLedger.filter(e => e !== entry && !(bulkExclusionInProgress && entry?.sig && e.sig === entry.sig));
 }
 
 /**
- * #112: bring `excluded` back in line with the live DOM. An exclusion whose node was detached is
- * re-attached to the node now matching its recorded selector ONLY if that is exactly one node
- * and its whole text equals what the user excluded. Anything weaker (no text to compare, zero or
- * several matches, different text -- e.g. the row was recycled for another post) is reported as
- * lost rather than guessed, since excluding the wrong post is worse than dropping the exclusion.
+ * #112: match the ledger against what the page shows now. Entries whose node is still on the
+ * page stay as they are. For the rest:
+ *  - group entries (from Shift+click) re-attach to every non-excluded node with the same
+ *    structural signature -- the same "entire similar area" the user asked for;
+ *  - single entries re-attach only when exactly ONE same-tag node carries exactly the excluded
+ *    text (so a recycled row with different text, or repeated identical labels, is never guessed);
+ *  - anything else stays dormant in the ledger and is retried on the next refresh.
+ * Returns the ledger to keep and the nodes newly (re-)excluded.
  */
-export function reconcileExclusions(
-  excluded: HTMLElement[],
-  records: Map<HTMLElement, ExclusionRecord>,
-  root: HTMLElement
-): { kept: HTMLElement[]; lost: HTMLElement[]; revived: Map<HTMLElement, HTMLElement> } {
-  const kept: HTMLElement[] = [];
-  const lost: HTMLElement[] = [];
-  const revived = new Map<HTMLElement, HTMLElement>();
-  const attached = new Set(excluded.filter(el => root.contains(el)));
-  excluded.forEach(el => {
-    if (attached.has(el)) { kept.push(el); return; }
-    const rec = records.get(el);
-    let match: HTMLElement | null = null;
-    if (rec && /\p{L}{3}/u.test(rec.text)) {
-      try {
-        const found = root.querySelectorAll<HTMLElement>(rec.sel);
-        // exactly one node at the selector, carrying exactly the excluded text, and no other
-        // same-tag node in the card with that text (repeated "Sponsored"/headline rows are ambiguous)
-        if (found.length === 1 && normalizeSignatureText(found[0].textContent || '') === rec.text) {
-          const twins = Array.from(root.querySelectorAll(found[0].tagName))
-            .filter(n => normalizeSignatureText(n.textContent || '') === rec.text).length;
-          if (twins === 1) match = found[0];
-        }
-      } catch { /* invalid stored selector -> lost */ }
+export function reconcileLedger(ledger: LedgerEntry[], root: HTMLElement): { ledger: LedgerEntry[]; revived: HTMLElement[] } {
+  const live = ledger.filter(e => e.el && root.contains(e.el));
+  const taken = new Set<HTMLElement>(live.map(e => e.el as HTMLElement));
+  const revived: HTMLElement[] = [];
+  const next: LedgerEntry[] = [...live];
+  const dormantKeys = new Set<string>();
+  ledger.filter(e => !e.el || !root.contains(e.el)).forEach(entry => {
+    if (entry.sig) {
+      let matched = false;
+      root.querySelectorAll<HTMLElement>(entry.tag).forEach(n => {
+        if (taken.has(n) || similarSignature(n) !== entry.sig) return;
+        taken.add(n); revived.push(n); matched = true;
+        next.push({ el: n, tag: entry.tag, text: normalizeSignatureText(n.textContent || ''), sig: entry.sig });
+      });
+      if (matched) return;
+    } else if (/\p{L}{3}/u.test(entry.text)) {
+      const same = Array.from(root.querySelectorAll<HTMLElement>(entry.tag))
+        .filter(n => normalizeSignatureText(n.textContent || '') === entry.text);
+      if (same.length === 1 && !taken.has(same[0])) {
+        taken.add(same[0]); revived.push(same[0]);
+        next.push({ el: same[0], tag: entry.tag, text: entry.text, sig: null });
+        return;
+      }
     }
-    if (match && !kept.includes(match) && !attached.has(match)) { kept.push(match); revived.set(el, match); } else lost.push(el);
+    const key = `${entry.tag}|${entry.text}|${entry.sig}`;
+    if (!dormantKeys.has(key)) { dormantKeys.add(key); next.push({ ...entry, el: null }); }
   });
-  return { kept, lost, revived };
+  return { ledger: next, revived };
 }
 
-// #112: running total of exclusions dropped because their node left the page (shown in the modal)
-let lostExclusionCount = 0;
-
-/** Apply reconcileExclusions() to the live module state (array, records, active chain, red marks). */
+/** Apply reconcileLedger() to the live module state (ledger, excluded list, active chain, red marks). */
 function syncExclusions(): void {
-  if (!lockedElement || excludedElements.length === 0) return;
-  const { kept, lost, revived } = reconcileExclusions(excludedElements, exclusionRecords, lockedElement);
-  if (lost.length === 0 && revived.size === 0) return;
-  revived.forEach((newEl, oldEl) => {
-    const rec = exclusionRecords.get(oldEl);
-    exclusionRecords.delete(oldEl);
-    if (rec) exclusionRecords.set(newEl, rec);
-    newEl.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
-    newEl.style.setProperty('outline', '2px solid #ff0000', 'important');
-    if (activeExclusionChain && activeExclusionChain.chain[activeExclusionChain.activeIndex] === oldEl) {
-      activeExclusionChain = { chain: [newEl], activeIndex: 0 };
-    }
+  if (!lockedElement || exclusionLedger.length === 0) return;
+  const { ledger, revived } = reconcileLedger(exclusionLedger, lockedElement);
+  exclusionLedger = ledger;
+  excludedElements = ledger.filter(e => e.el).map(e => e.el as HTMLElement);
+  revived.forEach(n => {
+    n.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
+    n.style.setProperty('outline', '2px solid #ff0000', 'important');
   });
-  lost.forEach(el => {
-    exclusionRecords.delete(el);
-    if (activeExclusionChain && activeExclusionChain.chain[activeExclusionChain.activeIndex] === el) {
-      activeExclusionChain = null;
-    }
-  });
-  excludedElements = kept;
-  lostExclusionCount += lost.length;
+  if (activeExclusionChain && !excludedElements.includes(activeExclusionChain.chain[activeExclusionChain.activeIndex])) {
+    activeExclusionChain = null;
+  }
 }
 
 // Toggle exclusion marking on child element
@@ -1588,8 +1600,7 @@ export function resetExclusions() {
   });
   // Clear the array
   excludedElements = [];
-  exclusionRecords = new Map();
-  lostExclusionCount = 0;
+  exclusionLedger = [];
   hoveredExclusionCandidate = null;
   hoveredSimilarGroup = [];
   activeExclusionChain = null;
@@ -1602,7 +1613,7 @@ export function toggleExclusion(element: HTMLElement) {
   if (isExcluded) {
     // Remove from excluded list and remove red marking
     excludedElements = excludedElements.filter(el => el !== element);
-    exclusionRecords.delete(element);
+    dropFromLedger(element);
     element.style.removeProperty('background');
     element.style.removeProperty('outline');
     // #61: un-excluding the active exclusion's current boundary drops its chain too --
@@ -1716,7 +1727,7 @@ function setActiveExclusionIndex(newIndex: number) {
   if (oldActive === newActive) return;
 
   excludedElements = excludedElements.filter(el => el !== oldActive);
-  exclusionRecords.delete(oldActive);
+  dropFromLedger(oldActive);
   oldActive.style.removeProperty('background');
   oldActive.style.removeProperty('outline');
 
@@ -1978,17 +1989,21 @@ function handleClick(event: MouseEvent) {
         // at click time, same as the exclude path already does when Shift is pressed late.
         const unexcludeGroup = event.shiftKey ? getSimilarSiblings(excludedAncestor!) : null;
         if (unexcludeGroup && unexcludeGroup.length > 1) {
+          bulkExclusionInProgress = true;
           unexcludeGroup.forEach(el => {
             if (excludedElements.includes(el)) toggleExclusion(el);
           });
+          bulkExclusionInProgress = false;
           log('✅ Bulk-un-excluded', unexcludeGroup.length, 'similar siblings');
         } else {
           toggleExclusion(excludedAncestor!);
         }
       } else if (willBulkExclude) {
+        bulkExclusionInProgress = true;
         freshGroup!.forEach(el => {
           if (!excludedElements.includes(el)) toggleExclusion(el);
         });
+        bulkExclusionInProgress = false;
         log('❌ Bulk-excluded', freshGroup!.length, 'similar siblings');
       } else if (!!freshGroup && groupPreviewedWithShift && !groupMatchesPreview) {
         // Fresh group no longer matches what the shift-hover preview showed -- content likely
@@ -2656,37 +2671,20 @@ function generatePreviewSrcdoc(html: string): string {
 <body>${html}</body></html>`;
 }
 
-// #112: while the previewer is open, notice exclusions that scrolled out of a virtualised list
-// as it happens (not only on the next click), so the preview and the notice never go stale.
+// #112: while the previewer is open, keep it in step with the page. On a virtualised list the rows
+// that are mounted change as the user scrolls, so re-apply the exclusion ledger and re-render the
+// preview whenever scrolling settles -- otherwise it keeps showing rows (and exclusion marks) from
+// wherever the user was earlier.
 let scrollSyncInstalled = false;
-let scrollRefreshPending = false;
 let scrollSyncTimer: ReturnType<typeof setTimeout> | null = null;
 function installScrollSync() {
   if (scrollSyncInstalled) return;
   scrollSyncInstalled = true;
   window.addEventListener('scroll', () => {
-    if (!_confirmationShadow || !lockedElement || excludedElements.length === 0) return;
+    if (!_confirmationShadow || !lockedElement) return;
     if (scrollSyncTimer) clearTimeout(scrollSyncTimer);
-    scrollSyncTimer = setTimeout(() => {
-      const before = lostExclusionCount;
-      syncExclusions();
-      // A refresh that ran while the list was still re-rendering can leave a stale/blank preview,
-      // so after a scroll that dropped exclusions, refresh once more when scrolling settles.
-      const changed = lostExclusionCount !== before;
-      if (changed || scrollRefreshPending) updatePreview();
-      scrollRefreshPending = changed;
-    }, 300);
+    scrollSyncTimer = setTimeout(() => updatePreview(), 300);
   }, { passive: true, capture: true });
-}
-
-/** #112: show/hide the 'excluded item scrolled out' line in the previewer. */
-function syncExclusionNotice(): void {
-  const el = _confirmationShadow?.querySelector('#spotboard-exclusion-notice') as HTMLElement | null;
-  if (!el) return;
-  el.textContent = lostExclusionCount > 0
-    ? `${lostExclusionCount} excluded item${lostExclusionCount === 1 ? '' : 's'} scrolled out of the page, so ${lostExclusionCount === 1 ? 'that exclusion was' : 'those exclusions were'} not kept. Exclude ${lostExclusionCount === 1 ? 'it' : 'them'} again if you still want ${lostExclusionCount === 1 ? 'it' : 'them'} hidden.`
-    : '';
-  el.style.display = lostExclusionCount > 0 ? 'block' : 'none';
 }
 
 // #61: keep the Previewer's Shrink/Grow buttons in sync with `activeExclusionChain` --
@@ -2708,7 +2706,6 @@ function updatePreview(): void {
   installScrollSync();
   syncExclusions();
   syncExclusionToolbar();
-  syncExclusionNotice();
   const iframe = _confirmationShadow?.querySelector('#spotboard-preview-iframe') as HTMLIFrameElement | null;
   if (!iframe || !lockedElement) return;
 
@@ -2816,7 +2813,6 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         </div>
       </div>
     </div>
-    <div id="spotboard-exclusion-notice" style="display: none; flex-shrink: 0; padding: 0 20px 8px; font-size: 12px; line-height: 1.4; color: white; font-family: inherit;"></div>
     <div id="spotboard-exclusion-toolbar" style="display: flex; flex-direction: column; flex-shrink: 0; background: #6b46c1; font-family: inherit;">
       <div style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 4px 20px 8px; transform: translateX(10px);">
         <button id="shrinkExclusion" type="button" disabled style="box-sizing: border-box; border: none; background: rgba(255,255,255,0.28); color: #fff; border-radius: 6px; font-size: 11px; font-weight: 400; line-height: 1; padding: 7px 11px; cursor: pointer; font-family: inherit;">
@@ -2942,16 +2938,6 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       const finalPositionBased = positionBased;
       log('📍 Final capture mode (auto-detected):', finalPositionBased ? 'Position-based' : 'Header-based');
 
-      // #112: if an excluded item left the page since the last preview, don't save silently --
-      // refresh the preview (which shows the notice) and let the user confirm again.
-      const lostBeforeConfirm = lostExclusionCount;
-      syncExclusions();
-      if (lostExclusionCount > lostBeforeConfirm) {
-        updatePreview();
-        return;
-      }
-
-      const lostAtConfirm = lostExclusionCount;
       host.remove();
       document.getElementById('spotboard-exclusion-banner')?.remove();
       _confirmationShadow = null;
@@ -2969,9 +2955,6 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         // uniqueness verified within the capture root, since they're applied via
         // querySelectorAll(selector) at refresh time and have no fingerprint tiebreaker.
         syncExclusions(); // #112: drop/re-attach exclusions whose node left the page before selectors are built
-        // Anything that dropped out during the 2s render wait can't be shown in the (closed) modal, so it is
-        // reported in the "Spotted" notification instead of vanishing silently.
-        const droppedWhileSaving = lostExclusionCount - lostAtConfirm;
         const excludedSelectors: string[] = [];
         excludedElements.forEach(el => {
           const selector = generateExclusionSelector(el, target);
@@ -3313,7 +3296,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                     resetExclusions();
 
                     if (!wasOnboarding) {
-                      showStyledNotification(`✅ Spotted: ${name}` + (droppedWhileSaving > 0 ? ` (${droppedWhileSaving} exclusion${droppedWhileSaving === 1 ? '' : 's'} not kept: scrolled out of the page)` : ''), 'success', component.id);
+                      showStyledNotification(`✅ Spotted: ${name}`, 'success', component.id);
                       toggleCapture(false);
                     } else {
                       console.debug('[sb-onboarding] wasOnboarding=true — skipping showStyledNotification and extra toggleCapture');

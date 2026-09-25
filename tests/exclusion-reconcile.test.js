@@ -1,82 +1,87 @@
-// Coverage for #112: exclusions must survive a page that unmounts/re-mounts nodes (virtualised
-// lists), never silently exclude a different row that recycled the same DOM position, and the
-// virtualiser's spacer padding must not blank the preview.
+// Coverage for #112: exclusions must persist through a page that unmounts/re-mounts nodes
+// (virtualised lists), never land on a different row that recycled the same DOM position, and
+// the virtualiser's spacer padding must not blank the preview.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { installDomEnv } from './helpers/env.js'
 import { el } from './helpers/fixtures.js'
 
 installDomEnv()
-const { reconcileExclusions, isSpacerPadding } = await import('../.test-build/content.js')
+const { reconcileLedger, similarSignature, isSpacerPadding } = await import('../.test-build/content.js')
 
-function list(...texts) {
-  const root = el('div', null, texts.map((t, i) => { const row = el('p', t); row.className = `row-${i}`; return row }))
+function feed(...rows) {
+  // <div root> <div class=row> <span class=name>text</span> <button class=follow>Follow</button> </div> ... </div>
+  const root = el('div', null, rows.map(name => {
+    const n = el('span', name); n.className = 'name'
+    const f = el('button', 'Follow'); f.className = 'follow'
+    const row = el('div', null, [n, f]); row.className = 'row'
+    return row
+  }))
   document.body.appendChild(root)
   return root
 }
-const rec = (sel, text) => ({ sel, text })
+const entry = (node, sig = null) => ({ el: node, tag: node.tagName, text: node.textContent.toLowerCase().replace(/[0-9]+/g, '').trim(), sig })
 
 test('a still-attached exclusion is kept untouched', () => {
-  const root = list('Buy now', 'News story')
-  const row = root.children[0]
-  const r = reconcileExclusions([row], new Map([[row, rec('.row-0', 'buy now')]]), root)
-  assert.deepEqual(r.kept, [row]); assert.equal(r.lost.length, 0); assert.equal(r.revived.size, 0)
+  const root = feed('Alice Anderson')
+  const name = root.querySelector('.name')
+  const r = reconcileLedger([entry(name)], root)
+  assert.deepEqual(r.ledger.map(e => e.el), [name]); assert.equal(r.revived.length, 0)
 })
 
-test('a detached exclusion is revived when the same content re-mounts at its selector', () => {
-  const root = list('Buy now', 'News story')
-  const old = root.children[0]
-  old.remove()
-  const remounted = el('p', 'Buy now'); remounted.className = 'row-0'
-  root.insertBefore(remounted, root.firstChild)
-  const r = reconcileExclusions([old], new Map([[old, rec('.row-0', 'buy now')]]), root)
-  assert.deepEqual(r.kept, [remounted]); assert.equal(r.revived.get(old), remounted)
+test('a single exclusion comes back when the same text re-mounts (new node)', () => {
+  const root = feed('Alice Anderson', 'Bob Brown')
+  const old = root.querySelector('.name'); const dormant = entry(old)
+  root.firstChild.remove()                       // row unmounted
+  const r1 = reconcileLedger([dormant], root)    // page shows only Bob -> stays dormant, not lost
+  assert.equal(r1.ledger.length, 1); assert.equal(r1.ledger[0].el, null); assert.equal(r1.revived.length, 0)
+  root.insertBefore(feed('Alice Anderson').firstChild, root.firstChild)  // scrolled back: Alice re-mounts
+  const r2 = reconcileLedger(r1.ledger, root)
+  assert.equal(r2.revived.length, 1); assert.equal(r2.revived[0].textContent, 'Alice Anderson')
 })
 
-test('NEGATIVE: a recycled row with different text at the same selector is NOT excluded', () => {
-  const root = list('Buy now', 'News story')
-  const old = root.children[0]
-  old.remove()
-  const recycled = el('p', 'A post the user wants to keep'); recycled.className = 'row-0'
-  root.insertBefore(recycled, root.firstChild)
-  const r = reconcileExclusions([old], new Map([[old, rec('.row-0', 'buy now')]]), root)
-  assert.equal(r.kept.length, 0); assert.deepEqual(r.lost, [old])
+test('NEGATIVE: a recycled row with different text is never excluded', () => {
+  const root = feed('Alice Anderson')
+  const dormant = { el: null, tag: 'SPAN', text: 'bob brown', sig: null }
+  const r = reconcileLedger([dormant], root)
+  assert.equal(r.revived.length, 0); assert.equal(r.ledger[0].el, null)
 })
 
-test('a detached exclusion whose selector matches nothing, or several nodes, is lost', () => {
-  const root = list('Buy now', 'Buy now')
-  const gone = el('p', 'Buy now')
-  assert.deepEqual(reconcileExclusions([gone], new Map([[gone, rec('.nope', 'buy now')]]), root).lost, [gone])
-  const two = el('p', 'Buy now')
-  assert.deepEqual(reconcileExclusions([two], new Map([[two, rec('p', 'buy now')]]), root).lost, [two])
+test('NEGATIVE: identical text on several nodes makes a single exclusion ambiguous -> stays dormant', () => {
+  const root = feed('Same Name', 'Same Name')
+  const dormant = { el: null, tag: 'SPAN', text: 'same name', sig: null }
+  const r = reconcileLedger([dormant], root)
+  assert.equal(r.revived.length, 0)
 })
 
-test('a detached exclusion with no comparable text (icon/image only) is lost, never guessed', () => {
-  const root = list('x', 'News story')
-  const old = el('p', '')
-  const r = reconcileExclusions([old], new Map([[old, rec('.row-0', '')]]), root)
-  assert.deepEqual(r.lost, [old])
+test('a Shift+click group re-applies to every matching node when rows re-mount', () => {
+  const root = feed('Alice Anderson', 'Bob Brown', 'Cara Clark')
+  const follows = [...root.querySelectorAll('.follow')]
+  const sig = similarSignature(follows[0])
+  const dormant = { el: null, tag: 'BUTTON', text: 'follow', sig }
+  const r = reconcileLedger([dormant], root)
+  assert.equal(r.revived.length, 3); assert.ok(r.revived.every(n => n.className === 'follow'))
+})
+
+test('a group re-applies only to nodes in the same structural place, not any node sharing a tag', () => {
+  const root = feed('Alice Anderson')
+  const stray = el('button', 'Follow'); stray.className = 'follow'; root.appendChild(stray) // different parent chain
+  const sig = similarSignature(root.querySelector('.follow'))
+  const r = reconcileLedger([{ el: null, tag: 'BUTTON', text: 'follow', sig }], root)
+  assert.equal(r.revived.length, 1); assert.notEqual(r.revived[0], stray)
+})
+
+test('a node that is already excluded is not adopted twice', () => {
+  const root = feed('Alice Anderson')
+  const name = root.querySelector('.name')
+  const r = reconcileLedger([entry(name), { el: null, tag: 'SPAN', text: 'alice anderson', sig: null }], root)
+  assert.equal(r.ledger.filter(e => e.el).length, 1)
 })
 
 test('spacer padding is inline padding taller than the screen', () => {
   assert.equal(isSpacerPadding(2367, 700), true)
   assert.equal(isSpacerPadding(1624, 911), true)
-  assert.equal(isSpacerPadding(120, 700), false)   // ordinary design padding on a small block
+  assert.equal(isSpacerPadding(120, 700), false)
   assert.equal(isSpacerPadding(0, 700), false)
-  assert.equal(isSpacerPadding(500, 0), false)     // unmeasurable viewport: never strip
-})
-
-test('a re-mounted node is not adopted twice when it is already an attached exclusion', () => {
-  const root = list('Buy now', 'News story')
-  const attachedRow = root.children[0]
-  const stale = el('p', 'Buy now')
-  const r = reconcileExclusions([attachedRow, stale], new Map([[stale, rec('.row-0', 'buy now')]]), root)
-  assert.deepEqual(r.kept, [attachedRow]); assert.deepEqual(r.lost, [stale])
-})
-
-test('NEGATIVE: identical text elsewhere in the card makes revival ambiguous -> lost', () => {
-  const root = list('Sponsored', 'Sponsored', 'News story')
-  const stale = el('p', 'Sponsored')
-  const r = reconcileExclusions([stale], new Map([[stale, rec('.row-0', 'sponsored')]]), root)
-  assert.deepEqual(r.lost, [stale])
+  assert.equal(isSpacerPadding(500, 0), false)
 })
