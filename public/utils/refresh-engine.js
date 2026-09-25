@@ -40,6 +40,58 @@ const DEBUG_IO_SPOOF = false;
 // escalation to offscreen/active-tab. See LEARNINGS.md §XX (HotUKDeals post-unification regression).
 const LARGE_IMG_RE = /data-scale-context="(?:medium|preview)"/gi;
 
+// #101 capture-quality gate. Browser tiers 1-2 (background tab, unfocused offscreen popup) can be
+// genuinely hidden to the page — Chrome stops rAF/IntersectionObserver there and the visibility
+// spoof can't change that — so JS-rendered sites come back as bare server HTML (HotUKDeals
+// 24 -> 1 image). Reference is the card's own saved copy: this gate keeps broken captures from
+// being saved, so the saved copy stays a good one (no separate history needed).
+// Ratio evidence (#100 traces, cleaned image counts vs saved copy): broken 0.02-0.04 (Kalshi est.
+// <=0.3), worst healthy 0.70 — 0.4 sits in the gap. Below 5 saved images one item swings the ratio
+// too much, and text-only cards must never be judged.
+const CAPTURE_COLLAPSE_RATIO = 0.4;
+const CAPTURE_MIN_SAVED_IMAGES = 5;
+const RENDER_DEGRADED_ERROR = 'Page did not fully load';
+
+/**
+ * Should a browser capture be trusted? Rejects only a capture that BOTH collapsed vs the saved
+ * copy AND was taken while the page was not genuinely visible+focused. A capture taken visibly
+ * is trusted even when smaller — that's how a legitimate site redesign becomes the new saved copy.
+ *
+ * @param {string} candidateHtml - candidate after applySanitizationPipeline (like-for-like with saved)
+ * @param {string} savedHtml - the card's current html_cache
+ * @param {boolean|null} pageVisible - real (un-spoofed) visibility at capture; null = unknown
+ * @returns {{ ok: boolean, ratio: number|null }}
+ */
+function assessCaptureQuality(candidateHtml, savedHtml, pageVisible) {
+  const savedImgs = ((savedHtml || '').match(/<img/gi) || []).length;
+  if (savedImgs < CAPTURE_MIN_SAVED_IMAGES) return { ok: true, ratio: null };
+  const ratio = ((candidateHtml || '').match(/<img/gi) || []).length / savedImgs;
+  return { ok: ratio >= CAPTURE_COLLAPSE_RATIO || pageVisible === true, ratio };
+}
+
+/**
+ * Real page visibility of a capture tab: visibilityState === 'visible' AND hasFocus(). Read via
+ * Document.prototype so the tier-1/2 spoof (own properties on document) can't mask it — same
+ * method as the #100 probe, where it matched broken-vs-healthy on every capture.
+ * @returns {Promise<boolean|null>} null if it couldn't be read (treated as not visible)
+ */
+async function readPageVisible(tabId) {
+  try {
+    const [r] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: () => {
+        const P = Document.prototype;
+        const vis = Object.getOwnPropertyDescriptor(P, 'visibilityState').get.call(document);
+        return vis === 'visible' && P.hasFocus.call(document);
+      }
+    });
+    return typeof r?.result === 'boolean' ? r.result : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 // A fingerprint that is just a number/price/percent (leading or trailing symbol) is the
 // tracked VALUE, not a stable identity — it can never re-match once the value moves (e.g.
 // Kalshi odds "54%" -> "53%"). Validated against live Kalshi heading candidates: catches
@@ -89,6 +141,9 @@ function classifyError(errorString) {
   if (errorLower.includes('excluded content')) {
     return 'exclusions_unapplied';  // #96: user-excluded content came back in the refreshed card
   }
+  if (errorLower.includes(RENDER_DEGRADED_ERROR.toLowerCase())) {
+    return 'render_degraded';  // #101: every browser capture was hidden + collapsed; last good copy kept
+  }
   if (errorLower.includes('skeleton') || errorLower.includes('empty container')) {
     return 'skeleton';  // Site didn't load completely
   }
@@ -118,6 +173,7 @@ function getErrorLabel(errorCode) {
     'content_drift': "Content changed significantly",
     'content_lost': "Card came back empty",
     'exclusions_unapplied': "Excluded content came back — re-capture this card",
+    'render_degraded': "Page didn't fully load — kept your last good copy",
     'unknown': "Refresh failed"
   };
   return labels[errorCode] || "Refresh failed";
@@ -713,6 +769,7 @@ const _GA4_ERROR_LABEL = {
   content_drift: 'content_drift', // NEW (was 'unknown' before)
   content_lost: 'content_lost',   // NEW (was 'unknown' before)
   exclusions_unapplied: 'exclusions_unapplied', // #96
+  render_degraded: 'render_degraded', // #101
   unknown: 'unknown'
 };
 
@@ -784,7 +841,8 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
     if (_nbCacheLen > 500 && extractedHtml.length < _nbCacheLen * 0.5) {
       console.log(`[SB-REFRESH] No raw baseline: proxy check failed (raw=${extractedHtml.length} < 50% of cache=${_nbCacheLen}) → tab fallback (will not poison baseline)`);
       const _nbFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
-      const { html: _nbTabHtml, activeFocusNeeded: _nbActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, _nbFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true);
+      const { html: _nbTabHtml, activeFocusNeeded: _nbActiveFocusNeeded, renderDegraded } = await _tabRefreshForComponent(component, _nbFingerprint, originalImgCount, originalLargeImgCount);
+      if (renderDegraded) return _renderDegradedResult(); // #101: hidden + collapsed on every tier
       if (_nbTabHtml) {
         const _nbSanitized = applySanitizationPipeline(_nbTabHtml, component);
         return _buildTabSuccessResult(_nbSanitized, component, _nbActiveFocusNeeded);
@@ -796,7 +854,10 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
   } else if (driftBaseline > 500 && (extractedHtml.length > driftBaseline * 1.5 || extractedHtml.length < driftBaseline * 0.3)) {
     console.log(`[SB-REFRESH] Content drift detected: raw=${extractedHtml.length} vs rawBaseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x, ${extractedHtml.length > driftBaseline ? 'expanded' : 'shrunk'}) → falling back to tab-based refresh`);
     const driftFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
-    const { html: tabHtml, activeFocusNeeded: driftActiveFocusNeeded } = await tabBasedRefresh(component.url, component.selector, driftFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true);
+    const { html: tabHtml, activeFocusNeeded: driftActiveFocusNeeded, renderDegraded } = await _tabRefreshForComponent(component, driftFingerprint, originalImgCount, originalLargeImgCount);
+    // #101: every browser tier was hidden + collapsed — keep the last good copy rather than
+    // falling back to the drifted server HTML below.
+    if (renderDegraded) return _renderDegradedResult();
     if (tabHtml) {
       // Skip fingerprint check for position-based captures
       if (!component.positionBased && driftFingerprint && !tabHtml.toLowerCase().includes(driftFingerprint.toLowerCase())) {
@@ -894,6 +955,8 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
  * 2. Try background tab with visibility spoof (seamless) — unless skipToOffscreen
  * 3. Try offscreen unfocused popup (IO fires, no taskbar flash)
  * 4. Fallback to focused active popup if offscreen gets 0 large images
+ * 5. #101: at every tier, `assess` (if given) can also reject a capture that was hidden AND
+ *    collapsed vs the saved copy → next tier; rejected at the popup → { html:null, renderDegraded:true }
  *
  * Handles:
  * - Consent dialogs (auto-click reject/accept)
@@ -903,16 +966,29 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
  *
  * Used in: refreshComponent() when direct fetch fails or for known problematic sites
  */
-async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0, skipToActive = false, skipToOffscreen = false) {
+async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0, skipToActive = false, skipToOffscreen = false, { assess = null } = {}) {
   // Per-call local flag — parallel-refresh safe (no shared module-level state)
   let activeFocusNeeded = false;
+  // #101: `assess(html, pageVisible)` -> assessCaptureQuality() result. Runs after each tier's own
+  // gates accept; a rejected capture moves on to the next tier, and a rejected focused-popup
+  // capture ends as renderDegraded (caller keeps the last good copy).
+  const passesQualityGate = (html, meta, tier) => {
+    if (!assess) return true;
+    const verdict = assess(html, meta.pageVisible);
+    if (DEBUG) console.log('[SB-REFRESH] capture gate', new URL(url).hostname, 'tier=' + tier, 'visible=' + meta.pageVisible, 'ratio=' + verdict.ratio, verdict.ok ? 'accept' : 'REJECT');
+    return verdict.ok;
+  };
   try {
     // Check if this site MUST be visible (Page Visibility API blocks background)
     // skipToActive is set for components with stored requiresActiveFocus=true (self-learned flag)
     if (requiresVisibleTab(url) || skipToActive) {
       // Skip background + offscreen attempts - go straight to active tab
       // activeFocusNeeded stays false: flag is already persisted in storage for this card
-      const result = await tryActiveTab(url, selector, fingerprint);
+      const meta = {};
+      const result = await tryActiveTab(url, selector, fingerprint, meta);
+      if (result && !passesQualityGate(result, meta, 'active')) {
+        return { html: null, activeFocusNeeded: false, renderDegraded: true };
+      }
       return { html: result || null, activeFocusNeeded: false };
     }
 
@@ -923,7 +999,8 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
       if (DEBUG) console.log('[SB-REFRESH]', new URL(url).hostname, 'path=background', 'expected=', expectedImgCount + '/' + expectedLargeImgCount);
 
       // ATTEMPT 1: Try background tab with visibility spoof
-      const result = await tryBackgroundWithSpoof(url, selector, fingerprint);
+      const bgMeta = {};
+      const result = await tryBackgroundWithSpoof(url, selector, fingerprint, bgMeta);
       if (result) {
         // Check if images are degraded (site may detect background tab despite spoof)
         const resultImgCount = (result.match(/<img/gi) || []).length;
@@ -946,7 +1023,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
             (expectedImgCount >= 5 && resultLargeImgCount <= 1)) {
           if (DEBUG) console.log('[SB-REFRESH]', new URL(url).hostname, 'images degraded expected=', expectedImgCount + '/' + expectedLargeImgCount, 'got=', resultImgCount + '/' + resultLargeImgCount, '→ trying offscreen');
           // Fall through to offscreen window
-        } else {
+        } else if (passesQualityGate(result, bgMeta, 'background')) {
           return { html: result, activeFocusNeeded: false };
         }
       }
@@ -958,7 +1035,8 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     // Works for sites where IO-gated images load without a compositor focus frame (e.g. Zoopla).
     // Does NOT work for sites where Vue child components require a focused compositor frame
     // to mount (e.g. HotUKDeals box--contents). Gate falls through in that case.
-    const offscreenHtml = await tryOffscreenWindow(url, selector, fingerprint);
+    const offMeta = {};
+    const offscreenHtml = await tryOffscreenWindow(url, selector, fingerprint, offMeta);
     if (offscreenHtml) {
       const offImgCount = (offscreenHtml.match(/<img/gi) || []).length;
       const offLargeImgCount = (offscreenHtml.match(LARGE_IMG_RE) || []).length;
@@ -971,7 +1049,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
       // HotUKDeals gets 0 large images in offscreen (box--contents never mounts without focus).
       } else if (expectedLargeImgCount >= 5 && offLargeImgCount === 0) {
         if (DEBUG) console.log('🪟 [Offscreen] Large imgs absent:', offLargeImgCount, '/', expectedLargeImgCount, '→ trying active popup');
-      } else {
+      } else if (passesQualityGate(offscreenHtml, offMeta, 'offscreen')) {
         if (DEBUG) console.log('🪟 [Offscreen] Accepted:', offImgCount, 'imgs', offLargeImgCount, 'large (classifyFallback will resize)');
         return { html: offscreenHtml, activeFocusNeeded: false };
       }
@@ -980,7 +1058,11 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     // ATTEMPT 3: Focused active popup (last resort — site requires compositor focus frame to render)
     // Set activeFocusNeeded BEFORE calling so it is captured in the return value on success.
     activeFocusNeeded = true;
-    const fallbackResult = await tryActiveTab(url, selector, fingerprint);
+    const activeMeta = {};
+    const fallbackResult = await tryActiveTab(url, selector, fingerprint, activeMeta);
+    if (fallbackResult && !passesQualityGate(fallbackResult, activeMeta, 'active')) {
+      return { html: null, activeFocusNeeded: false, renderDegraded: true };
+    }
     if (fallbackResult) return { html: fallbackResult, activeFocusNeeded: true };
 
     return { html: null, activeFocusNeeded: false };
@@ -988,6 +1070,21 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     console.error('Tab refresh failed:', error);
     return { html: null, activeFocusNeeded: false };
   }
+}
+
+/**
+ * tabBasedRefresh for a stored card, with the #101 capture-quality gate wired in. The candidate
+ * is cleaned through the same pipeline as a stored refresh so its image count is like-for-like
+ * with the saved copy. Every refreshComponent / drift-guard tab path goes through here.
+ */
+function _tabRefreshForComponent(component, fingerprint, expectedImgCount, expectedLargeImgCount) {
+  return tabBasedRefresh(component.url, component.selector, fingerprint, expectedImgCount, expectedLargeImgCount,
+    component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true,
+    { assess: (html, pageVisible) => assessCaptureQuality(applySanitizationPipeline(html, component), component.html_cache, pageVisible) });
+}
+
+function _renderDegradedResult() {
+  return { success: false, error: RENDER_DEGRADED_ERROR, keepOriginal: true };
 }
 
 /**
@@ -1152,7 +1249,7 @@ async function closeWindowSafely(windowId, timeoutMs = CLOSE_TIMEOUT_MS) {
  *
  * Used in: tabBasedRefresh() as first attempt before active tab fallback
  */
-async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
+async function tryBackgroundWithSpoof(url, selector, fingerprint = null, meta = {}) {
   const _bgStart = Date.now();
   if (DEBUG) console.log('[SB-REFRESH] tryBackgroundWithSpoof ENTER', url);
   const tab = await chrome.tabs.create({ url, active: false });
@@ -1253,6 +1350,7 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
     // Try to extract - WITH SANITIZATION AND IMAGE CLASSIFICATION IN THE TAB
     // Inject DomSnapshot into tab context (needed — executeScript funcs run in tab's isolated world)
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['utils/dom-snapshot.js'] });
+    meta.pageVisible = await readPageVisible(tab.id); // #101
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       args: [selector, fingerprint],
@@ -1483,7 +1581,7 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null) {
  * @param {string|null} fingerprint - Optional heading text for multi-match selection
  * @returns {Promise<string|null>} - Extracted HTML or null if failed
  */
-async function tryOffscreenWindow(url, selector, fingerprint = null) {
+async function tryOffscreenWindow(url, selector, fingerprint = null, meta = {}) {
   let win = null;
   const _owStart = Date.now();
   if (DEBUG) console.log('[SB-OFFSCREEN] ENTER', url);
@@ -1587,6 +1685,7 @@ async function tryOffscreenWindow(url, selector, fingerprint = null) {
     // Extract - same script as tryActiveTab (real viewport so IO fires)
     // Inject DomSnapshot into tab context (needed — executeScript funcs run in tab's isolated world)
     await chrome.scripting.executeScript({ target: { tabId }, files: ['utils/dom-snapshot.js'] });
+    meta.pageVisible = await readPageVisible(tabId); // #101
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       args: [selector, fingerprint],
@@ -1826,7 +1925,7 @@ async function tryOffscreenWindow(url, selector, fingerprint = null) {
  *
  * Used in: tabBasedRefresh() as fallback, or directly for requiresVisibleTab() sites
  */
-async function tryActiveTab(url, selector, fingerprint = null) {
+async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
   const _atStart = Date.now();
   if (DEBUG) console.log('[SB-REFRESH] tryActiveTab ENTER', url);
   // Capture the user's current window BEFORE creating our popup so we can restore focus.
@@ -2099,6 +2198,7 @@ async function tryActiveTab(url, selector, fingerprint = null) {
         return { html: clone.outerHTML, hasEmptyImageSlots };
     };
 
+    meta.pageVisible = await readPageVisible(atTabId); // #101
     const results = await chrome.scripting.executeScript({
       target: { tabId: atTabId },
       args: [selector, fingerprint],
@@ -2143,13 +2243,17 @@ async function tryActiveTab(url, selector, fingerprint = null) {
         // 4s (not 2s): live testing against CNBC showed its lazy-mount re-check is debounced
         // longer than 2s after a width change — 2s consistently left the placeholder unresolved.
         await new Promise(r => setTimeout(r, 4000));
+        const retryVisible = await readPageVisible(atTabId); // #101: visibility of the retry capture
         const retryResults = await chrome.scripting.executeScript({
           target: { tabId: atTabId },
           args: [selector, fingerprint],
           func: extractFromTab
         });
         const retryHtml = retryResults[0]?.result?.html;
-        if (retryHtml) html = retryHtml;
+        if (retryHtml) {
+          html = retryHtml;
+          meta.pageVisible = retryVisible;
+        }
       } catch (_) { /* best-effort — fall back to the first-pass html below */ }
     }
 
@@ -2209,7 +2313,8 @@ async function refreshComponent(component) {
     const originalLargeImgCount = (component.html_cache?.match(LARGE_IMG_RE) || []).length;
     const captureMode = willNeedActiveTab(component.url) ? 'tab-based' : 'direct-fetch';
     if (captureMode === 'tab-based') {
-      const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, null, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true);
+      const { html: tabHtml, activeFocusNeeded, renderDegraded } = await _tabRefreshForComponent(component, null, originalImgCount, originalLargeImgCount);
+      if (renderDegraded) return _renderDegradedResult(); // #101: hidden + collapsed on every tier
 
       if (tabHtml) {
         // Verify with fingerprint
@@ -2268,7 +2373,8 @@ async function refreshComponent(component) {
       console.warn(`⚠️ Direct fetch failed for ${component.name} (${component.url}): ${fetchError} - trying tab fallback`);
       
       const originalFingerprint = extractFingerprint(component.html_cache);
-      const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true);
+      const { html: tabHtml, activeFocusNeeded, renderDegraded } = await _tabRefreshForComponent(component, originalFingerprint, originalImgCount, originalLargeImgCount);
+      if (renderDegraded) return _renderDegradedResult(); // #101: hidden + collapsed on every tier
 
       if (tabHtml) {
         // Fingerprint verification (skip for position-based captures)
@@ -2533,7 +2639,8 @@ async function refreshComponent(component) {
           const originalFingerprint = extractFingerprint(component.html_cache);
 
           // Try tab-based refresh as fallback
-          const { html: tabHtml, activeFocusNeeded } = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true);
+          const { html: tabHtml, activeFocusNeeded, renderDegraded } = await _tabRefreshForComponent(component, originalFingerprint, originalImgCount, originalLargeImgCount);
+          if (renderDegraded) return _renderDegradedResult(); // #101: hidden + collapsed on every tier
           if (tabHtml) {
             // Verify we got the right element by checking fingerprint
             // 🎯 BATCH 3: Skip fingerprint check for position-based captures
@@ -2734,7 +2841,8 @@ async function refreshComponent(component) {
         // If heading fallback didn't work, try tab-based refresh
         if (!extractedHtml) {
           const originalFingerprint = extractFingerprint(component.html_cache);
-          const { html: tabHtml, activeFocusNeeded: selectorTabActiveFocus } = await tabBasedRefresh(component.url, component.selector, originalFingerprint, originalImgCount, originalLargeImgCount, component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true);
+          const { html: tabHtml, activeFocusNeeded: selectorTabActiveFocus, renderDegraded } = await _tabRefreshForComponent(component, originalFingerprint, originalImgCount, originalLargeImgCount);
+          if (renderDegraded) return _renderDegradedResult(); // #101: hidden + collapsed on every tier
 
           if (tabHtml) {
             // 🎯 BATCH 3: Skip fingerprint check for position-based captures
