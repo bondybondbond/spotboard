@@ -8,6 +8,41 @@
  */
 
 // ══════════════════════════════════════════════
+// RE-CAPTURE — issue #52
+// A card whose selector went stale can be re-captured in place from its stored URL: label,
+// position, pause state and id are kept. The session handshake is tab-bound (background.ts
+// CHECK_CAPTURE / RECAPTURE_CLAIM), so an abandoned attempt can never turn a later "Add card"
+// into an overwrite. Button visibility rules live in refresh-engine.js shouldOfferRecapture().
+// ══════════════════════════════════════════════
+const RECAPTURE_BUTTON_HTML = '<button type="button" class="error-recapture-btn" title="Pick the section again on the original page">Re-capture</button>';
+
+function startRecapture(component) {
+  const label = component.customLabel || component.name || 'this card';
+  chrome.tabs.create({ url: component.url }, (tab) => {
+    chrome.storage.session.set({
+      pendingCaptureTabId: tab.id,
+      pendingRecapture: { tabId: tab.id, cardId: component.id, label, sessionId: crypto.randomUUID(), startedAt: Date.now() }
+    });
+  });
+}
+
+function wireRecaptureButtons(card, component) {
+  card.querySelectorAll('.error-recapture-btn').forEach((btn) => {
+    if (btn.dataset.wired) return;
+    btn.dataset.wired = '1';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      startRecapture(component);
+    });
+  });
+}
+
+// The re-capture finishes in another tab; reload here so the fixed card shows fresh content.
+chrome.runtime.onMessage.addListener((request) => {
+  if (request && request.type === 'CARD_RECAPTURED') location.reload();
+});
+
+// ══════════════════════════════════════════════
 // EXPORT / IMPORT — issue #59 (backup/recovery escape hatch)
 // Manual-only, low-profile advanced menu. Not a "backup" feature — a full
 // recovery artifact (sync metadata + local HTML per card) a user or the
@@ -2419,6 +2454,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             <a href="${component.url}" target="_blank" class="error-open-btn">
               Open site
             </a>
+            ${component.lastOutcome === 'failed' && shouldOfferRecapture(component) ? RECAPTURE_BUTTON_HTML : ''}
           </div>
         ` : ''}
         ${window.ExclusionStorage.exclusionsAreUnknown(component) ? `
@@ -2427,7 +2463,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           </div>
         ` : ''}
         <div class="component-content">
-          ${cleanupDuplicates(component.html_cache) || '<div class="card-empty-placeholder"><div style="font-size: 18px; margin-bottom: 8px;">📭</div><div style="font-weight: 600; margin-bottom: 4px;">No content yet</div><div style="font-size: 13px;">Click "Refresh All" to fetch latest content</div></div>'}
+          ${cleanupDuplicates(component.html_cache) || '<div class="card-empty-placeholder"><div style="font-size: 18px; margin-bottom: 8px;">📭</div><div style="font-weight: 600; margin-bottom: 4px;">No content yet</div><div style="font-size: 13px;">Click "Refresh All" to fetch latest content</div>' + (component.lastOutcome !== 'failed' && shouldOfferRecapture(component) ? RECAPTURE_BUTTON_HTML : '') + '</div>'}
         </div>
       `;
 
@@ -2631,6 +2667,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                   <a href="${component.url}" target="_blank" class="error-open-btn">
                     Open site
                   </a>
+                  ${shouldOfferRecapture(component) ? RECAPTURE_BUTTON_HTML : ''}
                 `;
 
                 // Insert after card header
@@ -2643,11 +2680,19 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                   refreshSingleBtn.dataset.retry = '1';
                   refreshSingleBtn.click();
                 });
+                wireRecaptureButtons(errorBanner, component);
               } else if (existingBanner) {
                 // Banner already up from a prior failure — refresh its label so a new
                 // failure category (e.g. content_lost) isn't hidden behind a stale message.
                 const label = existingBanner.querySelector('.error-message strong');
                 if (label) label.textContent = getErrorLabel(errorCode);
+                const existingRecapture = existingBanner.querySelector('.error-recapture-btn');
+                if (shouldOfferRecapture(component) && !existingRecapture) {
+                  existingBanner.insertAdjacentHTML('beforeend', RECAPTURE_BUTTON_HTML);
+                  wireRecaptureButtons(existingBanner, component);
+                } else if (!shouldOfferRecapture(component) && existingRecapture) {
+                  existingRecapture.remove();
+                }
               }
 
               // Improved toast with error details (4-second auto-dismiss, non-actionable)
@@ -2686,6 +2731,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           }
         });
       }
+
+      wireRecaptureButtons(card, component); // #52
 
       // Delete functionality
       const deleteBtn = card.querySelector('.delete-btn');

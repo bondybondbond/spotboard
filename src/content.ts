@@ -3,6 +3,7 @@ import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusi
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, classifyImages } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
 import { fitSyncRecord, SAVE_TOO_BIG_MESSAGE, friendlySaveError } from './utils/exclusion-storage';
+import { mergeRecapture } from './utils/recapture';
 
 // Debug mode - set to true for detailed logging
 const DEBUG = false;
@@ -56,6 +57,9 @@ function extractStructureMarker(root: Element): { attr: string; value: string } 
 }
 
 let isCapturing = false;
+// #52: set only when this tab was opened by a card's "Re-capture" button. While set, a save
+// replaces that card in place instead of creating a new one. Cleared on every cancel path.
+let recaptureCtx: { cardId: string; sessionId: string; label: string } | null = null;
 let lockedElement: HTMLElement | null = null; // Track element waiting for confirmation
 
 // #42: capture-root refinement. Between the first click and the previewer, the clicked element is
@@ -236,9 +240,10 @@ if (_captureParam === '1') {
 
 // Pull model for capture auto-start (from guided site picker / practice pills)
 // More reliable than ?spotboard_capture=1 param which SPAs can strip before document_idle
-chrome.runtime.sendMessage({ type: 'CHECK_CAPTURE' }, (shouldCapture: boolean) => {
+chrome.runtime.sendMessage({ type: 'CHECK_CAPTURE' }, (shouldCapture: boolean | { recapture: { cardId: string; sessionId: string; label: string } }) => {
   if (chrome.runtime.lastError) return;
   if (!shouldCapture) return;
+  if (typeof shouldCapture === 'object' && shouldCapture.recapture) recaptureCtx = shouldCapture.recapture;
   const _doCapture = () => setTimeout(() => toggleCapture(true), 800);
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
     _doCapture();
@@ -3165,6 +3170,26 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           return; // Skip normal sync+local save flow
         }
 
+        // #52: re-capture replaces the existing card in place -- no new id, no new card.
+        if (recaptureCtx) {
+          const ctx = recaptureCtx;
+          target.style.outline = '';
+          target.style.cursor = '';
+          lockedElement = null;
+          resetExclusions();
+          commitRecapture(ctx, {
+            selector: component.selector,
+            headingFingerprint,
+            structureMarker,
+            positionBased: finalPositionBased,
+            excludedSelectors,
+            html_cache: component.html_cache,
+            rawCaptureLength: component.rawCaptureLength,
+            exclusionSignatures
+          });
+          return;
+        }
+
         // Onboarding mode: show completion overlay
         if (wasOnboarding) {
           console.debug('[sb-onboarding] calling advanceOnboardingCoach(completed). body.lastChild before:', document.body.lastElementChild?.id);
@@ -3344,6 +3369,19 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           return;
         }
 
+        // #52: a re-capture must never replace a card with an empty result, and offering
+        // "capture anyway" here would let it. Same nudge as onboarding: pick again, no save.
+        if (recaptureCtx) {
+          log('⚠️ Re-capture looks empty — keeping the old card, prompting a new pick.');
+          target.style.outline = '';
+          target.style.cursor = '';
+          lockedElement = null;
+          resetExclusions();
+          toggleCapture(true);
+          showCaptureHint('That section looks empty — pick another one. Your card is unchanged.');
+          return;
+        }
+
         // Onboarding: never silently save a useless first card, and never make the bypass
         // prompt the first thing a new user sees. Clear the selection, nudge toward a bigger
         // block, and re-arm capture so they can immediately try again. (Not a state machine:
@@ -3482,6 +3520,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           had_exclusions: excludedElements.length > 0
         }
       });
+      recaptureCtx = null; // #52: cancelled -- the card stays exactly as it was
             toggleCapture(false);
     }, true); // Use capture phase
   }
@@ -3549,9 +3588,64 @@ function handleKeydown(event: KeyboardEvent) {
         had_exclusions: false
       }
     });
+    recaptureCtx = null; // #52: cancelled -- the card stays exactly as it was
     toggleCapture(false);
     // Silent cancellation — banner disappearing is sufficient visual feedback
   }
+}
+
+// #52: replace an existing card's capture in place. Order matters: claim the session (a newer
+// re-capture for the same card, or a closed/abandoned tab, loses), re-read the stored card (deleted
+// meanwhile -> abort, never resurrect), then local html BEFORE sync metadata so a half-failed save
+// leaves the old card still pointing at content that exists.
+function commitRecapture(
+  ctx: { cardId: string; sessionId: string; label: string },
+  capture: Parameters<typeof mergeRecapture>[2]
+) {
+  const finish = () => { recaptureCtx = null; toggleCapture(false); };
+  const fail = (message: string) => { showStyledNotification(`❌ ${message}`, 'error'); finish(); };
+
+  chrome.runtime.sendMessage({ type: 'RECAPTURE_CLAIM', cardId: ctx.cardId, sessionId: ctx.sessionId }, (claimed: boolean) => {
+    if (chrome.runtime.lastError || !claimed) {
+      fail('This re-capture was replaced by a newer one. Start it again from your board.');
+      return;
+    }
+    const syncKey = `comp-${ctx.cardId}`;
+    chrome.storage.sync.get(syncKey, (syncRes) => {
+      const existing = syncRes?.[syncKey] as Record<string, unknown> | undefined;
+      if (chrome.runtime.lastError || !existing) {
+        fail('That card no longer exists on your board, so nothing was changed.');
+        return;
+      }
+      chrome.storage.local.get(['componentsData'], (localRes) => {
+        const localData = (localRes?.componentsData || {}) as Record<string, Record<string, unknown>>;
+        const merged = mergeRecapture(existing, localData[ctx.cardId], capture, new Date().toISOString());
+        const fitted = fitSyncRecord(syncKey, merged.sync);
+        if (!fitted.fits) {
+          fail(SAVE_TOO_BIG_MESSAGE);
+          return;
+        }
+        localData[ctx.cardId] = merged.local;
+        chrome.storage.local.set({ componentsData: localData }, () => {
+          if (chrome.runtime.lastError) {
+            fail(friendlySaveError(chrome.runtime.lastError.message));
+            return;
+          }
+          chrome.storage.sync.set({ [syncKey]: fitted.record }, () => {
+            if (chrome.runtime.lastError) {
+              fail(friendlySaveError(chrome.runtime.lastError.message));
+              return;
+            }
+            chrome.runtime.sendMessage({ type: 'GA4_EVENT', eventName: 'recapture_completed', params: { url_domain: new URL(window.location.href).hostname } });
+            chrome.runtime.sendMessage({ type: 'CARD_RECAPTURED', cardId: ctx.cardId }, () => void chrome.runtime.lastError);
+            recaptureCtx = null;
+            showStyledNotification(`✅ Re-captured: ${ctx.label}`, 'success', ctx.cardId);
+            toggleCapture(false);
+          });
+        });
+      });
+    });
+  });
 }
 
 // Main Toggle Logic
@@ -3560,9 +3654,14 @@ function handleKeydown(event: KeyboardEvent) {
 function showCaptureBanner() {
   // Don't create duplicate
   if (document.getElementById('spotboard-capture-banner')) return;
-  document.body.appendChild(createCaptureStrip('spotboard-capture-banner', 1, [
-    stripBold('click'), ' on any content you want to add to your board \u00b7 ', stripKbd('Esc'), ' to cancel'
-  ]));
+  const instructions: (Node | string)[] = recaptureCtx
+    ? [
+        stripBold('click'), ' on the section to re-capture for ',
+        stripBold(`\u201c${recaptureCtx.label.length > 40 ? recaptureCtx.label.slice(0, 40) + '\u2026' : recaptureCtx.label}\u201d`),
+        ' \u00b7 ', stripKbd('Esc'), ' to cancel'
+      ]
+    : [stripBold('click'), ' on any content you want to add to your board \u00b7 ', stripKbd('Esc'), ' to cancel'];
+  document.body.appendChild(createCaptureStrip('spotboard-capture-banner', 1, instructions));
 }
 
 // 🎯 #60: shown for the whole exclusion-mode step (from when the overlay first opens) —
@@ -3691,6 +3790,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.message === "TOGGLE_CAPTURE" || request.type === "TOGGLE_CAPTURE") {
+    recaptureCtx = null; // #52: the popup starts/stops a NORMAL capture -- never a re-capture
     toggleCapture();
   }
 });

@@ -180,6 +180,22 @@ function getErrorLabel(errorCode) {
 }
 
 /**
+ * #52: should this card offer a "Re-capture" button?
+ * Yes for failures a fresh capture actually fixes (selector stale / result empty / excluded
+ * content back). Not for network / skeleton / render_degraded / drift -- Retry fixes those.
+ * A non-failed card with no html_cache that has already attempted a refresh (lastAttemptAt)
+ * also qualifies; a brand-new card mid-first-capture has no attempt yet and does not.
+ */
+const RECAPTURE_ERROR_CODES = ['layout_changed', 'content_lost', 'exclusions_unapplied'];
+function shouldOfferRecapture(component) {
+  if (!component) return false;
+  if (component.lastOutcome === 'failed') {
+    return RECAPTURE_ERROR_CODES.includes(component.lastErrorCode);
+  }
+  return !(component.html_cache || '').trim() && !!component.lastAttemptAt;
+}
+
+/**
  * Logs generic DOM tree topology for fingerprint mismatch diagnostics.
  * Outputs tag names + child counts only — no content. Skips invisible tags
  * (<script>, <style>, <noscript>) when counting children so analytics/tracking

@@ -341,6 +341,25 @@ async function matchPendingTab(key: 'pendingOnboardingTabId' | 'pendingCaptureTa
   return false;
 }
 
+// #52: a re-capture start is only honoured if the new tab asks within this window.
+type RecaptureLatest = Record<string, { sessionId: string; tabId: number }>;
+const RECAPTURE_START_WINDOW_MS = 2 * 60 * 1000;
+
+// #52: closing the tab abandons its re-capture -- drop any handshake or latest-session bound to it.
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  try {
+    const { pendingRecapture, recaptureLatest } = await chrome.storage.session.get(['pendingRecapture', 'recaptureLatest']) as { pendingRecapture?: { tabId: number }; recaptureLatest?: RecaptureLatest };
+    if (pendingRecapture && pendingRecapture.tabId === tabId) await chrome.storage.session.remove('pendingRecapture');
+    if (recaptureLatest) {
+      let changed = false;
+      for (const cardId of Object.keys(recaptureLatest)) {
+        if (recaptureLatest[cardId].tabId === tabId) { delete recaptureLatest[cardId]; changed = true; }
+      }
+      if (changed) await chrome.storage.session.set({ recaptureLatest });
+    }
+  } catch { /* session storage unavailable -- nothing to clean */ }
+});
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Onboarding re-trigger pull model: content script asks if it should start onboarding.
   // The dashboard writes pendingOnboardingTabId in a fire-and-forget callback after
@@ -365,7 +384,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const tabId = sender.tab?.id;
     (async () => {
       try {
-        sendResponse(await matchPendingTab('pendingCaptureTabId', tabId));
+        const matched = await matchPendingTab('pendingCaptureTabId', tabId);
+        if (!matched) { sendResponse(false); return; }
+        // #52: a re-capture start also leaves a tab-bound pendingRecapture; consume it (only if
+        // fresh) and record it as the latest session for that card so an older tab is superseded.
+        const { pendingRecapture } = await chrome.storage.session.get('pendingRecapture') as { pendingRecapture?: { tabId: number; cardId: string; sessionId: string; label: string; startedAt: number } };
+        if (pendingRecapture && pendingRecapture.tabId === tabId) {
+          await chrome.storage.session.remove('pendingRecapture');
+          if (Date.now() - pendingRecapture.startedAt < RECAPTURE_START_WINDOW_MS) {
+            const { recaptureLatest = {} } = await chrome.storage.session.get('recaptureLatest') as { recaptureLatest?: RecaptureLatest };
+            recaptureLatest[pendingRecapture.cardId] = { sessionId: pendingRecapture.sessionId, tabId };
+            await chrome.storage.session.set({ recaptureLatest });
+            sendResponse({ recapture: { cardId: pendingRecapture.cardId, sessionId: pendingRecapture.sessionId, label: pendingRecapture.label } });
+            return;
+          }
+        }
+        sendResponse(true);
+      } catch {
+        sendResponse(false);
+      }
+    })();
+    return true;
+  }
+
+  // #52: save-time check that this tab's re-capture is still the latest for its card.
+  // Consumed on success so one session can commit once.
+  if (request.type === 'RECAPTURE_CLAIM') {
+    (async () => {
+      try {
+        const { recaptureLatest = {} } = await chrome.storage.session.get('recaptureLatest') as { recaptureLatest?: RecaptureLatest };
+        const current = recaptureLatest[request.cardId];
+        if (current && current.sessionId === request.sessionId && current.tabId === sender.tab?.id) {
+          delete recaptureLatest[request.cardId];
+          await chrome.storage.session.set({ recaptureLatest });
+          sendResponse(true);
+        } else {
+          sendResponse(false);
+        }
       } catch {
         sendResponse(false);
       }

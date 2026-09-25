@@ -616,6 +616,7 @@
       font-size: 13px;
       color: var(--warn-banner-text);
       flex-shrink: 0;
+      flex-wrap: wrap;
     }
 
     .card-error-banner .error-icon {
@@ -656,6 +657,26 @@
 
     .card-error-banner .error-open-btn:hover {
       background: var(--warn-open-bg);
+    }
+
+    /* #52: Re-capture — same outlined look as "Open site"; also used in the empty placeholder */
+    .error-recapture-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 4px;
+      white-space: nowrap;
+      cursor: pointer;
+      background: var(--surface-card);
+      color: var(--warn-accent);
+      border: 1px solid var(--warn-accent);
+    }
+
+    .error-recapture-btn:hover {
+      background: var(--warn-open-bg);
+    }
+
+    .card-empty-placeholder .error-recapture-btn {
+      margin-top: 10px;
     }
 
     /* Failure toast styles */
