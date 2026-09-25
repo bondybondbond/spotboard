@@ -1504,7 +1504,7 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
 // structural signature when it came from a Shift+click group); `el` is its current live node, or
 // null while the page is not showing it. Entries are never dropped just because the node left --
 // they are re-applied when matching content re-mounts, so the decision persists.
-export interface LedgerEntry { el: HTMLElement | null; tag: string; text: string; sig: string | null }
+export interface LedgerEntry { el: HTMLElement | null; tag: string; text: string; sig: string | null; size?: number }
 let exclusionLedger: LedgerEntry[] = [];
 let bulkExclusionInProgress = false;
 
@@ -1526,6 +1526,7 @@ function recordExclusion(el: HTMLElement) {
     tag: el.tagName,
     text: normalizeSignatureText(el.textContent || ''),
     sig: bulkExclusionInProgress ? similarSignature(el) : null,
+    size: el.querySelectorAll('*').length,
   });
 }
 
@@ -1560,12 +1561,21 @@ export function reconcileLedger(ledger: LedgerEntry[], root: HTMLElement): { led
       });
       if (matched) return;
     } else if (/\p{L}{3}/u.test(entry.text)) {
+      // Same-tag nodes carrying exactly the excluded text. Wrappers nested inside each other with
+      // identical text (div > div > div) are one candidate, not several: take the outermost, then
+      // pick the chain member closest in size to what was excluded.
       const same = Array.from(root.querySelectorAll<HTMLElement>(entry.tag))
         .filter(n => normalizeSignatureText(n.textContent || '') === entry.text);
-      if (same.length === 1 && !taken.has(same[0])) {
-        taken.add(same[0]); revived.push(same[0]);
-        next.push({ el: same[0], tag: entry.tag, text: entry.text, sig: null });
-        return;
+      const tops = same.filter(n => !same.some(m => m !== n && m.contains(n)));
+      if (tops.length === 1) {
+        const chain = same.filter(n => tops[0].contains(n));
+        const want = entry.size ?? 0;
+        const pick = chain.reduce((best, n) => Math.abs(n.querySelectorAll('*').length - want) < Math.abs(best.querySelectorAll('*').length - want) ? n : best, chain[0]);
+        if (!taken.has(pick)) {
+          taken.add(pick); revived.push(pick);
+          next.push({ el: pick, tag: entry.tag, text: entry.text, sig: null, size: entry.size });
+          return;
+        }
       }
     }
     const key = `${entry.tag}|${entry.text}|${entry.sig}`;

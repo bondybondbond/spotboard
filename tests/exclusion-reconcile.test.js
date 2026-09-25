@@ -78,6 +78,17 @@ test('a node that is already excluded is not adopted twice', () => {
   assert.equal(r.ledger.filter(e => e.el).length, 1)
 })
 
+test('nested wrappers with identical text count as ONE candidate, and the closest-sized one is chosen', () => {
+  const inner = el('div', 'Michael Andreuzza reshared')
+  const outer = el('div', null, [inner])
+  const root = el('div', null, [outer]); document.body.appendChild(root)
+  const dormant = { el: null, tag: 'DIV', text: 'michael andreuzza reshared', sig: null, size: 0 }
+  const r = reconcileLedger([dormant], root)
+  assert.equal(r.revived.length, 1); assert.equal(r.revived[0], inner)   // size 0 matches the leaf
+  const r2 = reconcileLedger([{ ...dormant, size: 1 }], root)
+  assert.equal(r2.revived[0], outer)                                     // size 1 matches the wrapper
+})
+
 test('spacer padding is inline padding taller than the screen', () => {
   assert.equal(isSpacerPadding(2367, 700), true)
   assert.equal(isSpacerPadding(1624, 911), true)
