@@ -1,5 +1,5 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
-import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, effectiveSrcset } from './utils/dom-cleanup';
+import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset } from './utils/dom-cleanup';
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, classifyImages } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
 import { fitSyncRecord, SAVE_TOO_BIG_MESSAGE, friendlySaveError } from './utils/exclusion-storage';
@@ -997,6 +997,25 @@ export function looksEmptyCapture(html: string, isPlaygroundPage: boolean): bool
     && !VOLATILE_FINGERPRINT_RE.test(text);
 }
 
+// #112: virtualised lists (react-virtuoso and similar) stand in for the rows that are not
+// mounted with INLINE padding-top/padding-bottom on their item list -- thousands of px once the
+// user has scrolled. Copied into a card or preview, that spacer pushes the mounted rows far below
+// the fold and the card looks blank. Mechanical rule, no per-site logic: an inline padding on the
+// capture root taller than the screen itself is a placeholder, not design padding. (Comparing it
+// with the mounted content's height was tried and failed: mid-scroll the mounted rows can be
+// taller than the spacer while the spacer still hides the first row.)
+export function isSpacerPadding(paddingPx: number, viewportHeightPx: number): boolean {
+  return viewportHeightPx > 0 && paddingPx > viewportHeightPx;
+}
+
+function stripSpacerPadding(live: HTMLElement, clone: HTMLElement) {
+  const computed = window.getComputedStyle(live);
+  (['paddingTop', 'paddingBottom'] as const).forEach(prop => {
+    if (!live.style[prop]) return; // only inline padding (that is where virtualisers put spacers)
+    if (isSpacerPadding(parseFloat(computed[prop]), window.innerHeight)) clone.style[prop] = '0px';
+  });
+}
+
 // Exported (test-only reason): #40's jsdom harness bundles this file and needs to call
 // sanitizeHTML directly to regression-test the exclusion-marking logic that caused #2 —
 // no other caller outside this file exists or should exist.
@@ -1146,6 +1165,7 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
   let clone: HTMLElement;
   try {
     clone = cloneWithShadow(element) as HTMLElement;
+    stripSpacerPadding(element, clone);
   } finally {
     // Restore the live page even if cloning throws — never leave a marker on the user's DOM.
     excludedElements.forEach(el => el.removeAttribute('data-spotboard-excluded'));
@@ -1478,6 +1498,85 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
   return clone.outerHTML;
 }
 
+// #112: what each exclusion looked like when it was clicked (selector unique within the capture
+// root + normalised text), so it can be recognised again if the page unmounts and re-mounts
+// the node (virtualised lists recycle rows as the user scrolls). Live node refs alone go stale.
+export interface ExclusionRecord { sel: string; text: string }
+let exclusionRecords = new Map<HTMLElement, ExclusionRecord>();
+
+function recordExclusion(el: HTMLElement) {
+  if (!lockedElement) return;
+  exclusionRecords.set(el, {
+    sel: generateExclusionSelector(el, lockedElement),
+    text: normalizeSignatureText(el.textContent || ''),
+  });
+}
+
+/**
+ * #112: bring `excluded` back in line with the live DOM. An exclusion whose node was detached is
+ * re-attached to the node now matching its recorded selector ONLY if that is exactly one node
+ * and its whole text equals what the user excluded. Anything weaker (no text to compare, zero or
+ * several matches, different text -- e.g. the row was recycled for another post) is reported as
+ * lost rather than guessed, since excluding the wrong post is worse than dropping the exclusion.
+ */
+export function reconcileExclusions(
+  excluded: HTMLElement[],
+  records: Map<HTMLElement, ExclusionRecord>,
+  root: HTMLElement
+): { kept: HTMLElement[]; lost: HTMLElement[]; revived: Map<HTMLElement, HTMLElement> } {
+  const kept: HTMLElement[] = [];
+  const lost: HTMLElement[] = [];
+  const revived = new Map<HTMLElement, HTMLElement>();
+  const attached = new Set(excluded.filter(el => root.contains(el)));
+  excluded.forEach(el => {
+    if (attached.has(el)) { kept.push(el); return; }
+    const rec = records.get(el);
+    let match: HTMLElement | null = null;
+    if (rec && /\p{L}{3}/u.test(rec.text)) {
+      try {
+        const found = root.querySelectorAll<HTMLElement>(rec.sel);
+        // exactly one node at the selector, carrying exactly the excluded text, and no other
+        // same-tag node in the card with that text (repeated "Sponsored"/headline rows are ambiguous)
+        if (found.length === 1 && normalizeSignatureText(found[0].textContent || '') === rec.text) {
+          const twins = Array.from(root.querySelectorAll(found[0].tagName))
+            .filter(n => normalizeSignatureText(n.textContent || '') === rec.text).length;
+          if (twins === 1) match = found[0];
+        }
+      } catch { /* invalid stored selector -> lost */ }
+    }
+    if (match && !kept.includes(match) && !attached.has(match)) { kept.push(match); revived.set(el, match); } else lost.push(el);
+  });
+  return { kept, lost, revived };
+}
+
+// #112: running total of exclusions dropped because their node left the page (shown in the modal)
+let lostExclusionCount = 0;
+
+/** Apply reconcileExclusions() to the live module state (array, records, active chain, red marks). */
+function syncExclusions(): void {
+  if (!lockedElement || excludedElements.length === 0) return;
+  const { kept, lost, revived } = reconcileExclusions(excludedElements, exclusionRecords, lockedElement);
+  if (lost.length === 0 && revived.size === 0) return;
+  revived.forEach((newEl, oldEl) => {
+    const rec = exclusionRecords.get(oldEl);
+    exclusionRecords.delete(oldEl);
+    if (rec) exclusionRecords.set(newEl, rec);
+    newEl.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
+    newEl.style.setProperty('outline', '2px solid #ff0000', 'important');
+    if (activeExclusionChain && activeExclusionChain.chain[activeExclusionChain.activeIndex] === oldEl) {
+      activeExclusionChain = { chain: [newEl], activeIndex: 0 };
+    }
+  });
+  lost.forEach(el => {
+    exclusionRecords.delete(el);
+    if (activeExclusionChain && activeExclusionChain.chain[activeExclusionChain.activeIndex] === el) {
+      activeExclusionChain = null;
+    }
+  });
+  excludedElements = kept;
+  lostExclusionCount += lost.length;
+}
+
 // Toggle exclusion marking on child element
 
 // Clear all exclusion markings and reset array
@@ -1489,6 +1588,8 @@ export function resetExclusions() {
   });
   // Clear the array
   excludedElements = [];
+  exclusionRecords = new Map();
+  lostExclusionCount = 0;
   hoveredExclusionCandidate = null;
   hoveredSimilarGroup = [];
   activeExclusionChain = null;
@@ -1501,6 +1602,7 @@ export function toggleExclusion(element: HTMLElement) {
   if (isExcluded) {
     // Remove from excluded list and remove red marking
     excludedElements = excludedElements.filter(el => el !== element);
+    exclusionRecords.delete(element);
     element.style.removeProperty('background');
     element.style.removeProperty('outline');
     // #61: un-excluding the active exclusion's current boundary drops its chain too --
@@ -1585,6 +1687,7 @@ export function toggleExclusion(element: HTMLElement) {
     // Add to excluded list and mark with red (live-page exclusion-mode styling -- unchanged
     // by #61, which only affects how the Previewer renders the *active* exclusion).
     excludedElements.push(element);
+    recordExclusion(element);
     element.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
     element.style.setProperty('outline', '2px solid #ff0000', 'important');
     // #61: a fresh exclusion starts its own Grow/Shrink chain and becomes the active
@@ -1613,11 +1716,13 @@ function setActiveExclusionIndex(newIndex: number) {
   if (oldActive === newActive) return;
 
   excludedElements = excludedElements.filter(el => el !== oldActive);
+  exclusionRecords.delete(oldActive);
   oldActive.style.removeProperty('background');
   oldActive.style.removeProperty('outline');
 
   state.activeIndex = newIndex;
   excludedElements.push(newActive);
+  recordExclusion(newActive);
   newActive.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
   newActive.style.setProperty('outline', '2px solid #ff0000', 'important');
 
@@ -2551,6 +2656,39 @@ function generatePreviewSrcdoc(html: string): string {
 <body>${html}</body></html>`;
 }
 
+// #112: while the previewer is open, notice exclusions that scrolled out of a virtualised list
+// as it happens (not only on the next click), so the preview and the notice never go stale.
+let scrollSyncInstalled = false;
+let scrollRefreshPending = false;
+let scrollSyncTimer: ReturnType<typeof setTimeout> | null = null;
+function installScrollSync() {
+  if (scrollSyncInstalled) return;
+  scrollSyncInstalled = true;
+  window.addEventListener('scroll', () => {
+    if (!_confirmationShadow || !lockedElement || excludedElements.length === 0) return;
+    if (scrollSyncTimer) clearTimeout(scrollSyncTimer);
+    scrollSyncTimer = setTimeout(() => {
+      const before = lostExclusionCount;
+      syncExclusions();
+      // A refresh that ran while the list was still re-rendering can leave a stale/blank preview,
+      // so after a scroll that dropped exclusions, refresh once more when scrolling settles.
+      const changed = lostExclusionCount !== before;
+      if (changed || scrollRefreshPending) updatePreview();
+      scrollRefreshPending = changed;
+    }, 300);
+  }, { passive: true, capture: true });
+}
+
+/** #112: show/hide the 'excluded item scrolled out' line in the previewer. */
+function syncExclusionNotice(): void {
+  const el = _confirmationShadow?.querySelector('#spotboard-exclusion-notice') as HTMLElement | null;
+  if (!el) return;
+  el.textContent = lostExclusionCount > 0
+    ? `${lostExclusionCount} excluded item${lostExclusionCount === 1 ? '' : 's'} scrolled out of the page, so ${lostExclusionCount === 1 ? 'that exclusion was' : 'those exclusions were'} not kept. Exclude ${lostExclusionCount === 1 ? 'it' : 'them'} again if you still want ${lostExclusionCount === 1 ? 'it' : 'them'} hidden.`
+    : '';
+  el.style.display = lostExclusionCount > 0 ? 'block' : 'none';
+}
+
 // #61: keep the Previewer's Shrink/Grow buttons in sync with `activeExclusionChain` --
 // called after every Grow/Shrink click and from `updatePreview()` (which also runs whenever
 // a live-page click changes which exclusion is active).
@@ -2567,7 +2705,10 @@ function syncExclusionToolbar(): void {
  * Uses the locked element + current exclusions to generate a dashboard-parity preview.
  */
 function updatePreview(): void {
+  installScrollSync();
+  syncExclusions();
   syncExclusionToolbar();
+  syncExclusionNotice();
   const iframe = _confirmationShadow?.querySelector('#spotboard-preview-iframe') as HTMLIFrameElement | null;
   if (!iframe || !lockedElement) return;
 
@@ -2599,7 +2740,11 @@ function updatePreview(): void {
   // Apply shared cleanup for exact dashboard parity
   const cleanedHTML = cleanupDuplicates(previewHTML);
 
-  iframe.srcdoc = generatePreviewSrcdoc(cleanedHTML);
+  // #112: never hand the user an empty white box -- say why it is empty.
+  iframe.srcdoc = (excludedElements.length > 0 && looksEmptyCapture(cleanedHTML, false)
+      && !/<(img|svg|video|canvas|iframe|picture|audio)\b|background-image/i.test(cleanedHTML))
+    ? generatePreviewSrcdoc('<p style="padding:16px;color:#4a5568;font:13px sans-serif;">Nothing left to preview: everything in this area is excluded.</p>')
+    : generatePreviewSrcdoc(cleanedHTML);
 
   // Loading state: fade in when loaded, restore scroll position
   iframe.style.opacity = '0.5';
@@ -2671,6 +2816,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         </div>
       </div>
     </div>
+    <div id="spotboard-exclusion-notice" style="display: none; flex-shrink: 0; padding: 0 20px 8px; font-size: 12px; line-height: 1.4; color: white; font-family: inherit;"></div>
     <div id="spotboard-exclusion-toolbar" style="display: flex; flex-direction: column; flex-shrink: 0; background: #6b46c1; font-family: inherit;">
       <div style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 4px 20px 8px; transform: translateX(10px);">
         <button id="shrinkExclusion" type="button" disabled style="box-sizing: border-box; border: none; background: rgba(255,255,255,0.28); color: #fff; border-radius: 6px; font-size: 11px; font-weight: 400; line-height: 1; padding: 7px 11px; cursor: pointer; font-family: inherit;">
@@ -2796,6 +2942,16 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       const finalPositionBased = positionBased;
       log('📍 Final capture mode (auto-detected):', finalPositionBased ? 'Position-based' : 'Header-based');
 
+      // #112: if an excluded item left the page since the last preview, don't save silently --
+      // refresh the preview (which shows the notice) and let the user confirm again.
+      const lostBeforeConfirm = lostExclusionCount;
+      syncExclusions();
+      if (lostExclusionCount > lostBeforeConfirm) {
+        updatePreview();
+        return;
+      }
+
+      const lostAtConfirm = lostExclusionCount;
       host.remove();
       document.getElementById('spotboard-exclusion-banner')?.remove();
       _confirmationShadow = null;
@@ -2812,6 +2968,10 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         // Uses generateExclusionSelector (not generateSelector directly) -- exclusions need
         // uniqueness verified within the capture root, since they're applied via
         // querySelectorAll(selector) at refresh time and have no fingerprint tiebreaker.
+        syncExclusions(); // #112: drop/re-attach exclusions whose node left the page before selectors are built
+        // Anything that dropped out during the 2s render wait can't be shown in the (closed) modal, so it is
+        // reported in the "Spotted" notification instead of vanishing silently.
+        const droppedWhileSaving = lostExclusionCount - lostAtConfirm;
         const excludedSelectors: string[] = [];
         excludedElements.forEach(el => {
           const selector = generateExclusionSelector(el, target);
@@ -3153,7 +3313,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                     resetExclusions();
 
                     if (!wasOnboarding) {
-                      showStyledNotification(`✅ Spotted: ${name}`, 'success', component.id);
+                      showStyledNotification(`✅ Spotted: ${name}` + (droppedWhileSaving > 0 ? ` (${droppedWhileSaving} exclusion${droppedWhileSaving === 1 ? '' : 's'} not kept: scrolled out of the page)` : ''), 'success', component.id);
                       toggleCapture(false);
                     } else {
                       console.debug('[sb-onboarding] wasOnboarding=true — skipping showStyledNotification and extra toggleCapture');
