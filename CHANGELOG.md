@@ -53,6 +53,7 @@
 ### Internal
 
 - **Automated tests for the capture/exclusion logic** (#40): the project's automated test files hadn't actually run in a long time — they required a full browser and silently failed when run any other way. Replaced with a real, runnable test suite covering multiple-element exclusion, nested exclusions, table-column exclusions, the empty-capture warning, and content captured from an open shadow DOM. No user-visible change.
+- **Peerlist-style scrolling feeds: refresh behaviour pinned by tests** (#111): feeds that only load the posts on screen (Peerlist Scroll) capture just a couple of posts, and a blank result on refresh is already rejected so your last good card is kept. Added regression tests using a real (anonymised) example; no behaviour change. No user-visible change.
 
 ## [1.3.4] - 2026-03-05
 
