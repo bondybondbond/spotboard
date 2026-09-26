@@ -1439,17 +1439,16 @@ function showCaptureQuickstartModal() {
 // #105: illustrative board on the first-run empty state — shows the "several sites, one glance"
 // value before the first capture. Static sample content; never stored, never clickable.
 const EXAMPLE_BOARD_CARDS = [
-  { title: 'BBC · Most read', domain: 'bbc.co.uk', rows: [['Rail strike called off', null, true], ['Heatwave warning for SE']] },
+  { title: 'BBC · Most read', domain: 'bbc.co.uk', rows: [['Rail strike called off'], ['Heatwave warning for SE']] },
   { title: 'ESPN · Table', domain: 'espn.com', rows: [['1 Arsenal', '24'], ['2 Liverpool', '23']] },
-  { title: 'HotUKDeals · Hottest', domain: 'hotukdeals.com', rows: [['Air fryer 5.5L £44.99', null, true], ['4K monitor £179']] },
-  { title: 'Yahoo · Movers', domain: 'finance.yahoo.com', rows: [['NVDA', '▲ 3.2%', false, 'up'], ['TSLA', '▼ 1.8%', false, 'down']] }
+  { title: 'HotUKDeals · Hottest', domain: 'hotukdeals.com', rows: [['Air fryer 5.5L £44.99'], ['4K monitor £179']] },
+  { title: 'Yahoo · Movers', domain: 'finance.yahoo.com', rows: [['NVDA', '▲ 3.2%', 'up'], ['TSLA', '▼ 1.8%', 'down']] }
 ];
 
 function renderExampleBoard() {
   const cards = EXAMPLE_BOARD_CARDS.map(card => {
-    const rows = card.rows.map(([label, value, isNew, trend]) => {
-      const badge = isNew ? '<span class="sb-example-new">NEW</span>' : '';
-      if (value == null) return `<div>${label}${badge}</div>`;
+    const rows = card.rows.map(([label, value, trend]) => {
+      if (value == null) return `<div>${label}</div>`;
       const cls = trend ? ` class="sb-example-${trend}"` : '';
       return `<div class="sb-example-row"><span>${label}</span><span${cls}>${value}</span></div>`;
     }).join('');
