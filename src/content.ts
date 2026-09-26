@@ -2725,10 +2725,10 @@ function getPreviewCSS(): string {
       display: none !important; margin: 0 !important; padding: 0 !important;
     }
     h6, h5 { margin: 2px 0 !important; padding: 2px 0 !important; }
-    ul, ol[data-sb-own-numbers] {
-      list-style: none !important; margin: 1px 0 !important; padding-left: 0 !important;
+    ul {
+      list-style-type: disc !important; margin: 1px 0 !important; padding-left: 20px !important;
     }
-    ol:not([data-sb-own-numbers]) {
+    ol {
       list-style-type: decimal !important; margin: 1px 0 !important; padding-left: 20px !important;
     }
     ul li, ol li {

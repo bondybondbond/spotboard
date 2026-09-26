@@ -561,31 +561,6 @@ function isResponsiveDuplicate(
 }
 
 /**
- * #102: SpotBoard no longer forces list markers, but an <ol> whose source printed no numbers of
- * its own (e.g. Guardian "most viewed", where the site draws them with CSS) would lose its ranking.
- * So <ol> keeps decimal markers by default, and lists whose items already carry a real number
- * (BBC: a separate "1" element before each link) are tagged here so the CSS suppresses ours.
- * Runs inside cleanupDuplicates so preview, fresh card and refresh all agree.
- */
-function tagOwnNumberedLists(root: HTMLElement): void {
-  const NUMBER_ONLY = /^\d{1,3}[.):]?$/
-  const NUMBER_LEAD = /^\d{1,3}[.):](\s|$)/
-  const hasOwnNumber = (li: Element): boolean => {
-    if (NUMBER_LEAD.test((li.textContent ?? '').trim())) return true
-    const firstNode = li.firstChild
-    if (firstNode && firstNode.nodeType === 3 && NUMBER_ONLY.test((firstNode.textContent ?? '').trim())) return true
-    return Array.from(li.querySelectorAll('*'))
-      .slice(0, 4)
-      .some(el => el.children.length === 0 && NUMBER_ONLY.test((el.textContent ?? '').trim()))
-  }
-  root.querySelectorAll('ol').forEach(ol => {
-    const items = Array.from(ol.children).filter(c => c.tagName === 'LI')
-    if (items.length === 0) return
-    if (items.filter(hasOwnNumber).length * 2 >= items.length) ol.setAttribute('data-sb-own-numbers', '')
-  })
-}
-
-/**
  * Remove duplicate and hidden elements from HTML
  * Fixes modern responsive design pattern where sites include both mobile/desktop content
  * 
@@ -1101,8 +1076,6 @@ export function cleanupDuplicates(html: string): string {
       });
     }
   });
-
-  tagOwnNumberedLists(temp)
 
   if (temp.innerHTML.length === 0) {
     console.error('❌ [cleanupDuplicates] RETURNED EMPTY HTML!');
@@ -1669,15 +1642,14 @@ export function injectCleanupCSS(): HTMLStyleElement | undefined {
     
     /* CATEGORY 3: List Gaps */
     /* Target: Lists with excessive line-height */
-    /* No forced bullets; <ol> numbers only when the source printed none (#102, see tagOwnNumberedLists) */
-    .component-content ul,
-    .component-content ol[data-sb-own-numbers] {
-      list-style: none !important;
+    /* Force bullets on all lists (fixes BBC "1.1" duplication + keeps visual hierarchy) */
+    .component-content ul {
+      list-style-type: disc !important;
       margin: 1px 0 !important;
-      padding-left: 0 !important;
+      padding-left: 20px !important;
     }
     
-    .component-content ol:not([data-sb-own-numbers]) {
+    .component-content ol {
       list-style-type: decimal !important;
       margin: 1px 0 !important;
       padding-left: 20px !important;
