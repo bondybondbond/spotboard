@@ -766,6 +766,88 @@ function applyRefreshResult(component, result) {
 }
 
 /**
+ * #116: the single place a refresh outcome is persisted (Refresh All and the single-card
+ * handler both call it). A refresh owns ONLY the outcome fields below; every other field
+ * (capture identity, user preferences, unknown future fields) is read back from storage right
+ * before the write, so nothing a hand-kept field list forgot -- e.g. created_at -- is deleted,
+ * and an edit made while the refresh was running is not reverted by a stale snapshot.
+ *
+ * - sync: last_refresh (only when the refresh committed), lastAttemptAt, lastSuccessAt,
+ *   lastOutcome, lastErrorCode, lastErrorAt, and requiresActiveFocus (sticky once true).
+ * - local: html_cache, last_refresh, rawCaptureLength (only when the refresh committed).
+ * - A card that no longer exists in storage (deleted mid-refresh) is skipped, never resurrected.
+ * - Cards not being refreshed (paused, out of board scope) are not passed in: nothing is written.
+ *
+ * @param {Array<{component: object, result: object}>} entries
+ * @returns {Promise<Map<string, object>>} id -> fresh merged (sync + local) component as
+ *   written, for callers that mirror it into in-memory state. Skipped ids are absent.
+ */
+async function persistRefreshOutcomes(entries) {
+  const keys = entries.map(e => `comp-${e.component.id}`)
+  const freshSync = await new Promise(resolve => chrome.storage.sync.get(keys, resolve))
+  const freshLocal = (await new Promise(resolve => chrome.storage.local.get(['componentsData'], resolve))).componentsData || {}
+
+  const syncUpdates = {}
+  const localData = { ...freshLocal }
+  const written = new Map()
+
+  for (const { component, result } of entries) {
+    const stored = freshSync[`comp-${component.id}`]
+    if (!stored) {
+      if (DEBUG) console.log('[SB-REFRESH] card removed during refresh, not writing:', component.id)
+      continue
+    }
+    const storedLocal = freshLocal[component.id]
+    const { syncEntry, localEntry, committed } = applyRefreshResult(component, result)
+
+    const record = { ...stored, ...syncEntry }
+    if (!committed) record.last_refresh = stored.last_refresh // localEntry.last_refresh is the stale snapshot value
+    if (result.success !== true) record.lastSuccessAt = stored.lastSuccessAt || null
+    // Resolved exclusions may live in local storage (#90); fitCompForSync re-decides where they go.
+    const freshComp = { ...stored, ...storedLocal }
+    record.excludedSelectors = freshComp.excludedSelectors
+    // Sticky: once a site needs the focused popup, never cleared by a refresh.
+    if (result.requiresActiveFocus || stored.requiresActiveFocus) record.requiresActiveFocus = true
+    syncUpdates[`comp-${component.id}`] = fitCompForSync(freshComp, record)
+
+    localData[component.id] = storedLocal
+      ? {
+          ...storedLocal,
+          ...(committed
+            ? {
+                html_cache: localEntry.html_cache,
+                last_refresh: localEntry.last_refresh,
+                ...(localEntry.rawCaptureLength ? { rawCaptureLength: localEntry.rawCaptureLength } : {})
+              }
+            : {})
+        }
+      : localEntry
+    // If the fit just moved exclusions out of sync, local must hold them (a legacy card near the cap).
+    if (syncUpdates[`comp-${component.id}`].exclusionsStorage === 'local' && Array.isArray(freshComp.excludedSelectors)) {
+      localData[component.id].excludedSelectors = freshComp.excludedSelectors
+    }
+    written.set(component.id, { ...syncUpdates[`comp-${component.id}`], ...localData[component.id] })
+  }
+
+  if (written.size === 0) return written
+
+  await new Promise(resolve => {
+    chrome.storage.sync.set(syncUpdates, () => {
+      // #90: surface sync failures (was silently ignored). Non-fatal -- local has the data.
+      if (chrome.runtime.lastError) console.warn('[SB-REFRESH] Sync write error:', chrome.runtime.lastError.message)
+      resolve()
+    })
+  })
+  await new Promise(resolve => {
+    chrome.storage.local.set({ componentsData: localData }, () => {
+      if (chrome.runtime.lastError) console.warn('[SB-REFRESH] Local write error:', chrome.runtime.lastError.message)
+      resolve()
+    })
+  })
+  return written
+}
+
+/**
  * GA4 failure telemetry -- the single place a `refresh_failed` event is built, so every
  * failed attempt (refreshAll card, single-card refresh, retry) is recorded once and
  * categorised the same way. classifyError() is the single internal source of truth; its
@@ -3125,109 +3207,9 @@ async function refreshAll(allowedIds = null) {
 
     if (DEBUG) console.log('[SB-PARALLEL] refreshAll complete elapsed=' + (Date.now() - refreshStartTime) + 'ms');
     
-    // Update components with new data (split between sync and local storage)
-    // Handle both active (refreshed) and paused (unchanged) components
-    const syncUpdates = {};
-    
-    // 🔧 FIX: Start from existing local data to avoid deleting unloaded components
-    // Previously started empty {}, which would delete any local data not in current components array
-    const existingLocalData = await new Promise(resolve => {
-      chrome.storage.local.get(['componentsData'], (result) => {
-        resolve(result.componentsData || {});
-      });
-    });
-    const updatedLocalData = { ...existingLocalData };
-    
-    // Process all components (active + paused)
-    components.forEach((comp) => {
-      const result = componentRefreshMap.get(comp.id); // undefined for paused components
-      
-      // Handle paused components - keep existing data unchanged
-      if (!result) {
-        // Component was paused - preserve all existing data
-        syncUpdates[`comp-${comp.id}`] = fitCompForSync(comp, {
-          id: comp.id,
-          name: comp.name,
-          url: comp.url,
-          favicon: comp.favicon,
-          customLabel: comp.customLabel,
-          headingFingerprint: comp.headingFingerprint,
-          selector: comp.selector,
-          excludedSelectors: comp.excludedSelectors,
-          positionBased: comp.positionBased || false, // 🎯 BATCH 5 FIX: Preserve capture method
-          refreshPaused: comp.refreshPaused, // Preserve paused state!
-          last_refresh: comp.last_refresh,
-          cardSize: comp.cardSize || '1x1', // 🔧 FIX: Preserve card size on refresh
-          // Preserve existing error state fields
-          lastAttemptAt: comp.lastAttemptAt,
-          lastSuccessAt: comp.lastSuccessAt,
-          lastOutcome: comp.lastOutcome || 'paused',
-          lastErrorCode: comp.lastErrorCode,
-          lastErrorAt: comp.lastErrorAt,
-          ...(comp.requiresActiveFocus ? { requiresActiveFocus: true } : {}),
-          ...(comp.requiresFixedCaptureWidth ? { requiresFixedCaptureWidth: true } : {}),
-          ...(comp.structureMarker ? { structureMarker: comp.structureMarker } : {}), // issue #77: preserve capture-time identity marker
-          ...(comp.board ? { board: comp.board } : {}),
-          ...(comp.created_at ? { created_at: comp.created_at } : {}) // issue #18: preserve capture-order key
-        });
-
-        const pausedEntry = {
-          selector: comp.selector,
-          html_cache: comp.html_cache,
-          last_refresh: comp.last_refresh
-        };
-        if (Array.isArray(comp.excludedSelectors)) pausedEntry.excludedSelectors = comp.excludedSelectors;
-        if (comp.rawCaptureLength) pausedEntry.rawCaptureLength = comp.rawCaptureLength;
-        // #96: local-only exclusion signatures must survive a paused card's Refresh All write too
-        if (Array.isArray(comp.exclusionSignatures)) pausedEntry.exclusionSignatures = comp.exclusionSignatures;
-        updatedLocalData[comp.id] = pausedEntry;
-      } else {
-        // Component was refreshed — persist via the shared safe apply path. applyRefreshResult()
-        // enforces "a failed refresh never overwrites last-known-good html_cache" and owns the
-        // last*/rawCaptureLength bookkeeping; this block only supplies the caller-owned
-        // comp-metadata fields (id/name/url/board/...).
-        const { syncEntry, localEntry } = applyRefreshResult(comp, result);
-
-        // If this refresh required the active focused popup, persist the flag so future
-        // refreshes skip background+offscreen and go straight to tryActiveTab.
-        // Once set, the flag is preserved (never cleared) — comp.requiresActiveFocus from storage.
-        const updatedActiveFocus = result.requiresActiveFocus || comp.requiresActiveFocus || false;
-        syncUpdates[`comp-${comp.id}`] = fitCompForSync(comp, {
-          id: comp.id,
-          name: comp.name,
-          url: comp.url,
-          favicon: comp.favicon,
-          customLabel: comp.customLabel,
-          headingFingerprint: comp.headingFingerprint,
-          selector: comp.selector,
-          excludedSelectors: comp.excludedSelectors,
-          positionBased: comp.positionBased || false, // 🎯 BATCH 5 FIX: Preserve capture method
-          refreshPaused: comp.refreshPaused, // Preserve state
-          cardSize: comp.cardSize || '1x1', // 🔧 FIX: Preserve card size on refresh
-          ...syncEntry, // last_refresh + lastAttemptAt/lastSuccessAt/lastOutcome/lastErrorCode/lastErrorAt
-          ...(updatedActiveFocus ? { requiresActiveFocus: true } : {}),
-          ...(comp.requiresFixedCaptureWidth ? { requiresFixedCaptureWidth: true } : {}),
-          ...(comp.structureMarker ? { structureMarker: comp.structureMarker } : {}), // issue #77: preserve capture-time identity marker
-          ...(comp.board ? { board: comp.board } : {}),
-          ...(comp.created_at ? { created_at: comp.created_at } : {}) // issue #18: preserve capture-order key
-        });
-
-        updatedLocalData[comp.id] = localEntry;
-      }
-    });
-    
-    // Save to both storages (sync gets per-component keys, local gets HTML)
-    // #90: surface sync failures (was silently ignored). Non-fatal -- local has the data.
-    await new Promise(resolve => {
-      chrome.storage.sync.set(syncUpdates, () => {
-        if (chrome.runtime.lastError) console.warn('[SB-REFRESH] Sync write error:', chrome.runtime.lastError.message)
-        resolve()
-      });
-    });
-    
-    await new Promise(resolve => {
-      chrome.storage.local.set({ componentsData: updatedLocalData }, resolve);
-    });
+    // #116: persist only the refresh-owned outcome fields onto freshly-read records (see
+    // persistRefreshOutcomes). Paused / out-of-scope cards were not refreshed, so nothing is written for them.
+    await persistRefreshOutcomes(activeComponents.map(comp => ({ component: comp, result: componentRefreshMap.get(comp.id) })));
     
     // Show success toast with paused count
     toastManager.finishAll(pausedComponents.length);

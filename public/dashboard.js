@@ -2566,38 +2566,12 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             const attemptTimestamp = syncEntry.lastAttemptAt;
             const errorCode = syncEntry.lastErrorCode;
 
-            // Persist — one write path for every outcome. Sync gets caller-owned metadata
-            // merged with the refresh-owned syncEntry; local gets the (possibly unchanged) html.
-            chrome.storage.sync.set({
-              [`comp-${component.id}`]: fitCompForSync(component, {
-                id: component.id,
-                name: component.name,
-                url: component.url,
-                favicon: component.favicon,
-                customLabel: component.customLabel,
-                headingFingerprint: component.headingFingerprint,
-                selector: component.selector,
-                excludedSelectors: component.excludedSelectors,
-                positionBased: component.positionBased || false,
-                refreshPaused: component.refreshPaused || false,
-                cardSize: component.cardSize || '1x1',
-                ...syncEntry,
-                ...(component.requiresActiveFocus ? { requiresActiveFocus: true } : {}),
-                ...(component.requiresFixedCaptureWidth ? { requiresFixedCaptureWidth: true } : {}),
-                ...(component.structureMarker ? { structureMarker: component.structureMarker } : {}), // issue #77: preserve capture-time identity marker
-                ...(component.board ? { board: component.board } : {})
-              })
-            }, () => {
-              if (chrome.runtime.lastError) console.warn('Sync write error:', chrome.runtime.lastError);
-            });
-
-            chrome.storage.local.get(['componentsData'], (res) => {
-              const localData = res.componentsData || {};
-              localData[component.id] = localEntry;
-              chrome.storage.local.set({ componentsData: localData }, () => {
-                if (chrome.runtime.lastError) console.warn('Local write error:', chrome.runtime.lastError);
-              });
-            });
+            // Persist — one write path for every outcome (#116): only refresh-owned fields are
+            // written, onto freshly-read records, so nothing else on the card is disturbed. Then
+            // adopt what is now stored so this card's in-memory state can't write stale fields back.
+            const persisted = await persistRefreshOutcomes([{ component, result }]);
+            const storedNow = persisted.get(component.id);
+            if (storedNow) Object.assign(component, storedNow);
 
             if (committed) {
               // ---- SUCCESS UI ----
