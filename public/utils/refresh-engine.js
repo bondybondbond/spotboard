@@ -659,6 +659,18 @@ function _finalizeSuccess(sanitizedHtml, component, extras = {}) {
 }
 
 /**
+ * #113: tag +/- tokens on tab-captured HTML using the shared tagSentimentData (token-only spans).
+ * Runs extension-side on the returned string so the live page is never mutated.
+ */
+function _tagSentimentHtml(html) {
+  if (!html || typeof tagSentimentData !== 'function') return html
+  const container = document.createElement('div')
+  container.innerHTML = html
+  tagSentimentData(container)
+  return container.innerHTML
+}
+
+/**
  * Build a successful tab-refresh result object. Includes requiresActiveFocus:true if the
  * refresh escalated to the focused active popup (site requires compositor focus to render).
  * Thin wrapper over _finalizeSuccess -- the single validation gate.
@@ -1519,54 +1531,7 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null, meta = 
         // 🎯 5-TIER IMAGE CLASSIFICATION USING LIVE CSS (unified via DomSnapshot)
         window.DomSnapshot.classifyImages(element);
 
-        // 💚❤️ SENTIMENT TAGGING (Phase 2: Semantic Coloring)
-        // Tag finance deltas (+/-) for color coding on dashboard
-        const SKIP_SELECTOR = 'SCRIPT, STYLE, NOSCRIPT, TEMPLATE, SVG';
-        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
-          acceptNode(node) {
-            if (node.parentElement?.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
-            if (node.parentElement?.closest('[data-sb-sentiment]')) return NodeFilter.FILTER_REJECT;
-            return NodeFilter.FILTER_ACCEPT;
-          }
-        });
-        const textNodesToTag = [];
-        let node;
-
-        // (?<!\w) blocks "3-0", "10-year" etc; (?<!\±) excludes ± prefix
-        const tokenPattern = /(?<!\w)(?<!\±)([+-])(\d[\d.,]*)(%?)/g;
-
-        while ((node = walker.nextNode())) {
-          const text = node.textContent?.trim() || '';
-          if (text.length === 0) continue;
-
-          tokenPattern.lastIndex = 0;
-          const m = tokenPattern.exec(text);
-          if (m) {
-            const sentiment = m[1] === '+' ? 'positive' : 'negative';
-            textNodesToTag.push({ node: node, sentiment: sentiment });
-          }
-        }
-
-        let tagged = 0;
-        textNodesToTag.forEach(({ node, sentiment }) => {
-          let parent = node.parentElement;
-          while (parent && parent !== element) {
-            if (parent.tagName === 'A' || parent.tagName === 'BUTTON' || parent.tagName === 'SPAN') {
-              parent.setAttribute('data-sb-sentiment', sentiment);
-              tagged++;
-              break;
-            }
-            parent = parent.parentElement;
-          }
-          if (node.parentElement && !node.parentElement.hasAttribute('data-sb-sentiment')) {
-            node.parentElement.setAttribute('data-sb-sentiment', sentiment);
-            tagged++;
-          }
-        });
-
-        if (tagged > 0) {
-          console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
-        }
+        // Sentiment tagging happens extension-side on the returned HTML (_tagSentimentHtml) — see #113.
 
         // Clone with shadow DOM flattening (shared via DomSnapshot — src/utils/dom-snapshot.ts)
         const clone = window.DomSnapshot.cloneWithShadow(element);
@@ -1657,7 +1622,7 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null, meta = 
 
     await closeTabSafely(tab.id);
     if (DEBUG) console.log('[SB-REFRESH] tryBackgroundWithSpoof EXIT elapsed=', Date.now() - _bgStart + 'ms');
-    return html;
+    return _tagSentimentHtml(html);
 
   } catch (error) {
     console.error(`❌ [Background] Error:`, error);
@@ -1858,52 +1823,7 @@ async function tryOffscreenWindow(url, selector, fingerprint = null, meta = {}) 
         // 🎯 5-TIER IMAGE CLASSIFICATION USING LIVE CSS (unified via DomSnapshot)
         window.DomSnapshot.classifyImages(element);
 
-        // 💚❤️ SENTIMENT TAGGING (Phase 2: Semantic Coloring)
-        const SKIP_SELECTOR = 'SCRIPT, STYLE, NOSCRIPT, TEMPLATE, SVG';
-        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
-          acceptNode(node) {
-            if (node.parentElement?.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
-            if (node.parentElement?.closest('[data-sb-sentiment]')) return NodeFilter.FILTER_REJECT;
-            return NodeFilter.FILTER_ACCEPT;
-          }
-        });
-        const textNodesToTag = [];
-        let node;
-
-        const tokenPattern = /(?<!\w)(?<!\±)([+-])(\d[\d.,]*)(%?)/g;
-
-        while ((node = walker.nextNode())) {
-          const text = node.textContent?.trim() || '';
-          if (text.length === 0) continue;
-
-          tokenPattern.lastIndex = 0;
-          const m = tokenPattern.exec(text);
-          if (m) {
-            const sentiment = m[1] === '+' ? 'positive' : 'negative';
-            textNodesToTag.push({ node: node, sentiment: sentiment });
-          }
-        }
-
-        let tagged = 0;
-        textNodesToTag.forEach(({ node, sentiment }) => {
-          let parent = node.parentElement;
-          while (parent && parent !== element) {
-            if (parent.tagName === 'A' || parent.tagName === 'BUTTON' || parent.tagName === 'SPAN') {
-              parent.setAttribute('data-sb-sentiment', sentiment);
-              tagged++;
-              break;
-            }
-            parent = parent.parentElement;
-          }
-          if (node.parentElement && !node.parentElement.hasAttribute('data-sb-sentiment')) {
-            node.parentElement.setAttribute('data-sb-sentiment', sentiment);
-            tagged++;
-          }
-        });
-
-        if (tagged > 0) {
-          console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
-        }
+        // Sentiment tagging happens extension-side on the returned HTML (_tagSentimentHtml) — see #113.
 
         // Clone with shadow DOM flattening (shared via DomSnapshot — src/utils/dom-snapshot.ts)
         const clone = window.DomSnapshot.cloneWithShadow(element);
@@ -1992,7 +1912,7 @@ async function tryOffscreenWindow(url, selector, fingerprint = null, meta = {}) 
     } else {
       if (DEBUG) console.log('[SB-OFFSCREEN] EXIT elapsed=', Date.now() - _owStart + 'ms', 'html= null');
     }
-    return html;
+    return _tagSentimentHtml(html);
 
   } catch (err) {
     if (DEBUG) console.error('[SB-OFFSCREEN] Error:', err);
@@ -2163,54 +2083,7 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
         // 🎯 5-TIER IMAGE CLASSIFICATION USING LIVE CSS (unified via DomSnapshot)
         window.DomSnapshot.classifyImages(element);
 
-        // 💚❤️ SENTIMENT TAGGING (Phase 2: Semantic Coloring)
-        // Tag finance deltas (+/-) for color coding on dashboard
-        const SKIP_SELECTOR = 'SCRIPT, STYLE, NOSCRIPT, TEMPLATE, SVG';
-        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
-          acceptNode(node) {
-            if (node.parentElement?.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
-            if (node.parentElement?.closest('[data-sb-sentiment]')) return NodeFilter.FILTER_REJECT;
-            return NodeFilter.FILTER_ACCEPT;
-          }
-        });
-        const textNodesToTag = [];
-        let node;
-
-        // (?<!\w) blocks "3-0", "10-year" etc; (?<!\±) excludes ± prefix
-        const tokenPattern = /(?<!\w)(?<!\±)([+-])(\d[\d.,]*)(%?)/g;
-
-        while ((node = walker.nextNode())) {
-          const text = node.textContent?.trim() || '';
-          if (text.length === 0) continue;
-
-          tokenPattern.lastIndex = 0;
-          const m = tokenPattern.exec(text);
-          if (m) {
-            const sentiment = m[1] === '+' ? 'positive' : 'negative';
-            textNodesToTag.push({ node: node, sentiment: sentiment });
-          }
-        }
-
-        let tagged = 0;
-        textNodesToTag.forEach(({ node, sentiment }) => {
-          let parent = node.parentElement;
-          while (parent && parent !== element) {
-            if (parent.tagName === 'A' || parent.tagName === 'BUTTON' || parent.tagName === 'SPAN') {
-              parent.setAttribute('data-sb-sentiment', sentiment);
-              tagged++;
-              break;
-            }
-            parent = parent.parentElement;
-          }
-          if (node.parentElement && !node.parentElement.hasAttribute('data-sb-sentiment')) {
-            node.parentElement.setAttribute('data-sb-sentiment', sentiment);
-            tagged++;
-          }
-        });
-
-        if (tagged > 0) {
-          console.log(`✅ Tagged ${tagged} element(s) with sentiment data`);
-        }
+        // Sentiment tagging happens extension-side on the returned HTML (_tagSentimentHtml) — see #113.
 
         // Clone with shadow DOM flattening (shared via DomSnapshot — src/utils/dom-snapshot.ts)
         const clone = window.DomSnapshot.cloneWithShadow(element);
@@ -2362,7 +2235,7 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
     }
 
     if (DEBUG) console.log('[SB-REFRESH] tryActiveTab EXIT elapsed=', Date.now() - _atStart + 'ms');
-    return html;
+    return _tagSentimentHtml(html);
 
   } catch (error) {
     console.error(`❌ [Active Tab] Error:`, error);

@@ -1532,7 +1532,8 @@ export function tagSentimentData(element: HTMLElement): void {
   // Unified token pattern: +/- followed by digits (with optional decimal/comma and %)
   // (?<!\w) — sign must not be preceded by a word char (blocks "3-0", "10-year", "USD+1.50")
   // (?<!\±) — exclude ± prefix
-  const tokenPattern = /(?<!\w)(?<!\±)([+-])(\d[\d.,]*)(%?)/g;
+  // Number body is digits joined by single ./, — so a sentence-final "+8.7." or "-300," leaves the punctuation uncoloured.
+  const tokenPattern = /(?<!\w)(?<!\±)([+-])(\d+(?:[.,]\d+)*)(%?)/g;
 
   let tagged = 0;
   for (const textNode of textNodes) {
