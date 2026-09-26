@@ -27,8 +27,9 @@ var DomSnapshot = (() => {
     promoteBackgroundImages: () => promoteBackgroundImages,
     promoteLazyImages: () => promoteLazyImages
   });
-  function cloneWithShadow(el) {
+  function cloneWithShadow(el, onClone) {
     const clone = el.cloneNode(false);
+    onClone?.(el, clone);
     const host = el;
     if (host.shadowRoot) {
       const temp = document.createElement("div");
@@ -41,7 +42,7 @@ var DomSnapshot = (() => {
         if (assigned.length > 0) {
           const frag = document.createDocumentFragment();
           assigned.forEach((c) => {
-            const childClone = cloneWithShadow(c);
+            const childClone = cloneWithShadow(c, onClone);
             childClone.removeAttribute("slot");
             frag.appendChild(childClone);
           });
@@ -62,7 +63,7 @@ var DomSnapshot = (() => {
           const frag = document.createDocumentFragment();
           unslotted.forEach((n) => {
             if (n.nodeType === Node.ELEMENT_NODE) {
-              frag.appendChild(cloneWithShadow(n));
+              frag.appendChild(cloneWithShadow(n, onClone));
             } else {
               frag.appendChild(n.cloneNode(true));
             }
@@ -74,7 +75,7 @@ var DomSnapshot = (() => {
     } else {
       for (const child of el.childNodes) {
         if (child.nodeType === Node.ELEMENT_NODE) {
-          clone.appendChild(cloneWithShadow(child));
+          clone.appendChild(cloneWithShadow(child, onClone));
         } else {
           clone.appendChild(child.cloneNode(true));
         }

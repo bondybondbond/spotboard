@@ -1080,7 +1080,13 @@ function stripSpacerPadding(live: HTMLElement, clone: HTMLElement) {
 // Exported (test-only reason): #40's jsdom harness bundles this file and needs to call
 // sanitizeHTML directly to regression-test the exclusion-marking logic that caused #2 —
 // no other caller outside this file exists or should exist.
-export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = []): string {
+// #66: preview-only clone->live map. When sanitizeHTML is given one, every cloned element is
+// stamped with PREVIEW_PID_ATTR (on the clone -- the live page is never touched) and the map
+// records pid -> the live element it came from, so a click in the preview resolves to the exact
+// live node. The Confirm/save path never passes a map, so stored HTML never carries the stamp.
+export const PREVIEW_PID_ATTR = 'data-sb-pid';
+
+export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = [], previewMap?: Map<string, HTMLElement>): string {
   // 🎯 STEP 1: Mark hidden elements in ORIGINAL DOM (before cloning)
   // Check computed styles on live DOM elements, then mark them for removal
   const allOriginalElements = [element, ...Array.from(element.querySelectorAll('*'))];
@@ -1225,7 +1231,11 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
   // clone's own root can't carry the marker and this array is the complete un-mark set.
   let clone: HTMLElement;
   try {
-    clone = cloneWithShadow(element) as HTMLElement;
+    clone = cloneWithShadow(element, previewMap ? (source, cloned) => {
+      const pid = String(previewMap.size);
+      previewMap.set(pid, source as HTMLElement);
+      cloned.setAttribute(PREVIEW_PID_ATTR, pid);
+    } : undefined) as HTMLElement;
     stripSpacerPadding(element, clone);
   } finally {
     // Restore the live page even if cloning throws — never leave a marker on the user's DOM.
@@ -1664,6 +1674,7 @@ function syncExclusions(): void {
 
 // Clear all exclusion markings and reset array
 export function resetExclusions() {
+  clearPreviewHover();
   // Remove red markings from all excluded elements
   excludedElements.forEach(el => {
     el.style.removeProperty('background');
@@ -2711,6 +2722,13 @@ function getPreviewCSS(): string {
       outline: 1px dashed #e08585 !important;
       border-radius: 4px !important;
     }
+    /* #66: preview elements can be clicked to exclude their live-page source. Hover uses the
+       same dashed red as live-page exclusion hover -- red only ever means "excluded". */
+    [data-sb-pid] { cursor: pointer !important; }
+    [data-sb-preview-hover] {
+      outline: 2px dashed #ff0000 !important;
+      outline-offset: -2px !important;
+    }
   `;
 }
 
@@ -2750,6 +2768,83 @@ function syncExclusionToolbar(): void {
   if (growBtn) growBtn.disabled = !hasActive;
 }
 
+// #66: exclude straight from the preview. Each render builds a fresh pid -> live element map
+// (see sanitizeHTML); each srcdoc swap is a new Document, so listeners are re-attached per
+// render and a stale document's listeners simply stop firing. A preview click is routed through
+// the same toggleExclusion() as a live-page click, so Grow/Shrink, Confirm and refresh treat it
+// exactly like any other exclusion.
+let previewHoverLive: HTMLElement | null = null;
+
+function clearPreviewHover(): void {
+  if (previewHoverLive && !excludedElements.includes(previewHoverLive)) {
+    previewHoverLive.style.removeProperty('outline');
+    previewHoverLive.style.removeProperty('background');
+  }
+  previewHoverLive = null;
+}
+
+// Resolve a preview event target to the live element a click would act on, or null when the
+// click must do nothing (capture root, detached node, outside the capture). Nodes with no pid of
+// their own (flattened shadow content) resolve to the nearest stamped ancestor -- hover shows
+// that resolved element on both sides, so the user sees what will actually be excluded.
+function resolvePreviewTarget(target: EventTarget | null, previewMap: Map<string, HTMLElement>): { previewEl: Element; liveEl: HTMLElement } | null {
+  // Duck-typed, not `instanceof Element`: preview nodes belong to the iframe's own realm.
+  if (!isCapturing || !lockedElement || typeof (target as Element | null)?.closest !== 'function') return null;
+  const previewEl = (target as Element).closest(`[${PREVIEW_PID_ATTR}]`);
+  const mapped = previewEl ? previewMap.get(previewEl.getAttribute(PREVIEW_PID_ATTR)!) : undefined;
+  if (!previewEl || !mapped || !mapped.isConnected) return null;
+  // Inside an already-excluded element (only the active one is still shown, tinted) -> act on
+  // that exclusion, mirroring the live-page click.
+  const liveEl = excludedElements.find(el => el.contains(mapped)) ?? mapped;
+  if (liveEl === lockedElement || !lockedElement.contains(liveEl)) return null;
+  const ownPreviewEl = liveEl === mapped ? previewEl : previewEl.ownerDocument.querySelector('[data-spotboard-active-exclusion]') ?? previewEl;
+  return { previewEl: ownPreviewEl, liveEl };
+}
+
+function installPreviewExclusion(doc: Document, previewMap: Map<string, HTMLElement>): void {
+  let hoveredPreview: Element | null = null;
+  const setHover = (hit: { previewEl: Element; liveEl: HTMLElement } | null) => {
+    if (hit?.previewEl === hoveredPreview) return;
+    hoveredPreview?.removeAttribute('data-sb-preview-hover');
+    clearPreviewHover();
+    hoveredPreview = hit?.previewEl ?? null;
+    if (!hit) return;
+    hit.previewEl.setAttribute('data-sb-preview-hover', 'true');
+    if (!excludedElements.includes(hit.liveEl)) {
+      hit.liveEl.style.setProperty('outline', '2px dashed #ff0000', 'important');
+      hit.liveEl.style.setProperty('background', 'transparent', 'important');
+      previewHoverLive = hit.liveEl;
+    }
+  };
+  doc.addEventListener('mouseover', (e) => setHover(resolvePreviewTarget(e.target, previewMap)), true);
+  doc.documentElement.addEventListener('mouseleave', () => setHover(null));
+  // A click in the preview moves keyboard focus into the iframe, where the page's own Esc
+  // (cancel) / Enter (Continue) listeners never see the keydown -- hand those two keys back.
+  doc.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' && e.key !== 'Enter') return;
+    e.preventDefault();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: e.key, code: e.code, bubbles: true, cancelable: true }));
+  }, true);
+  doc.addEventListener('click', (e) => {
+    // Never let a preview click navigate (links) or submit anything, even when it isn't actionable.
+    e.preventDefault();
+    e.stopPropagation();
+    const hit = resolvePreviewTarget(e.target, previewMap);
+    if (!hit) return;
+    const willExclude = !excludedElements.includes(hit.liveEl);
+    setHover(null);
+    toggleExclusion(hit.liveEl);
+    // Owner choice (#66): the live match is revealed on click, not on hover -- scroll it into
+    // view only if it isn't already visible, so the red exclusion mark is always seen.
+    if (willExclude) {
+      const rect = hit.liveEl.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {
+        hit.liveEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    }
+  }, true);
+}
+
 /**
  * Renders or re-renders the preview iframe inside the capture confirmation modal.
  * Uses the locked element + current exclusions to generate a dashboard-parity preview.
@@ -2780,9 +2875,11 @@ function updatePreview(): void {
     ? excludedElements.filter(el => el !== activeElement)
     : excludedElements;
   if (activeElement) activeElement.setAttribute('data-spotboard-active-exclusion', 'true');
+  clearPreviewHover();
+  const previewMap = new Map<string, HTMLElement>();
   let previewHTML: string;
   try {
-    previewHTML = sanitizeHTML(lockedElement, elementsToRemove);
+    previewHTML = sanitizeHTML(lockedElement, elementsToRemove, previewMap);
   } finally {
     if (activeElement) activeElement.removeAttribute('data-spotboard-active-exclusion');
   }
@@ -2799,6 +2896,7 @@ function updatePreview(): void {
   iframe.style.opacity = '0.5';
   iframe.onload = () => {
     iframe.style.opacity = '1';
+    if (iframe.contentDocument) installPreviewExclusion(iframe.contentDocument, previewMap);
     // Restore scroll position after content renders
     try {
       if (iframe.contentDocument?.documentElement && savedScrollTop > 0) {
@@ -2855,6 +2953,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
     <div id="spotboard-modal-body" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
       <div style="padding: 8px 20px 0; flex-shrink: 0; font-family: inherit;">
         <span style="font-size: 13px; color: white; font-family: inherit;">Preview</span>
+        <span style="font-size: 11px; color: rgba(255,255,255,0.85); font-family: inherit; margin-left: 6px;">Click anything here to exclude it</span>
       </div>
       <div style="padding: 8px 20px 12px; flex: 1; min-height: 0; overflow-y: auto;">
         <div id="spotboard-preview-container">

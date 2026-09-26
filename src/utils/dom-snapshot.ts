@@ -11,9 +11,13 @@
  * and the default <slot> with unslotted children.
  * Closed shadow roots (el.shadowRoot === null) fall through gracefully.
  * Not suitable for re-hydrating components — snapshot semantics only.
+ * `onClone` (#66) is called with every (source, clone) element pair made by cloneNode, so a
+ * caller can map clone nodes back to live ones. Content inside a flattened shadow root is
+ * re-parsed from a string and has no source node, so it is never reported.
  */
-export function cloneWithShadow(el: Element): Element {
+export function cloneWithShadow(el: Element, onClone?: (source: Element, clone: Element) => void): Element {
   const clone = el.cloneNode(false) as Element;
+  onClone?.(el, clone);
   const host = el as HTMLElement;
   if (host.shadowRoot) {
     // Shadow content is trusted (same-origin browser DOM, sanitised downstream by cleanupDuplicates).
@@ -29,7 +33,7 @@ export function cloneWithShadow(el: Element): Element {
       if (assigned.length > 0) {
         const frag = document.createDocumentFragment();
         assigned.forEach(c => {
-          const childClone = cloneWithShadow(c);
+          const childClone = cloneWithShadow(c, onClone);
           childClone.removeAttribute('slot'); // clean HTML — slot attr is meaningless outside shadow
           frag.appendChild(childClone);
         });
@@ -53,7 +57,7 @@ export function cloneWithShadow(el: Element): Element {
         const frag = document.createDocumentFragment();
         unslotted.forEach(n => {
           if (n.nodeType === Node.ELEMENT_NODE) {
-            frag.appendChild(cloneWithShadow(n as Element));
+            frag.appendChild(cloneWithShadow(n as Element, onClone));
           } else {
             frag.appendChild(n.cloneNode(true));
           }
@@ -66,7 +70,7 @@ export function cloneWithShadow(el: Element): Element {
   } else {
     for (const child of el.childNodes) {
       if (child.nodeType === Node.ELEMENT_NODE) {
-        clone.appendChild(cloneWithShadow(child as Element));
+        clone.appendChild(cloneWithShadow(child as Element, onClone));
       } else {
         clone.appendChild(child.cloneNode(true));
       }
