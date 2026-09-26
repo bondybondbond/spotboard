@@ -812,8 +812,51 @@ function handleHover(event: MouseEvent) {
   // than the banner lime because pale lime is invisible on a white page.
   target.style.setProperty('outline', '4px dashed #65a30d', 'important');
   target.style.cursor = 'crosshair';
-  
+  showHoverHint(target);
+
   event.stopPropagation();
+}
+
+// #106: testers knew where to click but not how much a click would capture, so they retried. A
+// small label pinned to the hovered box's corner says the outline IS the capture and that it can be
+// widened after the click (Grow, #42). Shadow-hosted + pointer-events none like the other overlays,
+// so it never intercepts a hover/click and is never part of the captured page.
+let _hoverHintShadow: ShadowRoot | null = null;
+
+function showHoverHint(target: HTMLElement) {
+  if (!_hoverHintShadow) {
+    _hoverHintShadow = createOverlayShadowHost('spotboard-hover-hint').shadow;
+    const chip = document.createElement('div');
+    chip.id = 'sb-hover-hint';
+    chip.style.cssText = `
+      position: fixed !important; background: ${CAPTURE_LIME} !important; color: #000000 !important;
+      padding: 5px 9px !important; border-radius: 6px !important; font-size: 12px !important;
+      font-weight: 500 !important; line-height: 1.2 !important; white-space: nowrap !important;
+      font-family: ${OVERLAY_FONT} !important; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25) !important;
+      pointer-events: none !important; text-transform: none !important;
+    `;
+    _hoverHintShadow.appendChild(chip);
+  }
+  const chip = _hoverHintShadow.querySelector('#sb-hover-hint') as HTMLElement;
+  chip.textContent = refineState
+    ? 'Click to select this box instead'
+    : 'This box will be captured · click, then Grow for more';
+  const rect = target.getBoundingClientRect();
+  // Sit just above the box; fall back to inside its top edge when there is no room above (it must
+  // stay clear of the fixed top strip either way).
+  const chipHeight = 26;
+  const stripClearance = 44;
+  const above = rect.top - chipHeight - 6;
+  const top = above >= stripClearance ? above : Math.max(stripClearance, rect.top + 6);
+  const left = Math.min(Math.max(rect.left, 8), Math.max(8, window.innerWidth - 340));
+  chip.style.setProperty('top', `${Math.min(top, window.innerHeight - chipHeight - 8)}px`, 'important');
+  chip.style.setProperty('left', `${left}px`, 'important');
+  chip.style.setProperty('display', 'block', 'important');
+}
+
+function hideHoverHint() {
+  document.getElementById('spotboard-hover-hint')?.remove();
+  _hoverHintShadow = null;
 }
 
 // Once a card is locked, real hit-testing keeps resolving every point inside a content-less
@@ -872,6 +915,7 @@ function handleExit(event: MouseEvent) {
 
   // Normal mode: clear hover styling
   target.style.outline = '';
+  hideHoverHint();
 }
 
 // 3. Click Handler (The Save)
@@ -1923,13 +1967,15 @@ function handleClick(event: MouseEvent) {
   if (!isCapturing) return;
   
   log('🖱️ Click detected on:', event.target);
-    
+
   const target = event.target as HTMLElement;
-  
+
   // Ignore clicks on SpotBoard banner (has pointer-events: none, but belt-and-braces)
   if (target.closest('[data-spotboard-ignore]')) {
     return;
   }
+
+  hideHoverHint(); // #106: a click commits the selection (or starts exclusion) -- the hint is done
 
   // Ignore playground onboarding UI elements
   if (target.closest('[data-sb-no-capture]')) {
@@ -2157,6 +2203,7 @@ export const __getRefineStateForTest = () => refineState;
 let _refineShadow: ShadowRoot | null = null;
 
 function removeRefineBar() {
+  hideHoverHint(); // #106: Continue locks the root while the mouse may still rest on a hovered box
   document.getElementById('spotboard-refine-bar')?.remove();
   document.getElementById('spotboard-refine-banner')?.remove();
   _refineShadow = null;
@@ -3660,7 +3707,7 @@ function showCaptureBanner() {
         stripBold(`\u201c${recaptureCtx.label.length > 40 ? recaptureCtx.label.slice(0, 40) + '\u2026' : recaptureCtx.label}\u201d`),
         ' \u00b7 ', stripKbd('Esc'), ' to cancel'
       ]
-    : [stripBold('click'), ' on any content you want to add to your board \u00b7 ', stripKbd('Esc'), ' to cancel'];
+    : [stripBold('hover'), ' to preview, ', stripBold('click'), ' on any content you want to add to your board \u00b7 ', stripKbd('Esc'), ' to cancel'];
   document.body.appendChild(createCaptureStrip('spotboard-capture-banner', 1, instructions));
 }
 
@@ -3739,6 +3786,7 @@ function toggleCapture(forceState?: boolean) {
     document.addEventListener('mouseover', handleHover, true);
     document.addEventListener('mousemove', handleExclusionHover, true);
     document.addEventListener('mouseout', handleExit, true);
+    document.addEventListener('scroll', hideHoverHint, true); // #106: chip is fixed-position, box moves
     document.addEventListener('mousedown', handleMouseDown, true);
     document.addEventListener('click', handleClick, true);
     document.addEventListener('keydown', handleKeydown, true);
@@ -3761,10 +3809,12 @@ function toggleCapture(forceState?: boolean) {
     document.removeEventListener('mouseover', handleHover, true);
     document.removeEventListener('mousemove', handleExclusionHover, true);
     document.removeEventListener('mouseout', handleExit, true);
+    document.removeEventListener('scroll', hideHoverHint, true);
     document.removeEventListener('mousedown', handleMouseDown, true);
     document.removeEventListener('click', handleClick, true);
     document.removeEventListener('keydown', handleKeydown, true);
 
+    hideHoverHint();
     // #42: capture ended (Esc / popup toggle) while still refining -- report and tear down the bar.
     endRefinement('cancel');
 
