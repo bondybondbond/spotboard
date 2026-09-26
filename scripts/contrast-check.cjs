@@ -48,7 +48,7 @@ catch (e) { console.warn('!! ' + e.message + ' — dark checks skipped\n'); }
 // only shows for one class of users. Assert token-for-token equality.
 let SYNC_FAIL = 0;
 try {
-  const media = parseBlock(':root:not(\\[data-theme\\])');
+  const media = parseBlock(':root:not([data-theme])'); // parseBlock escapes — pass the raw selector
   const keys = new Set([...Object.keys(DARK), ...Object.keys(media)]);
   const diffs = [...keys].filter(k => DARK[k] !== media[k]);
   if (diffs.length) {
@@ -106,6 +106,12 @@ const TEXT = [
   ['add-board glyph on page',         '--pill-add-text',      '--bg-page',             null,             3.0],
   ['card-header icon glyph',          '--iconbtn-ink',        '--iconbtn-bg',          '--surface-raised', 3.0],
   ['ghost-card label on page',        '--ghost-label',        '--bg-page',             null,             4.5],
+  // --- #105 first-run example board (cards sit on the content well) ---
+  ['example card text on content well', '--text-heading',   '--surface-content',     null,             4.5],
+  ['example gain on content well',    '--example-up',         '--surface-content',     null,             4.5],
+  ['example loss on content well',    '--example-down',       '--surface-content',     null,             4.5],
+  ['example NEW badge on content well', '--accent-strong',    '--surface-content',     null,             4.5],
+  ['example badge label',             '--text-muted',         '--surface-raised',      null,             4.5],
   // --- C-lite: captured content goes dark ---
   ['captured text on content well',   '--text-on-content',    '--surface-content',     null,             4.5],
   ['captured link on content well',   '--link-content',       '--surface-content',     null,             4.5],

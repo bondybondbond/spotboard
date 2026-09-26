@@ -1436,6 +1436,39 @@ function showCaptureQuickstartModal() {
   document.addEventListener('keydown', handleEscape);
 }
 
+// #105: illustrative board on the first-run empty state — shows the "several sites, one glance"
+// value before the first capture. Static sample content; never stored, never clickable.
+const EXAMPLE_BOARD_CARDS = [
+  { title: 'BBC · Most read', domain: 'bbc.co.uk', rows: [['Rail strike called off', null, true], ['Heatwave warning for SE']] },
+  { title: 'ESPN · Table', domain: 'espn.com', rows: [['1 Arsenal', '24'], ['2 Liverpool', '23']] },
+  { title: 'HotUKDeals · Hottest', domain: 'hotukdeals.com', rows: [['Air fryer 5.5L £44.99', null, true], ['4K monitor £179']] },
+  { title: 'Yahoo · Movers', domain: 'finance.yahoo.com', rows: [['NVDA', '▲ 3.2%', false, 'up'], ['TSLA', '▼ 1.8%', false, 'down']] }
+];
+
+function renderExampleBoard() {
+  const cards = EXAMPLE_BOARD_CARDS.map(card => {
+    const rows = card.rows.map(([label, value, isNew, trend]) => {
+      const badge = isNew ? '<span class="sb-example-new">NEW</span>' : '';
+      if (value == null) return `<div>${label}${badge}</div>`;
+      const cls = trend ? ` class="sb-example-${trend}"` : '';
+      return `<div class="sb-example-row"><span>${label}</span><span${cls}>${value}</span></div>`;
+    }).join('');
+    return `
+      <div class="sb-example-card">
+        <div class="sb-example-card-title">
+          <img src="https://www.google.com/s2/favicons?sz=32&domain=${card.domain}" alt="" />
+          ${card.title}
+        </div>
+        <div class="sb-example-card-body">${rows}</div>
+      </div>`;
+  }).join('');
+  return `
+    <div class="sb-example" role="img" aria-label="Example board: BBC most read, ESPN league table, HotUKDeals hottest deals and Yahoo market movers on one board">
+      <span class="sb-example-badge" aria-hidden="true">EXAMPLE BOARD</span>
+      <div class="sb-example-board" aria-hidden="true">${cards}</div>
+    </div>`;
+}
+
 /**
  * Renders the empty dashboard state with primary CTA.
  * Used by both initial page load and "last card deleted" scenarios.
@@ -1444,11 +1477,13 @@ function renderEmptyState(container) {
   container.innerHTML = `
     <div class="empty-state" style="display: block;">
       <div class="interactive-directory">
-        <h2 class="interactive-directory-title">Capture your first card</h2>
-        <p class="interactive-directory-subtitle">SpotBoard saves a live copy of any section of a page and keeps it updated. Try it now on Wikipedia — about a minute.</p>
+        <h2 class="interactive-directory-title">Check all your usual sites in one glance</h2>
+        <p class="interactive-directory-subtitle">Save the parts of websites you keep going back to onto one board. Hit Refresh to see what's new, then click through to anything worth reading.</p>
+        ${renderExampleBoard()}
         <div class="practice-cta-row">
           <button id="empty-state-start" class="practice-primary-btn" type="button">Try it on Wikipedia →</button>
         </div>
+        <p class="practice-hint">Practice on Wikipedia's "In the news", which changes every day. Then add a site you check yourself.</p>
         <div class="practice-fallback">
           <a href="https://bondybondbond.github.io/spotboard/demo.html" target="_blank" rel="noopener noreferrer">Watch 30s demo →</a>
         </div>
@@ -1463,6 +1498,11 @@ function renderEmptyState(container) {
       </div>
     </div>
   `;
+
+  // MV3 CSP blocks inline onerror — hide a favicon that fails to load
+  container.querySelectorAll('.sb-example-card-title img').forEach(img => {
+    img.addEventListener('error', () => { img.style.display = 'none'; });
+  });
 
   if (window.GA4 && window.GA4.sendEvent) {
     window.GA4.sendEvent('empty_state_viewed');
