@@ -835,13 +835,24 @@ function showHoverHint(target: HTMLElement) {
       font-family: ${OVERLAY_FONT} !important; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25) !important;
       pointer-events: none !important; text-transform: none !important;
     `;
-    _hoverHintShadow.appendChild(chip);
+    // Pale wash over the hovered box so the region reads as one area even where the dashed border
+    // blends into the page's own lines. An overlay, not a style on the page element, so nothing
+    // can leak into captured HTML. Same green as the hover outline (#65a30d), ~5% opacity.
+    const wash = document.createElement('div');
+    wash.id = 'sb-hover-wash';
+    wash.style.cssText = 'position: fixed !important; background: rgba(101, 163, 13, 0.05) !important; pointer-events: none !important;';
+    _hoverHintShadow.append(wash, chip);
   }
   const chip = _hoverHintShadow.querySelector('#sb-hover-hint') as HTMLElement;
   chip.textContent = refineState
     ? 'Click to select this box instead'
-    : 'This box will be captured · click, then Grow for more';
+    : 'Click to capture · Grow to expand';
   const rect = target.getBoundingClientRect();
+  const wash = _hoverHintShadow.querySelector('#sb-hover-wash') as HTMLElement;
+  wash.style.setProperty('top', `${rect.top}px`, 'important');
+  wash.style.setProperty('left', `${rect.left}px`, 'important');
+  wash.style.setProperty('width', `${rect.width}px`, 'important');
+  wash.style.setProperty('height', `${rect.height}px`, 'important');
   // Sit just above the box; fall back to inside its top edge when there is no room above (it must
   // stay clear of the fixed top strip either way).
   const chipHeight = 26;
