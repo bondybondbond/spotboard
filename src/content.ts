@@ -822,6 +822,7 @@ function handleHover(event: MouseEvent) {
 // widened after the click (Grow, #42). Shadow-hosted + pointer-events none like the other overlays,
 // so it never intercepts a hover/click and is never part of the captured page.
 let _hoverHintShadow: ShadowRoot | null = null;
+const CAPTURE_WASH = 'rgba(101, 163, 13, 0.10)';
 
 function showHoverHint(target: HTMLElement) {
   if (!_hoverHintShadow) {
@@ -837,16 +838,16 @@ function showHoverHint(target: HTMLElement) {
     `;
     // Pale wash over the hovered box so the region reads as one area even where the dashed border
     // blends into the page's own lines. An overlay, not a style on the page element, so nothing
-    // can leak into captured HTML. Same green as the hover outline (#65a30d), ~5% opacity.
+    // can leak into captured HTML. Same green as the hover outline (#65a30d), ~10% opacity.
     const wash = document.createElement('div');
     wash.id = 'sb-hover-wash';
-    wash.style.cssText = 'position: fixed !important; background: rgba(101, 163, 13, 0.05) !important; pointer-events: none !important;';
+    wash.style.cssText = `position: fixed !important; background: ${CAPTURE_WASH} !important; pointer-events: none !important;`;
     _hoverHintShadow.append(wash, chip);
   }
   const chip = _hoverHintShadow.querySelector('#sb-hover-hint') as HTMLElement;
   chip.textContent = refineState
     ? 'Click to select this box instead'
-    : 'Click to capture · Grow to expand';
+    : 'Click to capture';
   const rect = target.getBoundingClientRect();
   const wash = _hoverHintShadow.querySelector('#sb-hover-wash') as HTMLElement;
   wash.style.setProperty('top', `${rect.top}px`, 'important');
@@ -2214,6 +2215,8 @@ export const __getRefineStateForTest = () => refineState;
 let _refineShadow: ShadowRoot | null = null;
 
 function removeRefineBar() {
+  window.removeEventListener('scroll', updateRefineBar, true);
+  window.removeEventListener('resize', updateRefineBar);
   hideHoverHint(); // #106: Continue locks the root while the mouse may still rest on a hovered box
   document.getElementById('spotboard-refine-bar')?.remove();
   document.getElementById('spotboard-refine-banner')?.remove();
@@ -2272,6 +2275,8 @@ function showRefineBar() {
   if (_refineShadow) return;
   const { shadow } = createOverlayShadowHost('spotboard-refine-bar');
   _refineShadow = shadow;
+  window.addEventListener('scroll', updateRefineBar, true); // keep the wash on the root as the page moves
+  window.addEventListener('resize', updateRefineBar);
 
   document.body.appendChild(createCaptureStrip('spotboard-refine-banner', 2, [
     stripBold('Grow'), ' to include more, or ', stripBold('click'), ' another element to re-select \u00b7 ',
@@ -2333,6 +2338,21 @@ function updateRefineBar() {
   const canGrow = !!(state.chain[state.index + 1] ?? getGrowCandidate(current));
   // No tag name / pixel size in the UI: the outline already shows what is selected, and "ol 1248x288"
   // is developer language (the same detail is in the DEBUG "Grow path" log).
+  // The hover wash carries on over the proposed root, so "this area" reads the same before and
+  // after the click while Grow/Shrink move the boundary (#106). Lives in this shadow, so it goes
+  // with the bar.
+  let wash = _refineShadow.querySelector('#sb-refine-wash') as HTMLElement | null;
+  if (!wash) {
+    wash = document.createElement('div');
+    wash.id = 'sb-refine-wash';
+    wash.style.cssText = `position: fixed !important; background: ${CAPTURE_WASH} !important; pointer-events: none !important;`;
+    _refineShadow.prepend(wash);
+  }
+  const rootRect = current.getBoundingClientRect();
+  wash.style.setProperty('top', `${rootRect.top}px`, 'important');
+  wash.style.setProperty('left', `${rootRect.left}px`, 'important');
+  wash.style.setProperty('width', `${rootRect.width}px`, 'important');
+  wash.style.setProperty('height', `${rootRect.height}px`, 'important');
   (_refineShadow.querySelector('#sb-refine-label') as HTMLElement).textContent = 'Selected area';
   (_refineShadow.querySelector('#sb-refine-hint') as HTMLElement).textContent =
     (canGrow ? 'Grow for a bigger area.' : 'Nothing larger to grow to.') +
