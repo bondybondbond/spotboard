@@ -2893,13 +2893,9 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 ${component.url || 'No URL'}
               </a>
             </div>
-            <div style="margin-bottom: 12px;">
+            <div style="margin-bottom: 20px;">
               <div style="font-weight: 600; margin-bottom: 4px;">Last updated:</div>
               <div style="color: var(--text-muted);">${currentTimestampText}</div>
-            </div>
-            <div style="margin-bottom: 20px;">
-              <div style="font-weight: 600; margin-bottom: 4px;">Capture method:</div>
-              <div style="color: var(--text-muted);">${component.positionBased ? 'Position-based' : 'Header-based'}</div>
             </div>
             <button id="closeInfoModal" style="width: 100%; padding: 10px; background: var(--accent); color: var(--accent-text); border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
               OK
