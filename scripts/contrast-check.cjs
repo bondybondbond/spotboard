@@ -111,7 +111,7 @@ const TEXT = [
   ['example gain on content well',    '--example-up',         '--surface-content',     null,             4.5],
   ['example loss on content well',    '--example-down',       '--surface-content',     null,             4.5],
   ['example card time on header',     '--text-muted',         '--surface-raised',      null,             4.5],
-  ['example badge label',             '--text-muted',         '--surface-raised',      null,             4.5],
+  ['example badge label',             '--example-badge-text', '--danger-tint',         '--bg-page',      4.5],
   // --- C-lite: captured content goes dark ---
   ['captured text on content well',   '--text-on-content',    '--surface-content',     null,             4.5],
   ['captured link on content well',   '--link-content',       '--surface-content',     null,             4.5],

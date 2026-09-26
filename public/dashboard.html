@@ -107,6 +107,7 @@
       --ghost-label: rgba(0,0,0,0.65);
       --example-up: #15803d;          /* #105: first-run example-board gain text */
       --example-down: #dc2626;        /* #105: first-run example-board loss text */
+      --example-badge-text: #b91c1c;  /* #105: 'Example board' label on --danger-tint */
     }
 
     /* --- dark: explicit toggle --- (KEEP IN SYNC with the @media block below) */
@@ -182,6 +183,7 @@
       --ghost-label: rgba(255,255,255,0.78);
       --example-up: #4ade80;          /* #105: example-board gain (dark) — KEEP IN SYNC with @media block */
       --example-down: #f87171;        /* #105: example-board loss (dark) */
+      --example-badge-text: #fca5a5;  /* #105: 'Example board' label (dark) */
     }
 
     /* --- dark: first-load default before any toggle --- (KEEP IN SYNC with the block above) */
@@ -258,6 +260,7 @@
         --ghost-label: rgba(255,255,255,0.78);
         --example-up: #4ade80;          /* #105: example-board gain (dark) — KEEP IN SYNC */
         --example-down: #f87171;        /* #105: example-board loss (dark) */
+        --example-badge-text: #fca5a5;  /* #105: 'Example board' label (dark) */
       }
     }
 
@@ -1136,15 +1139,16 @@
 
     .sb-example-badge {
       position: absolute;
-      top: -10px;
+      top: -12px;
       left: 50%;
       transform: translateX(-50%);
-      background: var(--surface-raised);
-      color: var(--text-muted);
-      border: 1px solid var(--border-hairline);
+      background: var(--bg-page);
+      background-image: linear-gradient(var(--danger-tint), var(--danger-tint));
+      color: var(--example-badge-text);
+      border: 1px solid var(--example-badge-text);
       border-radius: 999px;
-      padding: 2px 10px;
-      font-size: 11px;
+      padding: 3px 14px;
+      font-size: 13px;
       font-weight: 700;
       letter-spacing: 0.08em;
       z-index: 1;
