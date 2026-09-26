@@ -3037,10 +3037,10 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       </div>
     </div>
     <div id="spotboard-modal-body" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
-      <div style="display: flex; align-items: baseline; padding: 8px 20px 0; flex-shrink: 0; font-family: inherit;">
+      <div style="display: flex; align-items: center; padding: 8px 20px 0; flex-shrink: 0; font-family: inherit;">
         <span style="font-size: 13px; color: white; font-family: inherit;">Preview</span>
         <span style="font-size: 11px; color: rgba(255,255,255,0.85); font-family: inherit; margin-left: 6px;">Click anything here to exclude it</span>
-        <button id="undoExclusion" type="button" disabled title="Undo last exclusion change" style="margin-left: auto; border: none; background: none; padding: 0; color: #fff; font-size: 11px; font-family: inherit; text-decoration: underline; cursor: pointer; white-space: nowrap;">↶ Undo</button>
+        <button id="undoExclusion" type="button" disabled title="Undo last exclusion change" style="margin-left: auto; box-sizing: border-box; border: none; background: rgba(255,255,255,0.28); color: #fff; border-radius: 6px; font-size: 11px; font-weight: 400; line-height: 1; padding: 5px 9px; cursor: pointer; font-family: inherit; white-space: nowrap;">↶ Undo</button>
       </div>
       <div style="padding: 8px 20px 12px; flex: 1; min-height: 0; overflow-y: auto;">
         <div id="spotboard-preview-container">
