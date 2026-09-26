@@ -3809,11 +3809,41 @@ function showCaptureHint(message: string) {
   setTimeout(() => hint.remove(), 4000);
 }
 
+// #108: the mode banners are click-through but still paint over the top ~45px of the page.
+// Rather than shifting the page (breaks fixed/sticky site headers, hit-testing, and risks a
+// leftover offset), fade the banners out while the pointer is over their strip and restore them
+// as soon as it leaves. Nothing on the host page is touched.
+const MODE_BANNER_IDS = ['spotboard-capture-banner', 'spotboard-refine-banner', 'spotboard-exclusion-banner'];
+
+function setModeBannersHidden(hidden: boolean) {
+  MODE_BANNER_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.setProperty('transition', 'opacity 0.12s', 'important');
+    el.style.setProperty('opacity', hidden ? '0' : '1', 'important');
+  });
+}
+
+function dodgeModeBanners(event: MouseEvent) {
+  let bottom = 0;
+  MODE_BANNER_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
+  });
+  if (bottom > 0) setModeBannersHidden(event.clientY <= bottom + 6);
+}
+
+function restoreModeBanners(event: MouseEvent) {
+  if (!event.relatedTarget) setModeBannersHidden(false); // pointer left the page
+}
+
 function toggleCapture(forceState?: boolean) {
   isCapturing = forceState !== undefined ? forceState : !isCapturing;
-  
+
   if (isCapturing) {
     log("🟢 Capture Mode: ON");
+    document.addEventListener('mousemove', dodgeModeBanners, true);
+    document.addEventListener('mouseout', restoreModeBanners, true);
     document.addEventListener('mouseover', handleHover, true);
     document.addEventListener('mousemove', handleExclusionHover, true);
     document.addEventListener('mouseout', handleExit, true);
@@ -3837,6 +3867,8 @@ function toggleCapture(forceState?: boolean) {
     if (getIsOnboardingMode()) advanceOnboardingCoach('capturing');
   } else {
     log("🔴 Capture Mode: OFF");
+    document.removeEventListener('mousemove', dodgeModeBanners, true);
+    document.removeEventListener('mouseout', restoreModeBanners, true);
     document.removeEventListener('mouseover', handleHover, true);
     document.removeEventListener('mousemove', handleExclusionHover, true);
     document.removeEventListener('mouseout', handleExit, true);
