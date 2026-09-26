@@ -2465,7 +2465,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                   ${['off', 'bullets', 'numbered'].map(f => `<button type="button" role="radio" data-format="${f}" tabindex="${normalisedListFormat(component) === f ? 0 : -1}" aria-checked="${normalisedListFormat(component) === f}">${f[0].toUpperCase() + f.slice(1)}</button>`).join('')}
                 </div>
                 <div class="card-menu-hint" hidden>No list found in this card</div>
-                <a class="card-menu-url" target="_blank" rel="noopener noreferrer" hidden></a>
+                <div class="card-menu-url" hidden>URL: <a target="_blank" rel="noopener noreferrer"></a></div>
                 <button type="button" class="card-menu-meta card-menu-info${component.lastOutcome === 'failed' ? ' failed' : ''}">${cardStatusText(component, relativeTime)} ›</button>
               </div>
             </div>
@@ -3210,12 +3210,13 @@ function wireCardMenu(card, component) {
   const menu = card.querySelector('.card-menu')
   if (!btn || !menu) return
 
-  const urlLink = menu.querySelector('.card-menu-url')
-  if (urlLink && component.url) {
+  const urlRow = menu.querySelector('.card-menu-url')
+  if (urlRow && component.url) {
+    const urlLink = urlRow.querySelector('a')
     urlLink.href = component.url
     urlLink.textContent = component.url
     urlLink.title = component.url
-    urlLink.hidden = false
+    urlRow.hidden = false
   }
 
   btn.addEventListener('click', (e) => {
