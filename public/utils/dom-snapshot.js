@@ -23,6 +23,7 @@ var DomSnapshot = (() => {
   __export(dom_snapshot_exports, {
     classifyImages: () => classifyImages,
     cloneWithShadow: () => cloneWithShadow,
+    harmonizeRepeatedImageRuns: () => harmonizeRepeatedImageRuns,
     promoteBackgroundImages: () => promoteBackgroundImages,
     promoteLazyImages: () => promoteLazyImages
   });
@@ -123,6 +124,46 @@ var DomSnapshot = (() => {
       console.log(`[SpotBoard] bg-image promoted to img (${label}):`, url.substring(0, 80));
     });
   }
+  var TIER_RANK = ["icon", "small", "thumbnail", "medium", "preview"];
+  var RUN_MIN_LONG_SIDE = 100;
+  var RUN_MIN_SHORT_SIDE = 40;
+  var RUN_MIN_COUNT = 3;
+  var RUN_MIN_SIDE_RATIO = 0.5;
+  var RUN_EXCLUDED_ROLE_RE = /logo|sponsor|icon|avatar|badge|flag|emoji|sprite/i;
+  function imageRoleSignature(img) {
+    const parts = [img.className.toString()];
+    let el = img.parentElement;
+    for (let i = 0; i < 3 && el; i++, el = el.parentElement) {
+      parts.push(el.tagName + "." + el.className.toString());
+    }
+    return parts.join("|");
+  }
+  function harmonizeRepeatedImageRuns(root) {
+    const groups = /* @__PURE__ */ new Map();
+    root.querySelectorAll("img[data-scale-context]").forEach((node) => {
+      const img = node;
+      const r = img.getBoundingClientRect();
+      if (Math.max(r.width, r.height) < RUN_MIN_LONG_SIDE || Math.min(r.width, r.height) < RUN_MIN_SHORT_SIDE) return;
+      const key = imageRoleSignature(img);
+      if (RUN_EXCLUDED_ROLE_RE.test(key + " " + (img.getAttribute("alt") || ""))) return;
+      const list = groups.get(key);
+      if (list) list.push(img);
+      else groups.set(key, [img]);
+    });
+    groups.forEach((members) => {
+      if (members.length < RUN_MIN_COUNT) return;
+      const longSides = members.map((m) => {
+        const r = m.getBoundingClientRect();
+        return Math.max(r.width, r.height);
+      });
+      if (Math.min(...longSides) < Math.max(...longSides) * RUN_MIN_SIDE_RATIO) return;
+      const top = Math.max(
+        TIER_RANK.indexOf("medium"),
+        ...members.map((m) => TIER_RANK.indexOf(m.getAttribute("data-scale-context") || ""))
+      );
+      members.forEach((m) => m.setAttribute("data-scale-context", TIER_RANK[top]));
+    });
+  }
   function classifyImages(root) {
     root.querySelectorAll("img").forEach((img) => {
       if (img.hasAttribute("data-scale-context")) return;
@@ -197,6 +238,7 @@ var DomSnapshot = (() => {
         img.setAttribute("data-scale-context", "icon");
       }
     });
+    harmonizeRepeatedImageRuns(root);
   }
   return __toCommonJS(dom_snapshot_exports);
 })();

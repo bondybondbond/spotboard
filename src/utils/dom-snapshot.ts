@@ -141,6 +141,60 @@ export function promoteBackgroundImages(el: Element, label: string): void {
   });
 }
 
+const TIER_RANK = ['icon', 'small', 'thumbnail', 'medium', 'preview']
+const RUN_MIN_LONG_SIDE = 100 // px — deal images fill a 108–198px slot (letterboxed: short side can be 61px), avatars are 18px
+const RUN_MIN_SHORT_SIDE = 40 // px — excludes strips/dividers
+const RUN_MIN_COUNT = 3       // fewer than this is a hero/pair, not a repeated list
+const RUN_MIN_SIDE_RATIO = 0.5
+
+// Brand/sponsor/decoration runs stay at their existing tier — enlarging them raises noise, not hierarchy.
+const RUN_EXCLUDED_ROLE_RE = /logo|sponsor|icon|avatar|badge|flag|emoji|sprite/i
+
+/** img class + up to 3 ancestor tag.class chains — "same role" key for repeated list images. */
+function imageRoleSignature(img: Element): string {
+  const parts = [img.className.toString()]
+  let el = img.parentElement
+  for (let i = 0; i < 3 && el; i++, el = el.parentElement) {
+    parts.push(el.tagName + '.' + el.className.toString())
+  }
+  return parts.join('|')
+}
+
+/**
+ * A repeated run of same-role images must share one tier. The container-area rule flips a tier when an
+ * image frame lands just either side of the 1.3× walk threshold, so identical list items came out as a
+ * mix of thumbnail and medium (#110). Group = ≥3 images, same role signature, each with a ≥100px long
+ * side (letterboxed images have a shorter one) and ≥40px short side, long sides within 2× of each other.
+ * Every member gets max(member tiers, medium).
+ * Live DOM only (needs real rects).
+ */
+export function harmonizeRepeatedImageRuns(root: Element): void {
+  const groups = new Map<string, HTMLImageElement[]>()
+  root.querySelectorAll('img[data-scale-context]').forEach(node => {
+    const img = node as HTMLImageElement
+    const r = img.getBoundingClientRect()
+    if (Math.max(r.width, r.height) < RUN_MIN_LONG_SIDE || Math.min(r.width, r.height) < RUN_MIN_SHORT_SIDE) return
+    const key = imageRoleSignature(img)
+    if (RUN_EXCLUDED_ROLE_RE.test(key + ' ' + (img.getAttribute('alt') || ''))) return
+    const list = groups.get(key)
+    if (list) list.push(img)
+    else groups.set(key, [img])
+  })
+  groups.forEach(members => {
+    if (members.length < RUN_MIN_COUNT) return
+    const longSides = members.map(m => {
+      const r = m.getBoundingClientRect()
+      return Math.max(r.width, r.height)
+    })
+    if (Math.min(...longSides) < Math.max(...longSides) * RUN_MIN_SIDE_RATIO) return
+    const top = Math.max(
+      TIER_RANK.indexOf('medium'),
+      ...members.map(m => TIER_RANK.indexOf(m.getAttribute('data-scale-context') || ''))
+    )
+    members.forEach(m => m.setAttribute('data-scale-context', TIER_RANK[top]))
+  })
+}
+
 /**
  * Classifies all <img> descendants with a data-scale-context tier (icon/small/thumbnail/medium/preview).
  * Uses a container walk (1.3× height ratio) to find the card-level container, avoiding over-broad
@@ -222,4 +276,5 @@ export function classifyImages(root: Element): void {
       img.setAttribute('data-scale-context', 'icon');
     }
   });
+  harmonizeRepeatedImageRuns(root);
 }
