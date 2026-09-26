@@ -1439,10 +1439,10 @@ function showCaptureQuickstartModal() {
 // #105: illustrative board on the first-run empty state — shows the "several sites, one glance"
 // value before the first capture. Static sample content; never stored, never clickable.
 const EXAMPLE_BOARD_CARDS = [
-  { title: 'BBC · Most read', domain: 'bbc.co.uk', rows: [['Rail strike called off'], ['Heatwave warning for SE']] },
-  { title: 'ESPN · Table', domain: 'espn.com', rows: [['1 Arsenal', '24'], ['2 Liverpool', '23']] },
-  { title: 'HotUKDeals · Hottest', domain: 'hotukdeals.com', rows: [['Air fryer 5.5L £44.99'], ['4K monitor £179']] },
-  { title: 'Yahoo · Movers', domain: 'finance.yahoo.com', rows: [['NVDA', '▲ 3.2%', 'up'], ['TSLA', '▼ 1.8%', 'down']] }
+  { title: 'BBC · Most read', domain: 'bbc.co.uk', rows: [['1. Rail strike called off after late talks'], ['2. Heatwave warning for south-east'], ['3. Interest rates held at 4%'], ['4. Museum returns stolen bronzes']] },
+  { title: 'ESPN · Premier League', domain: 'espn.com', rows: [['1 Arsenal', '24'], ['2 Liverpool', '23'], ['3 Man City', '21'], ['4 Chelsea', '19']] },
+  { title: 'HotUKDeals · Hottest', domain: 'hotukdeals.com', rows: [['Noise-cancelling headphones', '£89'], ['Air fryer 5.5L', '£44.99'], ['4K monitor 27"', '£179'], ['Coffee beans 1kg', '£11']] },
+  { title: 'Yahoo · Market movers', domain: 'finance.yahoo.com', rows: [['NVDA', '▲ 3.2%', 'up'], ['TSLA', '▼ 1.8%', 'down'], ['AAPL', '▲ 0.6%', 'up'], ['BTC', '▼ 2.1%', 'down']] }
 ];
 
 function renderExampleBoard() {
@@ -1456,13 +1456,14 @@ function renderExampleBoard() {
       <div class="sb-example-card">
         <div class="sb-example-card-title">
           <img src="https://www.google.com/s2/favicons?sz=32&domain=${card.domain}" alt="" />
-          ${card.title}
+          <span class="sb-example-card-name">${card.title}</span>
+          <span class="sb-example-card-ago">2m ago</span>
         </div>
         <div class="sb-example-card-body">${rows}</div>
       </div>`;
   }).join('');
   return `
-    <div class="sb-example" role="img" aria-label="Example board: BBC most read, ESPN league table, HotUKDeals hottest deals and Yahoo market movers on one board">
+    <div class="sb-example" role="img" aria-label="Example board: BBC most read, Premier League table, HotUKDeals hottest deals and Yahoo market movers on one board">
       <span class="sb-example-badge" aria-hidden="true">EXAMPLE BOARD</span>
       <div class="sb-example-board" aria-hidden="true">${cards}</div>
     </div>`;
@@ -1478,7 +1479,6 @@ function renderEmptyState(container) {
       <div class="interactive-directory">
         <h2 class="interactive-directory-title">Check all your usual sites in one glance</h2>
         <p class="interactive-directory-subtitle">Save the parts of websites you keep going back to onto one board. Hit Refresh to see what's new, then click through to anything worth reading.</p>
-        ${renderExampleBoard()}
         <div class="practice-cta-row">
           <button id="empty-state-start" class="practice-primary-btn" type="button">Try it on Wikipedia →</button>
         </div>
@@ -1494,6 +1494,7 @@ function renderEmptyState(container) {
             <button id="empty-skip-cancel" class="practice-skip-cancel">Cancel</button>
           </div>
         </div>
+        ${renderExampleBoard()}
       </div>
     </div>
   `;

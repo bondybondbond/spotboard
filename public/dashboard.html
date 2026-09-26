@@ -1120,12 +1120,18 @@
 
     /* #105: first-run example board — illustrative only (not clickable, no card controls) */
     .interactive-directory:has(.sb-example) {
-      max-width: 880px;
+      max-width: 1080px;
+    }
+
+    .interactive-directory:has(.sb-example) .interactive-directory-subtitle {
+      max-width: 640px;
+      margin-left: auto;
+      margin-right: auto;
     }
 
     .sb-example {
       position: relative;
-      margin: 0 auto 28px;
+      margin: 36px auto 0;
     }
 
     .sb-example-badge {
@@ -1147,8 +1153,8 @@
     .sb-example-board {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-      padding: 16px 10px 10px;
+      gap: 14px;
+      padding: 20px 14px 14px;
       border: 1px dashed var(--text-faint);
       border-radius: 12px;
       text-align: left;
@@ -1161,7 +1167,7 @@
       border: 1px solid var(--border-card);
       border-radius: 8px;
       overflow: hidden;
-      font-size: 12px;
+      font-size: 14px;
     }
 
     .sb-example-card-title {
@@ -1171,23 +1177,34 @@
       background: var(--surface-raised);
       color: var(--text-heading);
       font-weight: 600;
-      padding: 5px 8px;
+      padding: 7px 10px;
       white-space: nowrap;
+    }
+
+    .sb-example-card-name {
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
+    .sb-example-card-ago {
+      margin-left: auto;
+      font-weight: 400;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
     .sb-example-card-title img {
-      width: 12px;
-      height: 12px;
+      width: 14px;
+      height: 14px;
       border-radius: 2px;
       flex: none;
     }
 
     .sb-example-card-body {
       display: grid;
-      gap: 2px;
-      padding: 7px 9px;
+      gap: 8px;
+      padding: 10px 12px 12px;
+      line-height: 1.35;
       color: var(--text-heading);
       font-variant-numeric: tabular-nums;
     }
