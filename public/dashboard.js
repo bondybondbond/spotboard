@@ -2446,6 +2446,15 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             ${component.isPrePopulated ? '<span class="template-badge">Template</span>' : ''}
           </div>
           <div class="card-header-actions">
+            <button class="pause-btn iconBtn${component.refreshPaused ? ' active-state' : ''}" title="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}" aria-label="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}">
+              <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M6.04995 2.74998C6.04995 2.44623 5.80371 2.19998 5.49995 2.19998C5.19619 2.19998 4.94995 2.44623 4.94995 2.74998V12.25C4.94995 12.5537 5.19619 12.8 5.49995 12.8C5.80371 12.8 6.04995 12.5537 6.04995 12.25V2.74998ZM10.05 2.74998C10.05 2.44623 9.80371 2.19998 9.49995 2.19998C9.19619 2.19998 8.94995 2.44623 8.94995 2.74998V12.25C8.94995 12.5537 9.19619 12.8 9.49995 12.8C9.80371 12.8 10.05 12.5537 10.05 12.25V2.74998Z" fill="currentColor"/></svg>
+            </button>
+            <button class="refresh-single-btn iconBtn" type="button" title="Refresh this card" aria-label="Refresh this card">
+              <svg width="18" height="18" viewBox="0 0 1920 1920" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M960 0v213.333c411.627 0 746.667 334.934 746.667 746.667S1371.627 1706.667 960 1706.667 213.333 1371.733 213.333 960c0-197.013 78.4-382.507 213.334-520.747v254.08H640V106.667H53.333V320h191.04C88.64 494.08 0 720.96 0 960c0 529.28 430.613 960 960 960s960-430.72 960-960S1489.387 0 960 0" fill-rule="evenodd"/></svg>
+            </button>
+            <button class="delete-btn iconBtn" title="Delete card" aria-label="Delete card">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2h4a1 1 0 1 1 0 2h-1.069l-.867 12.142A2 2 0 0 1 17.069 22H6.93a2 2 0 0 1-1.995-1.858L4.07 8H3a1 1 0 0 1 0-2h4V4zm2 2h6V4H9v2zM6.074 8l.857 12H17.07l.857-12H6.074zM10 10a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1z" fill="currentColor"/></svg>
+            </button>
             <div class="card-menu-wrap">
               <button class="card-menu-btn iconBtn" type="button" title="Card options" aria-label="Card options" aria-controls="card-menu-${component.id}" aria-expanded="false">
                 <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.625 7.5C3.625 8.12132 3.12132 8.625 2.5 8.625C1.87868 8.625 1.375 8.12132 1.375 7.5C1.375 6.87868 1.87868 6.375 2.5 6.375C3.12132 6.375 3.625 6.87868 3.625 7.5ZM8.625 7.5C8.625 8.12132 8.12132 8.625 7.5 8.625C6.87868 8.625 6.375 8.12132 6.375 7.5C6.375 6.87868 6.87868 6.375 7.5 6.375C8.12132 6.375 8.625 6.87868 8.625 7.5ZM13.625 7.5C13.625 8.12132 13.1213 8.625 12.5 8.625C11.8787 8.625 11.375 8.12132 11.375 7.5C11.375 6.87868 11.8787 6.375 12.5 6.375C13.1213 6.375 13.625 6.87868 13.625 7.5Z" fill="currentColor"/></svg>
@@ -2456,18 +2465,10 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                   ${['off', 'bullets', 'numbered'].map(f => `<button type="button" role="radio" data-format="${f}" tabindex="${normalisedListFormat(component) === f ? 0 : -1}" aria-checked="${normalisedListFormat(component) === f}">${f[0].toUpperCase() + f.slice(1)}</button>`).join('')}
                 </div>
                 <div class="card-menu-hint" hidden>No list found in this card</div>
+                <a class="card-menu-url" target="_blank" rel="noopener noreferrer" hidden></a>
                 <button type="button" class="card-menu-meta card-menu-info${component.lastOutcome === 'failed' ? ' failed' : ''}">${cardStatusText(component, relativeTime)} ›</button>
               </div>
             </div>
-            <button class="pause-btn iconBtn${component.refreshPaused ? ' active-state' : ''}" title="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}" aria-label="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}">
-              <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M6.04995 2.74998C6.04995 2.44623 5.80371 2.19998 5.49995 2.19998C5.19619 2.19998 4.94995 2.44623 4.94995 2.74998V12.25C4.94995 12.5537 5.19619 12.8 5.49995 12.8C5.80371 12.8 6.04995 12.5537 6.04995 12.25V2.74998ZM10.05 2.74998C10.05 2.44623 9.80371 2.19998 9.49995 2.19998C9.19619 2.19998 8.94995 2.44623 8.94995 2.74998V12.25C8.94995 12.5537 9.19619 12.8 9.49995 12.8C9.80371 12.8 10.05 12.5537 10.05 12.25V2.74998Z" fill="currentColor"/></svg>
-            </button>
-            <button class="refresh-single-btn iconBtn" type="button" title="Refresh this card" aria-label="Refresh this card">
-              <svg width="18" height="18" viewBox="0 0 1920 1920" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M960 0v213.333c411.627 0 746.667 334.934 746.667 746.667S1371.627 1706.667 960 1706.667 213.333 1371.733 213.333 960c0-197.013 78.4-382.507 213.334-520.747v254.08H640V106.667H53.333V320h191.04C88.64 494.08 0 720.96 0 960c0 529.28 430.613 960 960 960s960-430.72 960-960S1489.387 0 960 0" fill-rule="evenodd"/></svg>
-            </button>
-            <button class="delete-btn iconBtn" title="Delete card" aria-label="Delete card">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2h4a1 1 0 1 1 0 2h-1.069l-.867 12.142A2 2 0 0 1 17.069 22H6.93a2 2 0 0 1-1.995-1.858L4.07 8H3a1 1 0 0 1 0-2h4V4zm2 2h6V4H9v2zM6.074 8l.857 12H17.07l.857-12H6.074zM10 10a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1z" fill="currentColor"/></svg>
-            </button>
           </div>
         </div>
         ${component.lastOutcome === 'failed' ? `
@@ -3156,6 +3157,7 @@ function finishCardContent(card, component) {
   if (listable) window.ListFormat.applyListFormat(contentDiv, component.listFormat)
   const hint = card.querySelector('.card-menu-hint')
   if (hint) hint.hidden = listable
+  card.querySelectorAll('.card-menu-seg [role="radio"]').forEach(b => { b.disabled = !listable })
 }
 
 // Read-then-spread write (CLAUDE.md: never a partial write). 'off' removes the field so
@@ -3208,6 +3210,14 @@ function wireCardMenu(card, component) {
   const menu = card.querySelector('.card-menu')
   if (!btn || !menu) return
 
+  const urlLink = menu.querySelector('.card-menu-url')
+  if (urlLink && component.url) {
+    urlLink.href = component.url
+    urlLink.textContent = component.url
+    urlLink.title = component.url
+    urlLink.hidden = false
+  }
+
   btn.addEventListener('click', (e) => {
     e.stopPropagation()
     const wasOpen = !menu.hidden
@@ -3222,7 +3232,7 @@ function wireCardMenu(card, component) {
     menu.style.left = `${Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))}px`
     btn.setAttribute('aria-expanded', 'true')
     const checked = menu.querySelector('[role="radio"][aria-checked="true"]')
-    if (checked) checked.focus()
+    if (checked && !checked.disabled) checked.focus()
   })
   menu.addEventListener('click', (e) => e.stopPropagation())
 

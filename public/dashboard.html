@@ -557,7 +557,7 @@
       box-shadow: 0 4px 16px var(--card-shadow-hover);
       padding: 8px;
       z-index: 9999;
-      width: 224px;
+      width: 264px;
       color: var(--text-primary);
       font-size: 13px;
     }
@@ -596,6 +596,31 @@
       outline: 2px solid var(--accent-strong);
       outline-offset: -2px;
     }
+    .card-menu-seg button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .card-menu-seg button:disabled:hover { background: none; }
+    /* Nothing to format: the remembered choice is shown muted grey, not gold */
+    .card-menu-seg button[aria-checked="true"]:disabled {
+      background: var(--surface-inset);
+      color: inherit;
+      font-weight: normal;
+    }
+    a.card-menu-url {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      overflow-wrap: anywhere;
+      margin-top: 8px;
+      padding: 8px 4px 0;
+      border-top: 1px solid var(--border-subtle);
+      font-size: 12px;
+      color: var(--link-chrome);
+    }
+    a.card-menu-url[hidden] { display: none; }
+    a.card-menu-url:hover { text-decoration: underline; }
     .card-menu-hint {
       font-size: 12px;
       opacity: 0.75;
@@ -615,7 +640,7 @@
       text-align: left;
       cursor: pointer;
       opacity: 0.85;
-      margin-top: 8px;
+      margin-top: 6px;
       padding: 8px 4px 2px;
     }
     button.card-menu-meta:hover { opacity: 1; text-decoration: underline; }
