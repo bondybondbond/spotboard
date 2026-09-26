@@ -234,7 +234,9 @@ async function applyImportedBoard(payload) {
         excludedSelectors: exportedExclusions || [],
         positionBased: syncFields.positionBased || false,
         refreshPaused: syncFields.refreshPaused || false,
-        cardSize: syncFields.cardSize || '1x1'
+        cardSize: syncFields.cardSize || '1x1',
+        // #103: anything but bullets/numbered (garbage in a hand-edited file) is dropped => off
+        listFormat: window.ListFormat.normaliseListFormat(syncFields.listFormat) === 'off' ? undefined : syncFields.listFormat
       }
     );
 
@@ -2340,17 +2342,6 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
     const grid = container.querySelector('.components-grid');
     setupGridReorder(grid); // issue #17: drag-to-reorder within a board
 
-    // Global Escape handler for clock tooltips (registered once)
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        const active = document.querySelector('.clock-wrap:not(.dismissed):hover, .clock-wrap:not(.dismissed) .clock-btn:focus-visible');
-        if (active) {
-          document.querySelectorAll('.clock-wrap:not(.dismissed)').forEach(w => w.classList.add('dismissed'));
-          e.stopPropagation();
-        }
-      }
-    });
-
     components.forEach((component, index) => {
       const card = document.createElement('div');
       
@@ -2455,21 +2446,18 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             ${component.isPrePopulated ? '<span class="template-badge">Template</span>' : ''}
           </div>
           <div class="card-header-actions">
-            <div class="clock-wrap">
-              ${component.lastOutcome === 'failed' ? `
-                <button class="clock-btn iconBtn failed-state" aria-label="Refresh failed" aria-describedby="clock-tip-${component.id}">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M13 17.5a1 1 0 11-2 0 1 1 0 012 0zm-.25-8.25a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5z"/>
-                    <path fill-rule="evenodd" d="M9.836 3.244c.963-1.665 3.365-1.665 4.328 0l8.967 15.504c.963 1.667-.24 3.752-2.165 3.752H3.034c-1.926 0-3.128-2.085-2.165-3.752L9.836 3.244zm3.03.751a1 1 0 00-1.732 0L2.168 19.499A1 1 0 003.034 21h17.932a1 1 0 00.866-1.5L12.866 3.994z"/>
-                  </svg>
-                </button>
-                <span class="custom-tooltip" role="tooltip" id="clock-tip-${component.id}">Last attempt failed ${component.lastErrorAt ? formatRelativeTime(component.lastErrorAt) : relativeTime}</span>
-              ` : `
-                <button class="clock-btn iconBtn" aria-label="Last refresh details" aria-describedby="clock-tip-${component.id}">
-                  <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 7.5H7C7 7.63261 7.05268 7.75979 7.14645 7.85355L7.5 7.5ZM7.5 14C3.91015 14 1 11.0899 1 7.5H0C0 11.6421 3.35786 15 7.5 15V14ZM14 7.5C14 11.0899 11.0899 14 7.5 14V15C11.6421 15 15 11.6421 15 7.5H14ZM7.5 1C11.0899 1 14 3.91015 14 7.5H15C15 3.35786 11.6421 0 7.5 0V1ZM7.5 0C3.35786 0 0 3.35786 0 7.5H1C1 3.91015 3.91015 1 7.5 1V0ZM7 3V7.5H8V3H7ZM7.14645 7.85355L10.1464 10.8536L10.8536 10.1464L7.85355 7.14645L7.14645 7.85355Z" fill="currentColor"/></svg>
-                </button>
-                <span class="custom-tooltip" role="tooltip" id="clock-tip-${component.id}">Last refresh: ${relativeTime}</span>
-              `}
+            <div class="card-menu-wrap">
+              <button class="card-menu-btn iconBtn" type="button" title="Card options" aria-label="Card options" aria-controls="card-menu-${component.id}" aria-expanded="false">
+                <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.625 7.5C3.625 8.12132 3.12132 8.625 2.5 8.625C1.87868 8.625 1.375 8.12132 1.375 7.5C1.375 6.87868 1.87868 6.375 2.5 6.375C3.12132 6.375 3.625 6.87868 3.625 7.5ZM8.625 7.5C8.625 8.12132 8.12132 8.625 7.5 8.625C6.87868 8.625 6.375 8.12132 6.375 7.5C6.375 6.87868 6.87868 6.375 7.5 6.375C8.12132 6.375 8.625 6.87868 8.625 7.5ZM13.625 7.5C13.625 8.12132 13.1213 8.625 12.5 8.625C11.8787 8.625 11.375 8.12132 11.375 7.5C11.375 6.87868 11.8787 6.375 12.5 6.375C13.1213 6.375 13.625 6.87868 13.625 7.5Z" fill="currentColor"/></svg>
+              </button>
+              <div class="card-menu" id="card-menu-${component.id}" role="group" aria-label="Card options" hidden>
+                <div class="card-menu-label" id="list-format-label-${component.id}">List format</div>
+                <div class="card-menu-seg" role="radiogroup" aria-labelledby="list-format-label-${component.id}">
+                  ${['off', 'bullets', 'numbered'].map(f => `<button type="button" role="radio" data-format="${f}" tabindex="${normalisedListFormat(component) === f ? 0 : -1}" aria-checked="${normalisedListFormat(component) === f}">${f[0].toUpperCase() + f.slice(1)}</button>`).join('')}
+                </div>
+                <div class="card-menu-hint" hidden>No list found in this card</div>
+                <button type="button" class="card-menu-meta card-menu-info${component.lastOutcome === 'failed' ? ' failed' : ''}">${cardStatusText(component, relativeTime)} ›</button>
+              </div>
             </div>
             <button class="pause-btn iconBtn${component.refreshPaused ? ' active-state' : ''}" title="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}" aria-label="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}">
               <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M6.04995 2.74998C6.04995 2.44623 5.80371 2.19998 5.49995 2.19998C5.19619 2.19998 4.94995 2.44623 4.94995 2.74998V12.25C4.94995 12.5537 5.19619 12.8 5.49995 12.8C5.80371 12.8 6.04995 12.5537 6.04995 12.25V2.74998ZM10.05 2.74998C10.05 2.44623 9.80371 2.19998 9.49995 2.19998C9.19619 2.19998 8.94995 2.44623 8.94995 2.74998V12.25C8.94995 12.5537 9.19619 12.8 9.49995 12.8C9.80371 12.8 10.05 12.5537 10.05 12.25V2.74998Z" fill="currentColor"/></svg>
@@ -2511,11 +2499,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
 
       // Fix relative URLs to absolute
       const contentDiv = card.querySelector('.component-content');
+      finishCardContent(card, component); // fixRelativeUrls + cursor styles + #103 list format
       if (contentDiv && component.url) {
-        fixRelativeUrls(contentDiv, component.url);
-        // Force remove all cursor styles
-        removeCursorStyles(contentDiv);
-        
         // GA4: Track component clicks (when user clicks card content to visit source)
         contentDiv.addEventListener('click', (e) => {
           // Only track if clicking a link or the content itself (not buttons)
@@ -2617,54 +2602,23 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
               // ---- SUCCESS UI ----
               const contentDiv = card.querySelector('.component-content');
               contentDiv.innerHTML = cleanupDuplicates(result.html_cache);
-              fixRelativeUrls(contentDiv, component.url);
-              removeCursorStyles(contentDiv);
+              finishCardContent(card, component);
 
               // Clear error state if present
               const errorBanner = card.querySelector('.card-error-banner');
               if (errorBanner) errorBanner.remove();
 
-              // Reset clock icon to normal state (remove warning triangle if present)
-              const clockBtn = card.querySelector('.clock-btn');
-              if (clockBtn) {
-                clockBtn.classList.remove('failed-state');
-                clockBtn.setAttribute('aria-label', 'Last refresh details');
-                clockBtn.innerHTML = `
-                  <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 7.5H7C7 7.63261 7.05268 7.75979 7.14645 7.85355L7.5 7.5ZM7.5 14C3.91015 14 1 11.0899 1 7.5H0C0 11.6421 3.35786 15 7.5 15V14ZM14 7.5C14 11.0899 11.0899 14 7.5 14V15C11.6421 15 15 11.6421 15 7.5H14ZM7.5 1C11.0899 1 14 3.91015 14 7.5H15C15 3.35786 11.6421 0 7.5 0V1ZM7.5 0C3.35786 0 0 3.35786 0 7.5H1C1 3.91015 3.91015 1 7.5 1V0ZM7 3V7.5H8V3H7ZM7.14645 7.85355L10.1464 10.8536L10.8536 10.1464L7.85355 7.14645L7.14645 7.85355Z" fill="currentColor"/></svg>
-                `;
-              }
-
-              // Update clock tooltip with new timestamp
-              const clockTooltip = card.querySelector('.custom-tooltip');
-              if (clockTooltip) {
-                clockTooltip.textContent = 'Last refresh: just now';
-              }
+              setCardMenuStatus(card, 'Last refresh: just now', false);
 
               showToast(`"${displayName}" refreshed`);
             } else if (!result.success) {
               // ---- FAILURE UI ---- (refreshComponent said failure; content-loss lands here too)
               trackRefreshFailure(component, result, isRetry);
 
-              // 1. Replace clock icon with warning triangle
-              const clockBtn = card.querySelector('.clock-btn');
-              if (clockBtn) {
-                clockBtn.classList.add('failed-state');
-                clockBtn.setAttribute('aria-label', 'Refresh failed');
-                clockBtn.innerHTML = `
-                  <svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M13 17.5a1 1 0 11-2 0 1 1 0 012 0zm-.25-8.25a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5z"/>
-                    <path fill-rule="evenodd" d="M9.836 3.244c.963-1.665 3.365-1.665 4.328 0l8.967 15.504c.963 1.667-.24 3.752-2.165 3.752H3.034c-1.926 0-3.128-2.085-2.165-3.752L9.836 3.244zm3.03.751a1 1 0 00-1.732 0L2.168 19.499A1 1 0 003.034 21h17.932a1 1 0 00.866-1.5L12.866 3.994z"/>
-                  </svg>
-                `;
-              }
+              // 1. Menu status line shows when the last attempt failed
+              setCardMenuStatus(card, `Last attempt failed ${formatRelativeTime(attemptTimestamp)}`, true);
 
-              // 2. Update tooltip text
-              const clockTooltip = card.querySelector('.custom-tooltip');
-              if (clockTooltip) {
-                clockTooltip.textContent = `Last attempt failed ${formatRelativeTime(attemptTimestamp)}`;
-              }
-
-              // 3. Add error banner if not already present
+              // 2. Add error banner if not already present
               const cardHeader = card.querySelector('.card-header');
               const existingBanner = card.querySelector('.card-error-banner');
               if (!existingBanner && cardHeader) {
@@ -2878,11 +2832,13 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       // Hover effect to show it's clickable — handled by the
       // `.card-header .editable-title:hover` CSS rule (themed, dark-mode safe).
 
-      // Clock button click handler (opens info modal)
-      const clockBtn = card.querySelector('.clock-btn');
+      // Menu status line click handler (opens info modal — same modal the clock used to open)
+      wireCardMenu(card, component);
+      const clockBtn = card.querySelector('.card-menu-info');
       if (clockBtn) {
         clockBtn.addEventListener('click', (e) => {
           e.stopPropagation();
+          closeAllCardMenus();
 
           // Compute fresh at click time — component.last_refresh is updated in memory
           // after each single-card refresh, so this always shows the current value.
@@ -2959,13 +2915,6 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             if (e.target === modal) modal.remove();
           });
         });
-      }
-
-      // Clock tooltip: remove .dismissed on re-interaction
-      const clockWrap = card.querySelector('.clock-wrap');
-      if (clockWrap && clockBtn) {
-        clockWrap.addEventListener('mouseenter', () => clockWrap.classList.remove('dismissed'));
-        clockBtn.addEventListener('focus', () => clockWrap.classList.remove('dismissed'));
       }
 
       // ===== CARD RESIZE LOGIC =====
@@ -3172,6 +3121,147 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
     `;
   }
 })(); // Close async IIFE
+
+// ── #103: per-card list format + card options menu ──────────────────────────
+function normalisedListFormat(component) {
+  return window.ListFormat.normaliseListFormat(component && component.listFormat)
+}
+
+function cardStatusText(component, relativeTime) {
+  return component.lastOutcome === 'failed'
+    ? `Last attempt failed ${component.lastErrorAt ? formatRelativeTime(component.lastErrorAt) : relativeTime}`
+    : `Last refresh: ${relativeTime}`
+}
+
+function setCardMenuStatus(card, text, failed) {
+  const meta = card.querySelector('.card-menu-info')
+  if (!meta) return
+  meta.textContent = text + ' ›'
+  meta.classList.toggle('failed', failed)
+}
+
+// The ONE step that turns a card's freshly injected html_cache into what the user sees.
+// Every route that writes .component-content must call this afterwards, so all refresh tiers
+// (and re-capture, and a format change) render identically. html_cache itself is never touched.
+function finishCardContent(card, component) {
+  const contentDiv = card.querySelector('.component-content')
+  if (!contentDiv) return
+  if (component.url) {
+    fixRelativeUrls(contentDiv, component.url)
+    removeCursorStyles(contentDiv) // Force remove all cursor styles
+  }
+  // Read "is there a list to format?" BEFORE formatting: a formatted card has no runs left.
+  const listable = !contentDiv.querySelector('.card-empty-placeholder') && window.ListFormat.hasListableItems(contentDiv)
+  card.dataset.listable = listable ? '1' : '0'
+  if (listable) window.ListFormat.applyListFormat(contentDiv, component.listFormat)
+  const hint = card.querySelector('.card-menu-hint')
+  if (hint) hint.hidden = listable
+}
+
+// Read-then-spread write (CLAUDE.md: never a partial write). 'off' removes the field so
+// unformatted cards carry no extra bytes.
+async function updateCardListFormat(componentId, format) {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get([`comp-${componentId}`], (result) => {
+      const stored = result[`comp-${componentId}`]
+      if (!stored) { resolve(); return }
+      const next = { ...stored }
+      if (format === 'off') delete next.listFormat
+      else next.listFormat = format
+      chrome.storage.sync.set({ [`comp-${componentId}`]: next }, () => resolve())
+    })
+  })
+}
+
+function closeAllCardMenus() {
+  document.querySelectorAll('.card-menu:not([hidden])').forEach(menu => {
+    menu.hidden = true
+    const btn = menu.parentElement.querySelector('.card-menu-btn')
+    if (btn) btn.setAttribute('aria-expanded', 'false')
+  })
+}
+
+let cardMenuGlobalsWired = false
+function wireCardMenuGlobals() {
+  if (cardMenuGlobalsWired) return
+  cardMenuGlobalsWired = true
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.card-menu-wrap')) closeAllCardMenus()
+  })
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return
+    const open = document.querySelector('.card-menu:not([hidden])')
+    if (!open) return
+    const btn = open.parentElement.querySelector('.card-menu-btn')
+    closeAllCardMenus()
+    if (btn) btn.focus()
+    e.stopPropagation()
+  })
+  // A fixed-position menu would float away from its button if the page moved under it
+  window.addEventListener('scroll', closeAllCardMenus, true)
+  window.addEventListener('resize', closeAllCardMenus)
+}
+
+function wireCardMenu(card, component) {
+  wireCardMenuGlobals()
+  const btn = card.querySelector('.card-menu-btn')
+  const menu = card.querySelector('.card-menu')
+  if (!btn || !menu) return
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    const wasOpen = !menu.hidden
+    closeAllCardMenus()
+    if (wasOpen) return
+    const rect = btn.getBoundingClientRect()
+    menu.hidden = false
+    const width = menu.offsetWidth
+    const below = rect.bottom + 6
+    const top = below + menu.offsetHeight + 8 > window.innerHeight ? rect.top - 6 - menu.offsetHeight : below
+    menu.style.top = `${Math.max(8, top)}px`
+    menu.style.left = `${Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))}px`
+    btn.setAttribute('aria-expanded', 'true')
+    const checked = menu.querySelector('[role="radio"][aria-checked="true"]')
+    if (checked) checked.focus()
+  })
+  menu.addEventListener('click', (e) => e.stopPropagation())
+
+  // Focus leaving the whole menu (Tab out) closes it, so it never floats detached from focus
+  card.querySelector('.card-menu-wrap').addEventListener('focusout', (e) => {
+    if (!menu.hidden && e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) closeAllCardMenus()
+  })
+
+  // Radiogroup keyboard: arrows move + select (roving tabindex keeps one tab stop)
+  menu.querySelector('.card-menu-seg').addEventListener('keydown', (e) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
+    if (!step) return
+    const radios = [...menu.querySelectorAll('[role="radio"]')]
+    const next = radios[(radios.indexOf(document.activeElement) + step + radios.length) % radios.length]
+    if (!next) return
+    e.preventDefault()
+    next.focus()
+    next.click()
+  })
+
+  menu.querySelector('.card-menu-seg').addEventListener('click', async (e) => {
+    const choice = e.target.closest('[data-format]')
+    if (!choice) return
+    const format = window.ListFormat.normaliseListFormat(choice.dataset.format)
+    if (format === normalisedListFormat(component)) return
+    component.listFormat = format === 'off' ? undefined : format
+    menu.querySelectorAll('[role="radio"]').forEach(b => {
+      b.setAttribute('aria-checked', String(b === choice))
+      b.tabIndex = b === choice ? 0 : -1
+    })
+    // Re-derive from the stored capture every time, never from the previously formatted DOM
+    const contentDiv = card.querySelector('.component-content')
+    if (component.html_cache && contentDiv) {
+      contentDiv.innerHTML = cleanupDuplicates(component.html_cache)
+      finishCardContent(card, component)
+    }
+    await updateCardListFormat(component.id, format)
+  })
+}
 
 /**
  * Update card size in storage (preserves all fields)

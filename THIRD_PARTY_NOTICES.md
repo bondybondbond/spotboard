@@ -26,20 +26,12 @@
 - **Used in**: Card top bar "Pause" button
 - **Location in repo**: Inline SVG in `public/dashboard.js`
 
-### Clock Icon
+### Card Options (Dots Horizontal) Icon
 
-- **Source**: Teeny Icons (https://github.com/teenyicons/teenyicons)
+- **Source**: Radix UI Icons (https://github.com/radix-ui/icons)
 - **License**: MIT
 - **MIT License Text**: https://opensource.org/licenses/MIT
-- **Used in**: Card top bar "Clock" button (last refresh tooltip)
-- **Location in repo**: Inline SVG in `public/dashboard.js`
-
-### Warning Triangle Icon
-
-- **Source**: Octicons by GitHub Primer (https://github.com/primer/octicons)
-- **License**: MIT
-- **MIT License Text**: https://opensource.org/licenses/MIT
-- **Used in**: Card top bar "Warning triangle" icon (failed refresh state)
+- **Used in**: Card top bar "⋯" card options menu button
 - **Location in repo**: Inline SVG in `public/dashboard.js`
 
 ### Bin / Delete Icon

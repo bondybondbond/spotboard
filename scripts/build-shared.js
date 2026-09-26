@@ -65,3 +65,17 @@ await build({
 });
 fs.copyFileSync('public/utils/exclusion-storage.js', 'dist/utils/exclusion-storage.js');
 console.log('✅ Built public/utils/exclusion-storage.js from src/utils/exclusion-storage.ts');
+
+// list-format (#103)
+await build({
+  entryPoints: ['src/utils/list-format.ts'],
+  outfile: 'public/utils/list-format.js',
+  bundle: true,
+  format: 'iife',
+  globalName: 'ListFormat',
+  footer: { js: 'window.ListFormat = ListFormat;' },
+  target: 'chrome120',
+  banner: { js: '// AUTO-GENERATED from src/utils/list-format.ts — DO NOT EDIT' },
+});
+fs.copyFileSync('public/utils/list-format.js', 'dist/utils/list-format.js');
+console.log('✅ Built public/utils/list-format.js from src/utils/list-format.ts');

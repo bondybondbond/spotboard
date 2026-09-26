@@ -57,3 +57,6 @@ nul
 
 # Auto-generated from src/utils/exclusion-storage.ts (esbuild pre-build)
 public/utils/exclusion-storage.js
+
+# Auto-generated from src/utils/list-format.ts (esbuild pre-build)
+public/utils/list-format.js
