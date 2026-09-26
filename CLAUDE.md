@@ -40,7 +40,7 @@ Chrome extension that captures live website sections (news, deals, scores) into 
 - **Chrome Sync** (`comp-{uuid}`): Metadata — URL, selector, label, fingerprint, excludedSelectors, positionBased, pauseRefresh, lastAttemptAt, lastSuccessAt, lastOutcome, lastErrorCode, lastErrorAt
 - **Chrome Local** (`{uuid}`): HTML content — device-specific, default ~10MB quota (no `unlimitedStorage` permission requested)
 
-**Critical**: ALL code paths writing to `chrome.storage.sync` MUST spread ALL fields — partial writes silently strip metadata.
+**Critical**: ALL code paths writing to `chrome.storage.sync` MUST spread ALL fields — partial writes silently strip metadata. Refresh outcomes go through `persistRefreshOutcomes()` (refresh-engine.js): it re-reads the stored record and writes only refresh-owned fields — never hand-type a field list in a refresh path (#116).
 
 ---
 
