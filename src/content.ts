@@ -1606,6 +1606,46 @@ function dropFromLedger(el: HTMLElement) {
   exclusionLedger = exclusionLedger.filter(e => e !== entry && !(bulkExclusionInProgress && entry?.sig && e.sig === entry.sig));
 }
 
+// #66 (owner ask): Undo the last exclusion action -- a click, a Shift+click group, or one
+// Grow/Shrink step, from the page or the preview. Each action snapshots the whole exclusion
+// state first, so undo is an exact restore (incl. a mistaken click that grabbed a block too big
+// to Shrink below). The ledger is the source of truth that syncExclusions() re-applies, so it is
+// restored alongside the live list. Cleared with the rest of the state in resetExclusions().
+type ExclusionSnapshot = { excluded: HTMLElement[]; ledger: LedgerEntry[]; chain: ExclusionChainState | null };
+const EXCLUSION_UNDO_LIMIT = 50;
+let exclusionUndoStack: ExclusionSnapshot[] = [];
+
+function pushExclusionUndo(): void {
+  exclusionUndoStack.push({
+    excluded: [...excludedElements],
+    ledger: exclusionLedger.map(e => ({ ...e })),
+    chain: activeExclusionChain ? { chain: [...activeExclusionChain.chain], activeIndex: activeExclusionChain.activeIndex } : null,
+  });
+  if (exclusionUndoStack.length > EXCLUSION_UNDO_LIMIT) exclusionUndoStack.shift();
+}
+
+export function undoLastExclusion(): boolean {
+  const snap = exclusionUndoStack.pop();
+  if (!snap) return false;
+  excludedElements.forEach(el => {
+    if (!snap.excluded.includes(el)) {
+      el.style.removeProperty('background');
+      el.style.removeProperty('outline');
+    }
+  });
+  snap.excluded.forEach(el => {
+    el.style.setProperty('background', 'rgba(255, 0, 0, 0.3)', 'important');
+    el.style.setProperty('outline', '2px solid #ff0000', 'important');
+  });
+  excludedElements = snap.excluded;
+  exclusionLedger = snap.ledger;
+  activeExclusionChain = snap.chain;
+  if (previewDebounceTimer) clearTimeout(previewDebounceTimer);
+  previewDebounceTimer = setTimeout(() => updatePreview(), 300);
+  syncExclusionToolbar();
+  return true;
+}
+
 /**
  * #112: match the ledger against what the page shows now. Entries whose node is still on the
  * page stay as they are. For the rest:
@@ -1675,6 +1715,7 @@ function syncExclusions(): void {
 // Clear all exclusion markings and reset array
 export function resetExclusions() {
   clearPreviewHover();
+  exclusionUndoStack = [];
   // Remove red markings from all excluded elements
   excludedElements.forEach(el => {
     el.style.removeProperty('background');
@@ -1690,6 +1731,7 @@ export function resetExclusions() {
 }
 
 export function toggleExclusion(element: HTMLElement) {
+  if (!bulkExclusionInProgress) pushExclusionUndo(); // a bulk caller pushes once for the group
   const isExcluded = excludedElements.includes(element);
 
   if (isExcluded) {
@@ -1749,6 +1791,8 @@ export function toggleExclusion(element: HTMLElement) {
     log('❌ Element excluded:', element.tagName, element.className);
   }
 
+  syncExclusionToolbar(); // Undo becomes available now, not after the debounced re-render
+
   // Debounced preview refresh on exclusion toggle
   if (previewDebounceTimer) clearTimeout(previewDebounceTimer);
   previewDebounceTimer = setTimeout(() => updatePreview(), 300);
@@ -1801,6 +1845,7 @@ export function growExclusion(captureRoot: HTMLElement | null): GrowShrinkResult
   if (!candidate || candidate === captureRoot || !captureRoot.contains(candidate)) {
     return { ok: false, reason: 'reached-capture-root' };
   }
+  pushExclusionUndo(); // before the chain is trimmed/extended, so undo restores it exactly
 
   if (state.chain[state.activeIndex + 1] !== candidate) {
     // Discard any stale levels above the current one (can happen after a Shrink) before
@@ -1819,6 +1864,7 @@ export function shrinkExclusion(): GrowShrinkResult {
   const state = activeExclusionChain;
   if (!state) return { ok: false, reason: 'no-active-exclusion' };
   if (state.activeIndex === 0) return { ok: false, reason: 'already-at-original' };
+  pushExclusionUndo();
   setActiveExclusionIndex(state.activeIndex - 1);
   return { ok: true };
 }
@@ -2032,6 +2078,7 @@ function handleClick(event: MouseEvent) {
         // at click time, same as the exclude path already does when Shift is pressed late.
         const unexcludeGroup = event.shiftKey ? getSimilarSiblings(excludedAncestor!) : null;
         if (unexcludeGroup && unexcludeGroup.length > 1) {
+          pushExclusionUndo();
           bulkExclusionInProgress = true;
           unexcludeGroup.forEach(el => {
             if (excludedElements.includes(el)) toggleExclusion(el);
@@ -2042,6 +2089,7 @@ function handleClick(event: MouseEvent) {
           toggleExclusion(excludedAncestor!);
         }
       } else if (willBulkExclude) {
+        pushExclusionUndo();
         bulkExclusionInProgress = true;
         freshGroup!.forEach(el => {
           if (!excludedElements.includes(el)) toggleExclusion(el);
@@ -2766,6 +2814,12 @@ function syncExclusionToolbar(): void {
   const hasActive = !!activeExclusionChain;
   if (shrinkBtn) shrinkBtn.disabled = !hasActive || activeExclusionChain!.activeIndex === 0;
   if (growBtn) growBtn.disabled = !hasActive;
+  const undoBtn = _confirmationShadow?.querySelector('#undoExclusion') as HTMLButtonElement | null;
+  if (undoBtn) {
+    undoBtn.disabled = exclusionUndoStack.length === 0;
+    undoBtn.style.opacity = undoBtn.disabled ? '0.45' : '1';
+    undoBtn.style.cursor = undoBtn.disabled ? 'default' : 'pointer';
+  }
 }
 
 // #66: exclude straight from the preview. Each render builds a fresh pid -> live element map
@@ -2773,14 +2827,16 @@ function syncExclusionToolbar(): void {
 // render and a stale document's listeners simply stop firing. A preview click is routed through
 // the same toggleExclusion() as a live-page click, so Grow/Shrink, Confirm and refresh treat it
 // exactly like any other exclusion.
-let previewHoverLive: HTMLElement | null = null;
+let previewHoverLive: HTMLElement[] = [];
 
 function clearPreviewHover(): void {
-  if (previewHoverLive && !excludedElements.includes(previewHoverLive)) {
-    previewHoverLive.style.removeProperty('outline');
-    previewHoverLive.style.removeProperty('background');
-  }
-  previewHoverLive = null;
+  previewHoverLive.forEach(el => {
+    if (!excludedElements.includes(el)) {
+      el.style.removeProperty('outline');
+      el.style.removeProperty('background');
+    }
+  });
+  previewHoverLive = [];
 }
 
 // Resolve a preview event target to the live element a click would act on, or null when the
@@ -2801,22 +2857,43 @@ function resolvePreviewTarget(target: EventTarget | null, previewMap: Map<string
   return { previewEl: ownPreviewEl, liveEl };
 }
 
+// Shift (owner ask on #66): same similar-siblings group as a Shift+click on the page (#34/#62/#87).
+function previewGroupFor(liveEl: HTMLElement, shift: boolean): HTMLElement[] {
+  if (!shift) return [liveEl];
+  const group = getSimilarSiblings(liveEl);
+  return group.length > 1 ? group : [liveEl];
+}
+
 function installPreviewExclusion(doc: Document, previewMap: Map<string, HTMLElement>): void {
-  let hoveredPreview: Element | null = null;
-  const setHover = (hit: { previewEl: Element; liveEl: HTMLElement } | null) => {
-    if (hit?.previewEl === hoveredPreview) return;
-    hoveredPreview?.removeAttribute('data-sb-preview-hover');
+  const liveToPreview = new Map<HTMLElement, Element>();
+  doc.querySelectorAll(`[${PREVIEW_PID_ATTR}]`).forEach(node => {
+    const live = previewMap.get(node.getAttribute(PREVIEW_PID_ATTR)!);
+    if (live) liveToPreview.set(live, node);
+  });
+  let hoverKey = '';
+  let hoveredPreview: Element[] = [];
+  const setHover = (hit: { previewEl: Element; liveEl: HTMLElement } | null, shift = false) => {
+    const key = hit ? `${hit.previewEl.getAttribute(PREVIEW_PID_ATTR)}|${shift}` : '';
+    if (key === hoverKey) return;
+    hoverKey = key;
+    hoveredPreview.forEach(el => el.removeAttribute('data-sb-preview-hover'));
     clearPreviewHover();
-    hoveredPreview = hit?.previewEl ?? null;
+    hoveredPreview = [];
     if (!hit) return;
-    hit.previewEl.setAttribute('data-sb-preview-hover', 'true');
-    if (!excludedElements.includes(hit.liveEl)) {
-      hit.liveEl.style.setProperty('outline', '2px dashed #ff0000', 'important');
-      hit.liveEl.style.setProperty('background', 'transparent', 'important');
-      previewHoverLive = hit.liveEl;
-    }
+    const group = previewGroupFor(hit.liveEl, shift);
+    group.forEach(live => {
+      const node = live === hit.liveEl ? hit.previewEl : liveToPreview.get(live);
+      if (node) { node.setAttribute('data-sb-preview-hover', 'true'); hoveredPreview.push(node); }
+      if (!excludedElements.includes(live)) {
+        live.style.setProperty('outline', '2px dashed #ff0000', 'important');
+        live.style.setProperty('background', 'transparent', 'important');
+        previewHoverLive.push(live);
+      }
+    });
   };
-  doc.addEventListener('mouseover', (e) => setHover(resolvePreviewTarget(e.target, previewMap)), true);
+  // mousemove, not mouseover: Shift is often pressed after the pointer stops, and the group
+  // preview should follow it on the next small move.
+  doc.addEventListener('mousemove', (e) => setHover(resolvePreviewTarget(e.target, previewMap), e.shiftKey), true);
   doc.documentElement.addEventListener('mouseleave', () => setHover(null));
   // A click in the preview moves keyboard focus into the iframe, where the page's own Esc
   // (cancel) / Enter (Continue) listeners never see the keydown -- hand those two keys back.
@@ -2832,8 +2909,17 @@ function installPreviewExclusion(doc: Document, previewMap: Map<string, HTMLElem
     const hit = resolvePreviewTarget(e.target, previewMap);
     if (!hit) return;
     const willExclude = !excludedElements.includes(hit.liveEl);
+    const group = previewGroupFor(hit.liveEl, e.shiftKey);
     setHover(null);
-    toggleExclusion(hit.liveEl);
+    if (group.length > 1) {
+      // One undo step for the whole group, mirroring the live-page Shift+click bulk path.
+      pushExclusionUndo();
+      bulkExclusionInProgress = true;
+      group.forEach(el => { if (excludedElements.includes(el) !== willExclude) toggleExclusion(el); });
+      bulkExclusionInProgress = false;
+    } else {
+      toggleExclusion(hit.liveEl);
+    }
     // Owner choice (#66): the live match is revealed on click, not on hover -- scroll it into
     // view only if it isn't already visible, so the red exclusion mark is always seen.
     if (willExclude) {
@@ -2951,9 +3037,10 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       </div>
     </div>
     <div id="spotboard-modal-body" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
-      <div style="padding: 8px 20px 0; flex-shrink: 0; font-family: inherit;">
+      <div style="display: flex; align-items: baseline; padding: 8px 20px 0; flex-shrink: 0; font-family: inherit;">
         <span style="font-size: 13px; color: white; font-family: inherit;">Preview</span>
         <span style="font-size: 11px; color: rgba(255,255,255,0.85); font-family: inherit; margin-left: 6px;">Click anything here to exclude it</span>
+        <button id="undoExclusion" type="button" disabled title="Undo last exclusion change" style="margin-left: auto; border: none; background: none; padding: 0; color: #fff; font-size: 11px; font-family: inherit; text-decoration: underline; cursor: pointer; white-space: nowrap;">↶ Undo</button>
       </div>
       <div style="padding: 8px 20px 12px; flex: 1; min-height: 0; overflow-y: auto;">
         <div id="spotboard-preview-container">
@@ -3029,6 +3116,12 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
     e.preventDefault();
     shrinkExclusion();
     syncExclusionToolbar();
+  });
+  const undoBtn = modal.querySelector('#undoExclusion') as HTMLButtonElement;
+  undoBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    undoLastExclusion();
   });
   growBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
