@@ -134,6 +134,7 @@ var DomSnapshot = (() => {
     return span;
   }
   function promoteVideoPosters(el, label) {
+    el.querySelectorAll("template").forEach((t) => promoteVideoPosters(t.content, label));
     el.querySelectorAll("video").forEach((videoEl) => {
       const existingImg = videoEl.querySelector("img");
       if (existingImg) {

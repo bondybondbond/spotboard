@@ -2247,13 +2247,27 @@ function extractVideoPosters(html: string, sourceUrl?: string): string {
   if (!html || !/<video/i.test(html)) return html;
   const temp = document.createElement('div');
   temp.innerHTML = html;
-  temp.querySelectorAll<HTMLElement>('video').forEach(videoEl => {
+  processVideosIn(temp, sourceUrl);
+  return temp.innerHTML;
+}
+
+/** Runs the extractVideoPosters replacement logic over `root`, then recurses into any
+ * <template> elements' inert .content fragment -- querySelectorAll never descends into those
+ * on its own, so a <video> hidden inside one would otherwise survive untouched. */
+function processVideosIn(root: ParentNode, sourceUrl?: string): void {
+  root.querySelectorAll('template').forEach(t => processVideosIn((t as HTMLTemplateElement).content, sourceUrl));
+  root.querySelectorAll<HTMLElement>('video').forEach(videoEl => {
     const existingImg = videoEl.querySelector('img');
     if (existingImg) { videoEl.replaceWith(existingImg); return; } // site's own fallback wins
 
     const poster = videoEl.getAttribute('poster') || videoEl.getAttribute('data-poster');
+    // stripEventHandlers() (runs upstream, on the raw string, before this function ever sees it)
+    // neuters a poster="javascript:..." attribute to exactly poster="#" -- resolving THAT against
+    // sourceUrl produces "https://sourceUrl#", which starts with "http" and would otherwise slip
+    // past the check below as if it were a real image URL. Reject the sentinel value itself.
+    const isNeuteredHandler = poster?.trim() === '#';
     let resolvedUrl: string | null = null;
-    if (poster && poster.trim()) {
+    if (poster && poster.trim() && !isNeuteredHandler) {
       try {
         const candidate = sourceUrl ? new URL(poster, sourceUrl).href : new URL(poster).href;
         if (candidate.startsWith('http')) resolvedUrl = candidate;
@@ -2271,7 +2285,6 @@ function extractVideoPosters(html: string, sourceUrl?: string): string {
     videoEl.replaceWith(img);
     console.log('[SpotBoard] video poster promoted to img:', resolvedUrl.substring(0, 80));
   });
-  return temp.innerHTML;
 }
 
 interface SanitizationComponent {

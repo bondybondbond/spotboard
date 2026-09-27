@@ -172,7 +172,10 @@ function videoPlaceholderMarkup(): HTMLElement {
  * @param el    Root element to search within
  * @param label Refresh context label for console log (e.g. 'tab-refresh', 'capture')
  */
-export function promoteVideoPosters(el: Element, label: string): void {
+export function promoteVideoPosters(el: ParentNode, label: string): void {
+  // <template> content lives in an inert DocumentFragment (.content) that querySelectorAll
+  // never descends into — a <video> hidden inside one would otherwise survive untouched.
+  el.querySelectorAll('template').forEach(t => promoteVideoPosters((t as HTMLTemplateElement).content, label));
   el.querySelectorAll('video').forEach(videoEl => {
     const existingImg = videoEl.querySelector('img');
     if (existingImg) { videoEl.replaceWith(existingImg); return; } // site's own fallback wins
