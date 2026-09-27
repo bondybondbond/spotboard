@@ -2339,7 +2339,8 @@ function recordExclusionCheck(component: SanitizationComponent, check: Exclusion
  * Consolidates the 4-step sequence that was previously duplicated across
  * all refresh paths in refresh-engine.js.
  *
- * Pipeline: applyExclusions → extractBackgroundImages → preserveImageClassifications → classifyImagesForRefresh → cleanupDuplicates
+ * Pipeline: cleanupDuplicates → applyExclusions → extractBackgroundImages → preserveImageClassifications → classifyImagesForRefresh
+ * (#117: dedup moved ahead of exclusions -- see inline comment below)
  *
  * @param inputHtml - The raw HTML from a refresh (fetch, background tab, or active tab)
  * @param component - The component metadata object (needs .excludedSelectors, .html_cache, .selector)
@@ -2350,11 +2351,18 @@ export function applySanitizationPipeline(inputHtml: string, component: Sanitiza
   // the image-classification passes below all assign this HTML to .innerHTML, which would
   // otherwise fire (and CSP-block) any on* handler the captured page carried.
   const safeHtml = stripEventHandlers(inputHtml);
-  const { html: withExclusions, unresolved } = applyExclusionsWithStats(safeHtml, component.excludedSelectors, component.selector, component.exclusionSignatures);
+  // #117: dedupe BEFORE exclusions. At capture time the live page's own CSS has already hidden
+  // a responsive/mobile twin before the user can click exclude, so cleanupDuplicates() has
+  // nothing to do there. At refresh (raw fetch, no CSS) both twins are present, and dedup's
+  // structural heuristic is the only thing that can remove the hidden one -- but if exclusions
+  // ran first, the excluded (visible) twin is gone before dedup ever gets to compare the pair,
+  // so the once-hidden twin loses its partner and survives. Deduping first restores the same
+  // single-twin sibling shape the exclusion selector was originally generated against.
+  const deduped = cleanupDuplicates(safeHtml);
+  const { html: withExclusions, unresolved } = applyExclusionsWithStats(deduped, component.excludedSelectors, component.selector, component.exclusionSignatures);
   const withBgImages = extractBackgroundImages(withExclusions);
   const withPreserved = preserveImageClassifications(withBgImages, component.html_cache || '');
-  const withImageClassification = classifyImagesForRefresh(withPreserved);
-  const finalHtml = cleanupDuplicates(withImageClassification);
+  const finalHtml = classifyImagesForRefresh(withPreserved);
   // #96: judged on the FINAL card, since that's what the user will see
   recordExclusionCheck(component, findLeakedExclusions(finalHtml, unresolved, component.exclusionSignatures), finalHtml);
   return finalHtml;
