@@ -22,6 +22,7 @@
 
 ### Fixed
 
+- **Excluding a duplicate mobile/desktop version of a card no longer lets it come back on refresh** (#117): some sites (e.g. The Verge, NPR) quietly render the same card twice for different screen sizes, showing only one at a time. Excluding the one you see used to let the other, previously-hidden copy reappear on the next refresh. Both copies are now recognised as duplicates before your exclusion is applied, so the one you removed stays removed (`src/utils/dom-cleanup.ts`).
 - **Card details window no longer shows "Capture method"** (#82): the card details window (opened from the ⋯ menu) had a "Position-based / Header-based" line that was internal jargon with no use to you. It's gone; how cards capture and refresh is unchanged.
 - **No more false "Excluding heading may affect refresh" warning** (#92): in exclusion mode, clicking a heading or title no longer pops up an orange warning. It was a false alarm — excluding headings doesn't affect refresh — and the warnings stacked up when you Shift+clicked several at once.
 - **Green/red colouring now covers only the number** (#113): after a refresh on JS-heavy sites (e.g. Polymarket comments), a whole sentence containing "+8.7" or "-300" could turn green/red. Now only the number is coloured on every refresh route, and a trailing full stop or comma is left uncoloured.
