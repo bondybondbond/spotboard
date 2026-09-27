@@ -1056,7 +1056,9 @@
       vertical-align: middle;
     }
     
-    /* Videos always stay small (no classification yet) */
+    /* #119: videos with a poster are promoted to <img> before this ever renders (see
+       extractVideoPosters / promoteVideoPosters) and get a real data-scale-context tier via the
+       rules above. This tiny fixed size is only the fallback for a video with no usable poster. */
     .component-content video {
       max-width: 25px !important;
       max-height: 25px !important;

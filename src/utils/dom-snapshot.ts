@@ -145,6 +145,49 @@ export function promoteBackgroundImages(el: Element, label: string): void {
   });
 }
 
+/**
+ * Converts captured <video poster="URL"> (or lazy-loaded data-poster) elements into plain
+ * <img src="URL"> — #119: video was hardcoded to a 25px CSS tier because the sizing pipeline
+ * only ever classifies <img>. Converting to a real <img> before that pipeline runs gets it a
+ * genuine data-scale-context tier for free, and makes "no controls/no sound/no playback"
+ * structural instead of CSS-suppressed (there's no <video> tag left in the output).
+ * Stamps data-scale-context using the rendered height recorded pre-clone (data-bg-h — same
+ * attribute promoteBackgroundImages uses, cleaned up by the same caller).
+ * Videos with no usable absolute poster URL are left untouched (today's tiny-icon fallback).
+ *
+ * @param el    Root element to search within
+ * @param label Refresh context label for console log (e.g. 'tab-refresh', 'capture')
+ */
+export function promoteVideoPosters(el: Element, label: string): void {
+  el.querySelectorAll('video').forEach(videoEl => {
+    if (videoEl.querySelector('img')) return; // site already provides an <img> fallback — keep it
+    const poster = videoEl.getAttribute('poster') || videoEl.getAttribute('data-poster');
+    if (!poster || !poster.trim()) return;
+    let url: string;
+    try {
+      url = new URL(poster, window.location.href).href;
+    } catch {
+      return; // Invalid URL — leave video as-is
+    }
+    if (!url.startsWith('http')) return;
+    const img = document.createElement('img');
+    img.src = url;
+    img.setAttribute('data-spotboard-source', 'video-poster');
+    img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
+    const liveRect = (videoEl as HTMLElement).getBoundingClientRect?.();
+    const vH = (liveRect && liveRect.height > 0)
+      ? liveRect.height
+      : parseInt((videoEl as HTMLElement).getAttribute?.('data-bg-h') || '0');
+    if (vH > 0) {
+      img.setAttribute('data-scale-context', vH >= 200 ? 'preview' : vH >= 100 ? 'medium' : 'thumbnail');
+    } else {
+      img.setAttribute('data-scale-context', 'thumbnail'); // fallback: no height info available
+    }
+    videoEl.replaceWith(img);
+    console.log(`[SpotBoard] video poster promoted to img (${label}):`, url.substring(0, 80));
+  });
+}
+
 const TIER_RANK = ['icon', 'small', 'thumbnail', 'medium', 'preview']
 const RUN_MIN_LONG_SIDE = 100 // px — deal images fill a 108–198px slot (letterboxed: short side can be 61px), avatars are 18px
 const RUN_MIN_SHORT_SIDE = 40 // px — excludes strips/dividers

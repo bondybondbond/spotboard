@@ -2218,11 +2218,48 @@ function extractBackgroundImages(html: string): string {
   return temp.innerHTML;
 }
 
+/**
+ * Converts captured <video poster="URL"> (or lazy-loaded data-poster) elements into plain
+ * <img src="URL"> -- #119: video was hardcoded to a 25px CSS tier because the sizing pipeline
+ * only ever classifies <img>. Once it's a real <img>, classifyImagesForRefresh() below gives
+ * it a genuine tier like any other image -- no video-specific classification logic needed.
+ *
+ * Guards: requires a poster value; relative URLs are resolved against `sourceUrl` when given,
+ * otherwise (no sourceUrl) only already-absolute http(s) URLs are promoted. Videos with no
+ * usable poster are left untouched -- today's tiny-icon fallback, no regression.
+ * Operates on a detached HTML string, same as extractBackgroundImages above -- no live DOM repaint.
+ */
+function extractVideoPosters(html: string, sourceUrl?: string): string {
+  if (!html || !html.includes('<video')) return html;
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  temp.querySelectorAll<HTMLElement>('video').forEach(videoEl => {
+    if (videoEl.querySelector('img')) return; // site already provides an <img> fallback — keep it
+    const poster = videoEl.getAttribute('poster') || videoEl.getAttribute('data-poster');
+    if (!poster || !poster.trim()) return;
+    let resolved: string;
+    try {
+      resolved = sourceUrl ? new URL(poster, sourceUrl).href : new URL(poster).href;
+    } catch {
+      return; // Invalid / unresolvable URL -- leave video as-is
+    }
+    if (!resolved.startsWith('http')) return;
+    const img = document.createElement('img');
+    img.src = resolved;
+    img.setAttribute('data-spotboard-source', 'video-poster');
+    img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
+    videoEl.replaceWith(img);
+    console.log('[SpotBoard] video poster promoted to img:', resolved.substring(0, 80));
+  });
+  return temp.innerHTML;
+}
+
 interface SanitizationComponent {
   excludedSelectors?: string[];
   html_cache?: string;
   selector?: string;
   exclusionSignatures?: ExclusionSignature[];
+  url?: string;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -2339,7 +2376,7 @@ function recordExclusionCheck(component: SanitizationComponent, check: Exclusion
  * Consolidates the 4-step sequence that was previously duplicated across
  * all refresh paths in refresh-engine.js.
  *
- * Pipeline: cleanupDuplicates → applyExclusions → extractBackgroundImages → preserveImageClassifications → classifyImagesForRefresh
+ * Pipeline: cleanupDuplicates → applyExclusions → extractBackgroundImages → extractVideoPosters → preserveImageClassifications → classifyImagesForRefresh
  * (#117: dedup moved ahead of exclusions -- see inline comment below)
  *
  * @param inputHtml - The raw HTML from a refresh (fetch, background tab, or active tab)
@@ -2361,7 +2398,8 @@ export function applySanitizationPipeline(inputHtml: string, component: Sanitiza
   const deduped = cleanupDuplicates(safeHtml);
   const { html: withExclusions, unresolved } = applyExclusionsWithStats(deduped, component.excludedSelectors, component.selector, component.exclusionSignatures);
   const withBgImages = extractBackgroundImages(withExclusions);
-  const withPreserved = preserveImageClassifications(withBgImages, component.html_cache || '');
+  const withVideoPosters = extractVideoPosters(withBgImages, component.url);
+  const withPreserved = preserveImageClassifications(withVideoPosters, component.html_cache || '');
   const finalHtml = classifyImagesForRefresh(withPreserved);
   // #96: judged on the FINAL card, since that's what the user will see
   recordExclusionCheck(component, findLeakedExclusions(finalHtml, unresolved, component.exclusionSignatures), finalHtml);

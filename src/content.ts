@@ -1,6 +1,6 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
 import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset } from './utils/dom-cleanup';
-import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, classifyImages } from './utils/dom-snapshot';
+import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, promoteVideoPosters, classifyImages } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
 import { fitSyncRecord, SAVE_TOO_BIG_MESSAGE, friendlySaveError } from './utils/exclusion-storage';
 import { mergeRecapture } from './utils/recapture';
@@ -1215,6 +1215,17 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
     }
   });
 
+  // 🎯 MARK VIDEO POSTER RENDERED DIMENSIONS before cloning (#119).
+  // promoteVideoPosters() runs on the detached clone, where getBoundingClientRect() returns
+  // {0,0} — same reasoning as the bg-image dimension marking above.
+  element.querySelectorAll<HTMLElement>('video[poster], video[data-poster]').forEach(el => {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) {
+      el.setAttribute('data-bg-w', String(Math.round(r.width)));
+      el.setAttribute('data-bg-h', String(Math.round(r.height)));
+    }
+  });
+
   // 🎯 MARK USER-EXCLUDED ELEMENTS before cloning.
   // A data-attribute marker rides along with cloneNode / HTML-string serialisation, so it
   // survives shadow-DOM flattening, <slot> projection, and any earlier sibling removals —
@@ -1335,6 +1346,10 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
   // 🎯 CSS BACKGROUND-IMAGE: Promote inline bg-image to <img> for image capture (shared via DomSnapshot)
   // Uses data-bg-h attribute stamped above (getBoundingClientRect=0 on detached clone).
   promoteBackgroundImages(clone, 'capture');
+
+  // 🎯 VIDEO POSTER PROMOTION: Convert <video poster> to <img> for image-pipeline sizing (#119)
+  // Uses data-bg-h attribute stamped above (getBoundingClientRect=0 on detached clone).
+  promoteVideoPosters(clone, 'capture');
 
   // 🎯 PICTURE SOURCE FLATTENING: Stamp largest <source> URL into img.src at capture time.
   // <picture> + <source media="(min-width: Npx)"> in a narrow card context (~380px) causes
@@ -2666,6 +2681,8 @@ function getPreviewCSS(): string {
       max-width: 25px !important; max-height: 25px !important;
       object-fit: contain; display: inline-block; vertical-align: middle;
     }
+    /* #119: videos with a poster are promoted to <img> before this preview renders — this tiny
+       fixed size is only the fallback for a video with no usable poster. */
     video {
       max-width: 25px !important; max-height: 25px !important;
       object-fit: contain; display: inline-block; vertical-align: middle;

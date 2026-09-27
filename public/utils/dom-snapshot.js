@@ -25,7 +25,8 @@ var DomSnapshot = (() => {
     cloneWithShadow: () => cloneWithShadow,
     harmonizeRepeatedImageRuns: () => harmonizeRepeatedImageRuns,
     promoteBackgroundImages: () => promoteBackgroundImages,
-    promoteLazyImages: () => promoteLazyImages
+    promoteLazyImages: () => promoteLazyImages,
+    promoteVideoPosters: () => promoteVideoPosters
   });
   function cloneWithShadow(el, onClone) {
     const clone = el.cloneNode(false);
@@ -123,6 +124,33 @@ var DomSnapshot = (() => {
       bgEl.removeAttribute?.("data-bg-h");
       bgEl.appendChild(img);
       console.log(`[SpotBoard] bg-image promoted to img (${label}):`, url.substring(0, 80));
+    });
+  }
+  function promoteVideoPosters(el, label) {
+    el.querySelectorAll("video").forEach((videoEl) => {
+      if (videoEl.querySelector("img")) return;
+      const poster = videoEl.getAttribute("poster") || videoEl.getAttribute("data-poster");
+      if (!poster || !poster.trim()) return;
+      let url;
+      try {
+        url = new URL(poster, window.location.href).href;
+      } catch {
+        return;
+      }
+      if (!url.startsWith("http")) return;
+      const img = document.createElement("img");
+      img.src = url;
+      img.setAttribute("data-spotboard-source", "video-poster");
+      img.style.cssText = "width:100%;height:auto;display:block;max-width:100%";
+      const liveRect = videoEl.getBoundingClientRect?.();
+      const vH = liveRect && liveRect.height > 0 ? liveRect.height : parseInt(videoEl.getAttribute?.("data-bg-h") || "0");
+      if (vH > 0) {
+        img.setAttribute("data-scale-context", vH >= 200 ? "preview" : vH >= 100 ? "medium" : "thumbnail");
+      } else {
+        img.setAttribute("data-scale-context", "thumbnail");
+      }
+      videoEl.replaceWith(img);
+      console.log(`[SpotBoard] video poster promoted to img (${label}):`, url.substring(0, 80));
     });
   }
   var TIER_RANK = ["icon", "small", "thumbnail", "medium", "preview"];
