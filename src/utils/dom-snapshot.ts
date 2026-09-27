@@ -113,7 +113,11 @@ export function promoteLazyImages(el: Element): void {
  * @param label Refresh context label for console log (e.g. 'tab-refresh', 'capture')
  */
 export function promoteBackgroundImages(el: Element, label: string): void {
-  el.querySelectorAll('[style*="background-image"]').forEach(bgEl => {
+  // Cold-review catch: a shorthand-authored poster (`background: url(...) center/cover no-repeat`)
+  // doesn't contain the substring "background-image", so this selector used to skip it entirely.
+  // Broadened to the bare "background" substring; el.style.backgroundImage (read below) resolves
+  // correctly from either the shorthand or the longhand form regardless.
+  el.querySelectorAll('[style*="background"]').forEach(bgEl => {
     if (bgEl.querySelector('img')) return; // already has img child
     const bgVal = (bgEl instanceof HTMLElement) ? bgEl.style.backgroundImage : '';
     // Skip multi-layer backgrounds (multiple url() calls) and non-url() values.
@@ -126,6 +130,10 @@ export function promoteBackgroundImages(el: Element, label: string): void {
     const img = document.createElement('img');
     img.src = url;
     img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
+    // #93: marks this img as "available to claim" for a nearby posterless <video> -- see
+    // hasNearbyPromotedPoster(). Distinct from data-spotboard-source="video-poster" (that's for a
+    // <video>'s OWN poster attribute promoted directly, a different code path).
+    img.setAttribute('data-spotboard-bg-promoted', 'true');
     // Classify: live DOM has real getBoundingClientRect height; detached clone falls back to data-bg-h.
     const liveRect = (bgEl as HTMLElement).getBoundingClientRect?.();
     const bgH = (liveRect && liveRect.height > 0)
@@ -143,6 +151,31 @@ export function promoteBackgroundImages(el: Element, label: string): void {
     bgEl.appendChild(img);
     console.log(`[SpotBoard] bg-image promoted to img (${label}):`, url.substring(0, 80));
   });
+}
+
+/**
+ * True if a poster image promoteBackgroundImages() just promoted from a nearby CSS background-image
+ * div sits within a couple of ancestor levels of `videoEl` (#93). Bounded to 2 levels: confirmed live
+ * on npr.org that a <video> and its JW Player poster div are COUSINS (both children of a shared
+ * grandparent wrapper), not parent/child or siblings. Deliberately not unbounded -- a wider walk
+ * would risk matching an unrelated image elsewhere in a large card (e.g. a sidebar playlist
+ * thumbnail for a different item entirely).
+ *
+ * Cold-review catch: matching ANY nearby <img> (not just a bg-promoted one) meant a multi-video
+ * container (e.g. a grid of video tiles sharing a close common ancestor) let one tile's real poster
+ * silently "cover" every OTHER posterless tile within 2 levels -- those videos were removed with no
+ * placeholder at all, a worse content-loss regression than the one #93 fixes. Only match the specific
+ * `data-spotboard-bg-promoted` marker promoteBackgroundImages() sets, and CONSUME it (strip the
+ * marker) on match so a second nearby video can't also claim the same promoted image.
+ */
+function hasNearbyPromotedPoster(videoEl: Element): boolean {
+  let ancestor: Element | null = videoEl.parentElement;
+  for (let i = 0; i < 2 && ancestor; i++) {
+    const claim = ancestor.querySelector('img[data-spotboard-bg-promoted]');
+    if (claim) { claim.removeAttribute('data-spotboard-bg-promoted'); return true; }
+    ancestor = ancestor.parentElement;
+  }
+  return false;
 }
 
 /** A no-video-tag stand-in for a video SpotBoard can't get a real poster image for.
@@ -191,7 +224,20 @@ export function promoteVideoPosters(el: ParentNode, label: string): void {
       }
     }
 
-    if (!url) { videoEl.replaceWith(videoPlaceholderMarkup()); return; }
+    if (!url) {
+      // #93: JW Player (NPR, CNN) renders its poster as a NEARBY element with a CSS
+      // background-image, not the <video>'s own poster/data-poster attribute or a child <img>.
+      // promoteBackgroundImages() (dom-snapshot.ts) already promoted that element to a real <img>
+      // before this function runs (see content.ts's capture pipeline order). Confirmed live on
+      // npr.org: the <video> and .jw-preview are COUSINS, not siblings (both sit two levels up,
+      // under a shared .jw-wrapper) -- a plain parentElement check misses it. If a real poster is
+      // showing anywhere nearby, that's the useful visual representation — a "Video (preview
+      // unavailable)" placeholder next to it would be actively misleading. Mirrors the same check
+      // in dom-cleanup.ts's processVideosIn().
+      if (hasNearbyPromotedPoster(videoEl)) { videoEl.remove(); return; }
+      videoEl.replaceWith(videoPlaceholderMarkup());
+      return;
+    }
 
     const img = document.createElement('img');
     img.src = url;

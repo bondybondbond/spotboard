@@ -101,7 +101,7 @@ var DomSnapshot = (() => {
     });
   }
   function promoteBackgroundImages(el, label) {
-    el.querySelectorAll('[style*="background-image"]').forEach((bgEl) => {
+    el.querySelectorAll('[style*="background"]').forEach((bgEl) => {
       if (bgEl.querySelector("img")) return;
       const bgVal = bgEl instanceof HTMLElement ? bgEl.style.backgroundImage : "";
       if (!bgVal || !bgVal.trim().startsWith("url(") || (bgVal.match(/url\(/g) || []).length !== 1) return;
@@ -112,6 +112,7 @@ var DomSnapshot = (() => {
       const img = document.createElement("img");
       img.src = url;
       img.style.cssText = "width:100%;height:auto;display:block;max-width:100%";
+      img.setAttribute("data-spotboard-bg-promoted", "true");
       const liveRect = bgEl.getBoundingClientRect?.();
       const bgH = liveRect && liveRect.height > 0 ? liveRect.height : parseInt(bgEl.getAttribute?.("data-bg-h") || "0");
       if (bgH > 0) {
@@ -125,6 +126,18 @@ var DomSnapshot = (() => {
       bgEl.appendChild(img);
       console.log(`[SpotBoard] bg-image promoted to img (${label}):`, url.substring(0, 80));
     });
+  }
+  function hasNearbyPromotedPoster(videoEl) {
+    let ancestor = videoEl.parentElement;
+    for (let i = 0; i < 2 && ancestor; i++) {
+      const claim = ancestor.querySelector("img[data-spotboard-bg-promoted]");
+      if (claim) {
+        claim.removeAttribute("data-spotboard-bg-promoted");
+        return true;
+      }
+      ancestor = ancestor.parentElement;
+    }
+    return false;
   }
   function videoPlaceholderMarkup() {
     const span = document.createElement("span");
@@ -151,6 +164,10 @@ var DomSnapshot = (() => {
         }
       }
       if (!url) {
+        if (hasNearbyPromotedPoster(videoEl)) {
+          videoEl.remove();
+          return;
+        }
         videoEl.replaceWith(videoPlaceholderMarkup());
         return;
       }

@@ -561,6 +561,47 @@ function isResponsiveDuplicate(
 }
 
 /**
+ * True if `el` carries a single-layer http(s) background-image CSS url() that
+ * extractBackgroundImages() below would promote to a real <img> -- e.g. JW Player's
+ * .jw-preview poster div, or NBC's sidebar bg-image thumbnails. Shared with
+ * cleanupDuplicates()'s empty-wrapper removal so that pass doesn't delete the div first
+ * (it runs before extractBackgroundImages in the pipeline -- see #93) and strand a real
+ * poster image as an unreachable "safe to remove, no img/a/svg/video child" wrapper.
+ * Same guards as extractBackgroundImages: multi-layer backgrounds and non-url() values
+ * don't count as promotable content here either.
+ */
+function hasPromotableBackgroundImage(el: Element): boolean {
+  const bgVal = (el as HTMLElement).style?.backgroundImage;
+  if (!bgVal || !bgVal.trim().startsWith('url(')) return false;
+  return (bgVal.match(/url\(/g) || []).length === 1;
+}
+
+/**
+ * True if a poster image extractBackgroundImages() just promoted from a nearby CSS background-image
+ * div sits within a couple of ancestor levels of `videoEl` (#93). Bounded to 2 levels: confirmed live
+ * on npr.org that a <video> and its JW Player poster div are COUSINS (both children of a shared
+ * grandparent wrapper), not parent/child or siblings. Deliberately not unbounded -- a wider walk
+ * would risk matching an unrelated image elsewhere in a large card (e.g. a sidebar playlist
+ * thumbnail for a different item entirely).
+ *
+ * Cold-review catch: matching ANY nearby <img> (not just a bg-promoted one) meant a multi-video
+ * container (e.g. a grid of video tiles sharing a close common ancestor) let one tile's real poster
+ * silently "cover" every OTHER posterless tile within 2 levels -- those videos were removed with no
+ * placeholder at all, a worse content-loss regression than the one #93 fixes. Only match the specific
+ * `data-spotboard-bg-promoted` marker extractBackgroundImages() sets, and CONSUME it (strip the
+ * marker) on match so a second nearby video can't also claim the same promoted image.
+ */
+function hasNearbyPromotedPoster(videoEl: Element): boolean {
+  let ancestor: Element | null = videoEl.parentElement;
+  for (let i = 0; i < 2 && ancestor; i++) {
+    const claim = ancestor.querySelector('img[data-spotboard-bg-promoted]');
+    if (claim) { claim.removeAttribute('data-spotboard-bg-promoted'); return true; }
+    ancestor = ancestor.parentElement;
+  }
+  return false;
+}
+
+/**
  * Remove duplicate and hidden elements from HTML
  * Fixes modern responsive design pattern where sites include both mobile/desktop content
  * 
@@ -852,9 +893,10 @@ export function cleanupDuplicates(html: string): string {
     const hasLinks = el.querySelector('a');
     const hasSvg = el.querySelector('svg');
     const hasVideo = el.querySelector('video');
-    
+    const hasBgImage = hasPromotableBackgroundImage(el);
+
     // If it's just a spacing wrapper with no content
-    if (!hasText && !hasImages && !hasLinks && !hasSvg && !hasVideo) {
+    if (!hasText && !hasImages && !hasLinks && !hasSvg && !hasVideo && !hasBgImage) {
       emptyWrappersRemoved++;
       
       // Log first 5 removed elements for debugging
@@ -999,9 +1041,24 @@ export function cleanupDuplicates(html: string): string {
       
       // Remove positioning that escapes cards
       newStyle = newStyle.replace(/position\s*:\s*(fixed|sticky)\s*;?/gi, '');
-      
+
       // Remove ALL background properties (background, background-color, background-image, background-blend-mode, etc.)
-      newStyle = newStyle.replace(/background[^:]*:\s*[^;]*;?/gi, '');
+      // -- EXCEPT a single-layer http(s) background-image url() (#93: JW Player .jw-preview poster
+      // divs, NBC sidebar bg-image thumbnails): that's real promotable content extractBackgroundImages()
+      // turns into a real <img> right after this function returns, not a dark/dangerous overlay.
+      // Multi-layer backgrounds (gradient overlays etc., the original Sportskeeda dark-overlay case
+      // this pass exists for) are untouched by this exemption and still get stripped below.
+      // Cold-review catch: `el.style.backgroundImage` (what hasPromotableBackgroundImage reads) is
+      // populated by the CSSOM from EITHER the `background-image:` longhand OR a `background: url(...)
+      // ...` shorthand -- but a declaration only matches this regex loop as a `background-image:` token
+      // when the site wrote the longhand. A shorthand-authored poster (`background: url(...) center/cover
+      // no-repeat`) has isPromotableBg=true yet its one and only regex match starts with `background:`,
+      // so the old `/^background-image\s*:/` test rejected it and deleted the poster anyway -- silently
+      // reproducing the exact bug this fix targets, just via the shorthand spelling. Match either form.
+      const isPromotableBg = hasPromotableBackgroundImage(el);
+      newStyle = newStyle.replace(/background[^:]*:\s*[^;]*;?/gi, match =>
+        isPromotableBg && /^background(-image)?\s*:/i.test(match) ? match : ''
+      );
       
       // Remove box-shadows that create dark overlays
       newStyle = newStyle.replace(/box-shadow\s*:\s*[^;]*;?/gi, '');
@@ -2194,16 +2251,21 @@ export function classifyImagesForRefresh(html: string): string {
  * Operates on a detached HTML string — safe, no live DOM repaint.
  */
 function extractBackgroundImages(html: string): string {
-  if (!html || !html.includes('background-image')) return html;
+  // Cold-review catch: a shorthand-authored poster (`background: url(...) center/cover no-repeat`)
+  // contains the substring "background" but not "background-image" — the old `.includes('background-image')`
+  // gate and `[style*="background-image"]` selector both silently skipped it, so it never even reached
+  // the promotability check below. Broadened to the bare "background" substring/selector; the per-element
+  // `hasPromotableBackgroundImage()` check below is what actually decides promotability either way.
+  if (!html || !html.includes('background')) return html;
   const temp = document.createElement('div');
   temp.innerHTML = html;
-  temp.querySelectorAll<HTMLElement>('[style*="background-image"]').forEach(el => {
+  temp.querySelectorAll<HTMLElement>('[style*="background"]').forEach(el => {
     if (el.querySelector('img')) return; // already has img child
+    // NOTE: cannot use bgVal.includes(',') to detect multi-layer backgrounds — Cloudinary URLs
+    // contain commas in transform params (e.g. t_focal-860x484,f_auto,q_auto:best). Single-url()
+    // check is shared with cleanupDuplicates() via hasPromotableBackgroundImage() above.
+    if (!hasPromotableBackgroundImage(el)) return;
     const bgVal = el.style.backgroundImage;
-    // Skip multi-layer backgrounds (multiple url() calls) and non-url() values.
-    // NOTE: cannot use bgVal.includes(',') — Cloudinary URLs contain commas in transform params
-    // (e.g. t_focal-860x484,f_auto,q_auto:best). Count url() occurrences instead.
-    if (!bgVal || !bgVal.trim().startsWith('url(') || (bgVal.match(/url\(/g) || []).length !== 1) return;
     const match = bgVal.match(/url\(['"]?([^'")\s]+)['"]?\)/);
     if (!match) return;
     const url = match[1];
@@ -2211,6 +2273,10 @@ function extractBackgroundImages(html: string): string {
     const img = document.createElement('img');
     img.src = url;
     img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
+    // #93: marks this img as "available to claim" for a nearby posterless <video> -- see
+    // hasNearbyPromotedPoster(). Distinct from data-spotboard-source="video-poster" (that's for a
+    // <video>'s OWN poster attribute promoted directly, a different code path).
+    img.setAttribute('data-spotboard-bg-promoted', 'true');
     el.appendChild(img);
     el.style.removeProperty('background-image'); // safe on detached HTML, no live repaint
     console.log('[SpotBoard] bg-image promoted to img:', url.substring(0, 80));
@@ -2276,7 +2342,19 @@ function processVideosIn(root: ParentNode, sourceUrl?: string): void {
       }
     }
 
-    if (!resolvedUrl) { videoEl.replaceWith(videoPlaceholderMarkup()); return; }
+    if (!resolvedUrl) {
+      // #93: JW Player (NPR, CNN) renders its poster as a NEARBY element with a CSS
+      // background-image (e.g. .jw-preview), not the <video>'s own poster/data-poster
+      // attribute or a child <img> -- extractBackgroundImages() above already promotes that
+      // element to a real <img> before this function ever runs. Confirmed live on npr.org: the
+      // <video> and .jw-preview are COUSINS, not siblings (both sit two levels up, under a shared
+      // .jw-wrapper) -- a plain parentElement check misses it. If a real poster is showing
+      // anywhere nearby, that's the "useful visual representation" -- a "Video (preview
+      // unavailable)" placeholder next to it would be actively misleading.
+      if (hasNearbyPromotedPoster(videoEl)) { videoEl.remove(); return; }
+      videoEl.replaceWith(videoPlaceholderMarkup());
+      return;
+    }
 
     const img = document.createElement('img');
     img.src = resolvedUrl;
