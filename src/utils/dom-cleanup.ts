@@ -2218,38 +2218,58 @@ function extractBackgroundImages(html: string): string {
   return temp.innerHTML;
 }
 
+/** A no-video-tag stand-in for a video SpotBoard can't get a real poster image for.
+ * Plain inherited-color text (dimmed via opacity, no hardcoded palette values) so it reads
+ * correctly in both light and dark dashboard themes without needing design tokens in scope. */
+function videoPlaceholderMarkup(): HTMLElement {
+  const span = document.createElement('span');
+  span.setAttribute('data-spotboard-source', 'video-placeholder');
+  span.style.cssText = 'display:inline-block;font-size:12px;font-style:italic;opacity:0.65;';
+  span.textContent = 'Video (preview unavailable)';
+  return span;
+}
+
 /**
- * Converts captured <video poster="URL"> (or lazy-loaded data-poster) elements into plain
- * <img src="URL"> -- #119: video was hardcoded to a 25px CSS tier because the sizing pipeline
- * only ever classifies <img>. Once it's a real <img>, classifyImagesForRefresh() below gives
- * it a genuine tier like any other image -- no video-specific classification logic needed.
- *
- * Guards: requires a poster value; relative URLs are resolved against `sourceUrl` when given,
- * otherwise (no sourceUrl) only already-absolute http(s) URLs are promoted. Videos with no
- * usable poster are left untouched -- today's tiny-icon fallback, no regression.
+ * Converts a captured <video> into something that can never autoplay/loop/play sound -- #119.
+ * Sizing was the original symptom (video hardcoded to a 25px CSS tier because the sizing
+ * pipeline only ever classifies <img>), but the deeper issue is that many sites (CNN's
+ * homepage clips, e.g.) ship a `<video autoplay muted loop>` with NO poster at all -- leaving
+ * that tag in place, at any size, means a real playable/looping video sits in the dashboard.
+ * So every <video> is removed here, no exceptions:
+ *  - has a real <img> fallback child already -> keep just that (site's own fallback wins)
+ *  - has a usable poster/data-poster URL (relative URLs resolved against `sourceUrl` when
+ *    given) -> promoted to <img>; classifyImagesForRefresh() below gives it a genuine tier
+ *    like any other image -- no video-specific classification logic needed
+ *  - neither -> replaced with a small static text placeholder (never a <video> tag)
  * Operates on a detached HTML string, same as extractBackgroundImages above -- no live DOM repaint.
  */
 function extractVideoPosters(html: string, sourceUrl?: string): string {
-  if (!html || !html.includes('<video')) return html;
+  if (!html || !/<video/i.test(html)) return html;
   const temp = document.createElement('div');
   temp.innerHTML = html;
   temp.querySelectorAll<HTMLElement>('video').forEach(videoEl => {
-    if (videoEl.querySelector('img')) return; // site already provides an <img> fallback — keep it
+    const existingImg = videoEl.querySelector('img');
+    if (existingImg) { videoEl.replaceWith(existingImg); return; } // site's own fallback wins
+
     const poster = videoEl.getAttribute('poster') || videoEl.getAttribute('data-poster');
-    if (!poster || !poster.trim()) return;
-    let resolved: string;
-    try {
-      resolved = sourceUrl ? new URL(poster, sourceUrl).href : new URL(poster).href;
-    } catch {
-      return; // Invalid / unresolvable URL -- leave video as-is
+    let resolvedUrl: string | null = null;
+    if (poster && poster.trim()) {
+      try {
+        const candidate = sourceUrl ? new URL(poster, sourceUrl).href : new URL(poster).href;
+        if (candidate.startsWith('http')) resolvedUrl = candidate;
+      } catch {
+        // Invalid / unresolvable URL — falls through to the placeholder below
+      }
     }
-    if (!resolved.startsWith('http')) return;
+
+    if (!resolvedUrl) { videoEl.replaceWith(videoPlaceholderMarkup()); return; }
+
     const img = document.createElement('img');
-    img.src = resolved;
+    img.src = resolvedUrl;
     img.setAttribute('data-spotboard-source', 'video-poster');
     img.style.cssText = 'width:100%;height:auto;display:block;max-width:100%';
     videoEl.replaceWith(img);
-    console.log('[SpotBoard] video poster promoted to img:', resolved.substring(0, 80));
+    console.log('[SpotBoard] video poster promoted to img:', resolvedUrl.substring(0, 80));
   });
   return temp.innerHTML;
 }

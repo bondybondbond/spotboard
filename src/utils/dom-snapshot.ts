@@ -145,31 +145,51 @@ export function promoteBackgroundImages(el: Element, label: string): void {
   });
 }
 
+/** A no-video-tag stand-in for a video SpotBoard can't get a real poster image for.
+ * Plain inherited-color text (dimmed via opacity, no hardcoded palette values) so it reads
+ * correctly in both light and dark dashboard themes without needing design tokens in scope. */
+function videoPlaceholderMarkup(): HTMLElement {
+  const span = document.createElement('span');
+  span.setAttribute('data-spotboard-source', 'video-placeholder');
+  span.style.cssText = 'display:inline-block;font-size:12px;font-style:italic;opacity:0.65;';
+  span.textContent = 'Video (preview unavailable)';
+  return span;
+}
+
 /**
- * Converts captured <video poster="URL"> (or lazy-loaded data-poster) elements into plain
- * <img src="URL"> — #119: video was hardcoded to a 25px CSS tier because the sizing pipeline
- * only ever classifies <img>. Converting to a real <img> before that pipeline runs gets it a
- * genuine data-scale-context tier for free, and makes "no controls/no sound/no playback"
- * structural instead of CSS-suppressed (there's no <video> tag left in the output).
- * Stamps data-scale-context using the rendered height recorded pre-clone (data-bg-h — same
- * attribute promoteBackgroundImages uses, cleaned up by the same caller).
- * Videos with no usable absolute poster URL are left untouched (today's tiny-icon fallback).
+ * Converts a captured <video> into something that can never autoplay/loop/play sound — #119.
+ * Sizing was the original symptom (video hardcoded to a 25px CSS tier because the sizing
+ * pipeline only ever classifies <img>), but the deeper issue is that many sites (CNN's
+ * homepage clips, e.g.) ship a `<video autoplay muted loop>` with NO poster at all — leaving
+ * that tag in place, at any size, means a real playable/looping video sits in the dashboard.
+ * So every <video> is removed here, no exceptions:
+ *  - has a real <img> fallback child already → keep just that (site's own fallback wins)
+ *  - has a usable poster/data-poster URL → promoted to <img>, gets a real data-scale-context
+ *    tier from the rendered height recorded pre-clone (data-bg-h — same attribute
+ *    promoteBackgroundImages uses, cleaned up by the same caller), same as a normal image
+ *  - neither → replaced with a small static text placeholder (never a <video> tag)
  *
  * @param el    Root element to search within
  * @param label Refresh context label for console log (e.g. 'tab-refresh', 'capture')
  */
 export function promoteVideoPosters(el: Element, label: string): void {
   el.querySelectorAll('video').forEach(videoEl => {
-    if (videoEl.querySelector('img')) return; // site already provides an <img> fallback — keep it
+    const existingImg = videoEl.querySelector('img');
+    if (existingImg) { videoEl.replaceWith(existingImg); return; } // site's own fallback wins
+
     const poster = videoEl.getAttribute('poster') || videoEl.getAttribute('data-poster');
-    if (!poster || !poster.trim()) return;
-    let url: string;
-    try {
-      url = new URL(poster, window.location.href).href;
-    } catch {
-      return; // Invalid URL — leave video as-is
+    let url: string | null = null;
+    if (poster && poster.trim()) {
+      try {
+        const resolved = new URL(poster, window.location.href).href;
+        if (resolved.startsWith('http')) url = resolved;
+      } catch {
+        // Invalid URL — falls through to the placeholder below
+      }
     }
-    if (!url.startsWith('http')) return;
+
+    if (!url) { videoEl.replaceWith(videoPlaceholderMarkup()); return; }
+
     const img = document.createElement('img');
     img.src = url;
     img.setAttribute('data-spotboard-source', 'video-poster');

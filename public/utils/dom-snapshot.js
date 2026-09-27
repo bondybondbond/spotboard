@@ -126,18 +126,33 @@ var DomSnapshot = (() => {
       console.log(`[SpotBoard] bg-image promoted to img (${label}):`, url.substring(0, 80));
     });
   }
+  function videoPlaceholderMarkup() {
+    const span = document.createElement("span");
+    span.setAttribute("data-spotboard-source", "video-placeholder");
+    span.style.cssText = "display:inline-block;font-size:12px;font-style:italic;opacity:0.65;";
+    span.textContent = "Video (preview unavailable)";
+    return span;
+  }
   function promoteVideoPosters(el, label) {
     el.querySelectorAll("video").forEach((videoEl) => {
-      if (videoEl.querySelector("img")) return;
-      const poster = videoEl.getAttribute("poster") || videoEl.getAttribute("data-poster");
-      if (!poster || !poster.trim()) return;
-      let url;
-      try {
-        url = new URL(poster, window.location.href).href;
-      } catch {
+      const existingImg = videoEl.querySelector("img");
+      if (existingImg) {
+        videoEl.replaceWith(existingImg);
         return;
       }
-      if (!url.startsWith("http")) return;
+      const poster = videoEl.getAttribute("poster") || videoEl.getAttribute("data-poster");
+      let url = null;
+      if (poster && poster.trim()) {
+        try {
+          const resolved = new URL(poster, window.location.href).href;
+          if (resolved.startsWith("http")) url = resolved;
+        } catch {
+        }
+      }
+      if (!url) {
+        videoEl.replaceWith(videoPlaceholderMarkup());
+        return;
+      }
       const img = document.createElement("img");
       img.src = url;
       img.setAttribute("data-spotboard-source", "video-poster");
