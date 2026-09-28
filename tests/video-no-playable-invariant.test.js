@@ -46,23 +46,35 @@ for (const [label, html] of refreshCases) {
   })
 }
 
-// KNOWN, PRE-EXISTING, OUT-OF-SCOPE-FOR-#119 LIMITATION (found by cold review, documented not
-// fixed here): cleanupDuplicates()'s "is this wrapper/<li> empty, safe to remove" heuristic
-// (dom-cleanup.ts's hasVideo checks) uses plain querySelector('video'), which can't see inside a
-// <template>'s inert .content either -- and cleanupDuplicates runs BEFORE extractVideoPosters in
-// the pipeline. So a wrapper whose ONLY content is a template-wrapped video reads as "empty" and
-// is deleted whole, template and video included, before #119's video-safety logic ever runs.
-// This does NOT violate the safety invariant (no <video> tag survives -- there's no video at
-// all, playable or not), it's a silent content-loss bug in a different, pre-existing function,
-// and it already existed before #119 touched anything (querySelector's template-blindness is
-// not new). Fixing cleanupDuplicates's empty-detection to be template-aware is a separate,
-// higher-risk change to an already-intricate function with many site-specific special cases --
-// tracked as a follow-up issue rather than folded into this fix.
-test('#119 KNOWN LIMITATION (not fixed here, tracked separately): a template-wrapped video with no other content in its wrapper is silently deleted by cleanupDuplicates before the video-safety pass ever sees it', () => {
+// #121 (was a documented #119 known limitation): cleanupDuplicates' empty-wrapper checks used
+// querySelector, which can't see into <template>.content, and deleted the whole wrapper.
+test('#121: a template-wrapped video with no other content in its <li> survives cleanup as a poster image (no <video>)', () => {
   const html = '<li class="slide"><template><video autoplay poster="https://cdn.example.com/thumb.jpg"><source src="https://cdn.example.com/clip.mp4"></video></template></li>'
   const out = applySanitizationPipeline(html, { url: 'https://www.example.com/section' })
   assert.equal(NO_VIDEO_TAG.test(out), false, 'still safe: no <video> tag survives')
-  assert.equal(/<template/i.test(out), false, 'documents the actual (lossy) behavior: the whole <li> is gone, not converted')
+  assert.match(out, /<img[^>]+src="https:\/\/cdn\.example\.com\/thumb\.jpg"/, 'content is preserved as a poster image, not deleted')
+})
+
+test('#121: a template-wrapped video inside a bare <div> wrapper survives cleanup', () => {
+  const html = '<div class="wrap"><template><video poster="https://cdn.example.com/thumb.jpg"></video></template></div>'
+  const out = applySanitizationPipeline(html, { url: 'https://www.example.com/section' })
+  assert.equal(NO_VIDEO_TAG.test(out), false)
+  assert.match(out, /thumb\.jpg/)
+})
+
+test('#121: a video in a template NESTED in another template still keeps its wrapper', () => {
+  const html = '<li><template><div><template><video poster="https://cdn.example.com/thumb.jpg"></video></template></div></template></li>'
+  const out = applySanitizationPipeline(html, { url: 'https://www.example.com/section' })
+  assert.equal(NO_VIDEO_TAG.test(out), false)
+  assert.match(out, /thumb\.jpg/)
+})
+
+test('#121 negative: genuinely empty wrappers and carousel <li>s (even holding an empty/non-video <template>) are still removed', () => {
+  const html = '<ul><li><template><p></p></template></li></ul><div><template></template></div><div class="spacer"></div><p>keep me</p>'
+  const out = applySanitizationPipeline(html, { url: 'https://www.example.com/section' })
+  assert.equal(/<li/i.test(out), false, 'empty <li> removed')
+  assert.equal(/class="spacer"/.test(out), false, 'empty div removed')
+  assert.match(out, /keep me/)
 })
 
 test('#119 invariant (refresh path): a <video> inside a <template> NESTED inside another <template> still cannot survive', () => {

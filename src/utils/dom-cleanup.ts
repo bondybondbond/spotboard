@@ -601,6 +601,16 @@ function hasNearbyPromotedPoster(videoEl: Element): boolean {
   return false;
 }
 
+// querySelector can't see inside a <template>'s inert .content, so a wrapper whose only
+// content is a template-wrapped video reads as empty and gets deleted whole (#121).
+// Checked here so the later video-safety pass (extractVideoPosters) can convert it.
+function hasTemplateVideo(root: ParentNode): boolean {
+  return Array.from(root.querySelectorAll('template')).some(t => {
+    const content = (t as HTMLTemplateElement).content
+    return !!content.querySelector('video') || hasTemplateVideo(content)
+  })
+}
+
 /**
  * Remove duplicate and hidden elements from HTML
  * Fixes modern responsive design pattern where sites include both mobile/desktop content
@@ -892,7 +902,7 @@ export function cleanupDuplicates(html: string): string {
     const hasImages = el.querySelector('img');
     const hasLinks = el.querySelector('a');
     const hasSvg = el.querySelector('svg');
-    const hasVideo = el.querySelector('video');
+    const hasVideo = el.querySelector('video') || hasTemplateVideo(el);
     const hasBgImage = hasPromotableBackgroundImage(el);
 
     // If it's just a spacing wrapper with no content
@@ -925,7 +935,7 @@ export function cleanupDuplicates(html: string): string {
     const hasText  = li.textContent!.trim().length > 0;
     const hasLink  = li.querySelector('a');
     const hasSvg   = li.querySelector('svg');
-    const hasVideo = li.querySelector('video, source[src]');
+    const hasVideo = li.querySelector('video, source[src]') || hasTemplateVideo(li);
 
     // Treat <li> as having loaded media if any img has a real src/srcset/currentSrc,
     // or if any <picture><source srcset=...> exists — guards against false-positives on
