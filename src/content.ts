@@ -2290,17 +2290,18 @@ function createCaptureStrip(id: string, step: 1 | 2, instructions: (Node | strin
     position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important;
     background: ${CAPTURE_LIME} !important; color: #000000 !important; padding: 10px 20px !important;
     display: flex !important; align-items: center !important; justify-content: center !important;
-    text-align: center !important; font-family: ${OVERLAY_FONT} !important;
+    text-align: center !important; white-space: nowrap !important; font-family: ${OVERLAY_FONT} !important;
     font-size: 14px !important; font-weight: 400 !important; z-index: 2147483646 !important;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important; pointer-events: none !important;
   `;
   const logo = document.createElement('img');
   logo.src = chrome.runtime.getURL('icon-16.png');
-  logo.style.cssText = 'width: 20px; height: 20px; vertical-align: middle; margin-right: 8px; pointer-events: none;';
+  // Logo is a flex sibling of the text (not inline inside it) so host CSS like `img { display: block }` can't stack it above the text.
+  logo.style.cssText = 'width: 20px !important; height: 20px !important; max-width: none !important; flex: none !important; margin: 0 8px 0 0 !important; pointer-events: none;';
   const text = document.createElement('span');
   text.style.pointerEvents = 'none';
-  text.append(logo, stripBold('CAPTURE MODE'), ` \u00b7 Step ${step} of 2 - `, ...instructions);
-  strip.appendChild(text);
+  text.append(stripBold('CAPTURE MODE'), ` \u00b7 Step ${step} of 2 - `, ...instructions);
+  strip.append(logo, text);
   return strip;
 }
 
