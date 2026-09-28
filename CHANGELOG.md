@@ -22,6 +22,7 @@
 
 ### Fixed
 
+- **Exclusions on news front pages hold on refresh again** (#125): on sites that show each story's photo twice (one copy hidden, for a different screen size) — NPR does this on every story — a card whose excluded photo credits or topic labels were picked item by item failed its very first refresh with "Excluded content came back". The #117 fix removed the hidden copies before working out where each excluded item was, which shifted every item's position away from where you excluded it. SpotBoard now finds your excluded items first, exactly as the page was when you captured it, then removes the hidden copies, then removes your exclusions — so both #117's duplicates and your per-item exclusions stay gone (`src/utils/dom-cleanup.ts`).
 - **Video widgets that load lazily no longer make their section vanish** (#121): on sites that keep a video inside a hidden `<template>` until it is needed, the surrounding box looked empty during cleanup and was deleted, so the card silently lost that spot. Those boxes are now kept, and the video shows as its poster picture (or a placeholder), like any other video. Genuinely empty boxes are still tidied away.
 - **Capture bar stays on one line on every site** (#124): on sites like Kalshi the lime top bar dropped its logo onto a separate row above the text, making the bar twice as tall. The bar now stays a single row everywhere.
 

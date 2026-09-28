@@ -69,6 +69,87 @@ export function isColumnSafeToTarget(table: HTMLElement, colIndex: number): bool
   return dataRows.every(r => r.children.length === firstCount && r.children[colIndex] != null);
 }
 
+const REMOVAL_STRUCTURAL_SEL = 'li, tr, article';
+
+/** Text length + structural/img counts of `root`'s descendants, skipping the subtrees in `skip`. */
+function measureRemaining(root: Element, skip: Set<Element>): { text: number; struct: number; img: number } {
+  let text = '';
+  let struct = 0;
+  let img = 0;
+  const walk = (node: Node) => {
+    if (node.nodeType === 3) { text += node.nodeValue || ''; return; }
+    if (node.nodeType !== 1) return;
+    const elNode = node as Element;
+    if (skip.has(elNode)) return;
+    if (elNode.matches(REMOVAL_STRUCTURAL_SEL)) struct++;
+    if (elNode.tagName === 'IMG') img++;
+    elNode.childNodes.forEach(walk);
+  };
+  // Descendants only (like the old querySelectorAll tallies) -- the card root itself never counts
+  root.childNodes.forEach(walk);
+  return { text: text.trim().length, struct, img };
+}
+
+// #99: text-anchor fallback for exclusions no selector could resolve (position-only chains
+// that encode the capture-time layout). Each unresolved exclusion has a stored text signature
+// (#96); if exactly the expected number of elements on THIS render carry that whole text, they
+// are the excluded elements. Deliberately narrow -- anything ambiguous stays unresolved so
+// #96's gate still fails safe instead of removing a guess:
+//  - full-length signature only (>= SIGNATURE_MAX_LEN was truncated, equality is meaningless)
+//  - keep === 0 (the captured card kept no copy, so every copy is excluded content)
+//  - element's WHOLE normalised text equals the signature (nothing extra swallowed)
+//  - outermost of each equal-text chain, counted as one; never the card root or its only content
+//  - chain count must not exceed the number of unresolved exclusions sharing the signature
+//    (extra copies, hidden duplicates, new rows -> fail safe)
+// Claims into `pendingRemoval` and drops the selectors it resolved from `unresolved` (in place).
+function anchorUnresolvedByText(queryRoot: Element, unresolved: string[], signatures: ExclusionSignature[] | undefined, pendingRemoval: Set<Element>): void {
+  if (!signatures || signatures.length === 0 || unresolved.length === 0) return
+  const sigBySel = new Map<string, ExclusionSignature>()
+  signatures.forEach(s => sigBySel.set(s.sel, s))
+  const selsBySig = new Map<string, string[]>()
+  Array.from(new Set(unresolved)).forEach(sel => {
+    const entry = sigBySel.get(sel)
+    if (!entry || entry.keep !== 0 || entry.sig.length >= SIGNATURE_MAX_LEN) return
+    selsBySig.set(entry.sig, [...(selsBySig.get(entry.sig) || []), sel])
+  })
+
+  if (selsBySig.size > 0) {
+    const rootText = normalizeSignatureText(queryRoot.textContent || '')
+    const insidePending = (el: Element): boolean => {
+      for (let p: Element | null = el; p; p = p.parentElement) if (pendingRemoval.has(p)) return true
+      return false
+    }
+    const resolvedSels = new Set<string>()
+    selsBySig.forEach((sels, sig) => {
+      if (sig === rootText) return // would erase the card's only content
+      // also skip wrappers OF an already-claimed element: their text still includes it, and
+      // removing the wrapper would over-remove what that selector never targeted
+      const claimed = Array.from(pendingRemoval)
+      const equalText = Array.from(queryRoot.querySelectorAll('*')).filter(el =>
+        !insidePending(el) && !claimed.some(p => el.contains(p)) && normalizeSignatureText(el.textContent || '') === sig
+      )
+      const chains = equalText.filter(el => !equalText.some(other => other !== el && other.contains(el)))
+      if (chains.length === 0 || chains.length > sels.length) return
+      // never leave the card with no text at all once earlier removals + these are applied
+      const afterAll = new Set<Element>(pendingRemoval)
+      chains.forEach(el => afterAll.add(el))
+      if (measureRemaining(queryRoot, afterAll).text === 0) return
+      chains.forEach(el => pendingRemoval.add(el))
+      sels.forEach(sel => resolvedSels.add(sel))
+      console.warn(`  #99 text-anchor removed ${chains.length} element(s) for signature "${sig}"`)
+    })
+    if (resolvedSels.size > 0) {
+      for (let i = unresolved.length - 1; i >= 0; i--) if (resolvedSels.has(unresolved[i])) unresolved.splice(i, 1)
+    }
+  }
+}
+
+/** Refresh-time marker for "a stored exclusion claimed this element" (#125); its value is the
+ *  claiming selector. Never persisted. */
+export const EXCLUDED_MARK_ATTR = 'data-sb-excluded';
+/** Refresh-time report on a kept responsive twin: selectors whose mark could not be carried onto it (#125). */
+const EXCLUDED_MISS_ATTR = 'data-sb-excluded-miss';
+
 /**
  * Apply user exclusions to HTML content
  * Removes DOM elements that user explicitly excluded during capture or editing
@@ -95,8 +176,11 @@ export function applyExclusions(html: string, excludedSelectors?: string[], card
  * (#96): matched nothing on this markup, were skipped as ultra-generic, or were refused by
  * the removal budget. Those are the exclusions whose content is still visible in `html`.
  * The refresh engine uses this to tell "exclusions applied" from "silently left visible".
+ *
+ * `markOnly` (#125): tag the claimed elements with EXCLUDED_MARK_ATTR instead of removing them,
+ * so the caller can run other DOM passes on the capture-shaped markup before removal.
  */
-export function applyExclusionsWithStats(html: string, excludedSelectors?: string[], cardSelector?: string, signatures?: ExclusionSignature[]): { html: string; unresolved: string[] } {
+export function applyExclusionsWithStats(html: string, excludedSelectors?: string[], cardSelector?: string, signatures?: ExclusionSignature[], markOnly = false): { html: string; unresolved: string[] } {
   const unresolved: string[] = [];
   if (!html || !excludedSelectors || excludedSelectors.length === 0) {
     return { html, unresolved };
@@ -146,8 +230,6 @@ export function applyExclusionsWithStats(html: string, excludedSelectors?: strin
     return selector;
   };
 
-  const STRUCTURAL_SEL = 'li, tr, article';
-
   // Table-column exclusions (#67) are generated by content.ts's buildTableColumnSelector
   // as `<table-selector> tr > td:nth-child(N)` / `...th:nth-child(N)` -- deliberately
   // multi-match (every row's cell in that column) rather than the single element the user
@@ -179,23 +261,9 @@ export function applyExclusionsWithStats(html: string, excludedSelectors?: strin
   // `pendingRemoval` is what earlier selectors already claimed; budgets are measured with it
   // applied (virtually) so a chain of modest exclusions still can't compound into erasure.
   const pendingRemoval = new Set<Element>();
-  const measure = (skip: Set<Element>) => {
-    let text = '';
-    let struct = 0;
-    let img = 0;
-    const walk = (node: Node) => {
-      if (node.nodeType === 3) { text += node.nodeValue || ''; return; }
-      if (node.nodeType !== 1) return;
-      const elNode = node as Element;
-      if (skip.has(elNode)) return;
-      if (elNode.matches(STRUCTURAL_SEL)) struct++;
-      if (elNode.tagName === 'IMG') img++;
-      elNode.childNodes.forEach(walk);
-    };
-    // Descendants only (like the old querySelectorAll tallies) -- the card root itself never counts
-    queryRoot.childNodes.forEach(walk);
-    return { text: text.trim().length, struct, img };
-  };
+  const claimedBy = new Map<Element, string>();
+  const claim = (el: Element, selector: string) => { pendingRemoval.add(el); if (!claimedBy.has(el)) claimedBy.set(el, selector); };
+  const measure = (skip: Set<Element>) => measureRemaining(queryRoot, skip);
 
   excludedSelectors.forEach(selector => {
     try {
@@ -249,7 +317,7 @@ export function applyExclusionsWithStats(html: string, excludedSelectors?: strin
       }
 
       if (matches.length > 1 && isTrustedTableColumn(effectiveSelector)) {
-        matches.forEach(el => pendingRemoval.add(el));
+        matches.forEach(el => claim(el, selector));
         return;
       }
 
@@ -287,66 +355,17 @@ export function applyExclusionsWithStats(html: string, excludedSelectors?: strin
       }
 
       // Within budget (or a single precise match, which is always trusted) -- claim it
-      matches.forEach(el => pendingRemoval.add(el));
+      matches.forEach(el => claim(el, selector));
     } catch (e) {
       console.warn('  ⚠️ Could not remove excluded element:', selector, e);
       unresolved.push(selector);
     }
   });
 
-  // #99: text-anchor fallback for exclusions no selector could resolve (position-only chains
-  // that encode the capture-time layout). Each unresolved exclusion has a stored text signature
-  // (#96); if exactly the expected number of elements on THIS render carry that whole text, they
-  // are the excluded elements. Deliberately narrow -- anything ambiguous stays unresolved so
-  // #96's gate still fails safe instead of removing a guess:
-  //  - full-length signature only (>= SIGNATURE_MAX_LEN was truncated, equality is meaningless)
-  //  - keep === 0 (the captured card kept no copy, so every copy is excluded content)
-  //  - element's WHOLE normalised text equals the signature (nothing extra swallowed)
-  //  - outermost of each equal-text chain, counted as one; never the card root or its only content
-  //  - chain count must not exceed the number of unresolved exclusions sharing the signature
-  //    (extra copies, hidden duplicates, new rows -> fail safe)
-  if (haveRealRoot && signatures && signatures.length > 0 && unresolved.length > 0) {
-    const sigBySel = new Map<string, ExclusionSignature>()
-    signatures.forEach(s => sigBySel.set(s.sel, s))
-    const selsBySig = new Map<string, string[]>()
-    Array.from(new Set(unresolved)).forEach(sel => {
-      const entry = sigBySel.get(sel)
-      if (!entry || entry.keep !== 0 || entry.sig.length >= SIGNATURE_MAX_LEN) return
-      selsBySig.set(entry.sig, [...(selsBySig.get(entry.sig) || []), sel])
-    })
+  // #99 text-anchor. With markOnly the caller runs it itself once dedup is done (#125).
+  if (haveRealRoot && !markOnly) anchorUnresolvedByText(queryRoot, unresolved, signatures, pendingRemoval);
 
-    if (selsBySig.size > 0) {
-      const rootText = normalizeSignatureText(queryRoot.textContent || '')
-      const insidePending = (el: Element): boolean => {
-        for (let p: Element | null = el; p; p = p.parentElement) if (pendingRemoval.has(p)) return true
-        return false
-      }
-      const resolvedSels = new Set<string>()
-      selsBySig.forEach((sels, sig) => {
-        if (sig === rootText) return // would erase the card's only content
-        // also skip wrappers OF an already-claimed element: their text still includes it, and
-        // removing the wrapper would over-remove what that selector never targeted
-        const claimed = Array.from(pendingRemoval)
-        const equalText = Array.from(queryRoot.querySelectorAll('*')).filter(el =>
-          !insidePending(el) && !claimed.some(p => el.contains(p)) && normalizeSignatureText(el.textContent || '') === sig
-        )
-        const chains = equalText.filter(el => !equalText.some(other => other !== el && other.contains(el)))
-        if (chains.length === 0 || chains.length > sels.length) return
-        // never leave the card with no text at all once earlier removals + these are applied
-        const afterAll = new Set<Element>(pendingRemoval)
-        chains.forEach(el => afterAll.add(el))
-        if (measure(afterAll).text === 0) return
-        chains.forEach(el => pendingRemoval.add(el))
-        sels.forEach(sel => resolvedSels.add(sel))
-        console.warn(`  #99 text-anchor removed ${chains.length} element(s) for signature "${sig}"`)
-      })
-      if (resolvedSels.size > 0) {
-        for (let i = unresolved.length - 1; i >= 0; i--) if (resolvedSels.has(unresolved[i])) unresolved.splice(i, 1)
-      }
-    }
-  }
-
-  pendingRemoval.forEach(el => el.remove());
+  pendingRemoval.forEach(el => markOnly ? el.setAttribute(EXCLUDED_MARK_ATTR, claimedBy.get(el) || '') : el.remove());
 
   // Single-element input -> queryRoot IS that element; its outerHTML is byte-equivalent to the
   // old `container.innerHTML`. Multi-root fragment -> unchanged behaviour.
@@ -633,6 +652,37 @@ function hasTemplateVideo(root: ParentNode): boolean {
  * 
  * Used in: All refresh paths (direct fetch, tab refresh, skeleton fallback)
  */
+/** #125: responsive-twin dedup keeps the FIRST twin. When the one it drops carries refresh-time
+ *  exclusion marks (the user excluded the visible twin, which came second), carry each mark to
+ *  the matching element of the kept twin: same position if tag and text agree there, else the
+ *  kept twin's only unmarked element with that tag and text. A mark that finds no match is
+ *  reported on the kept twin (EXCLUDED_MISS_ATTR) so its selector goes back to the leak gate
+ *  instead of the kept copy silently surviving. */
+function transferExclusionMarks(dropped: Element, kept: Element): void {
+  const sameContent = (a: Element, b: Element) => a.tagName === b.tagName &&
+    normalizeSignatureText(a.textContent || '') === normalizeSignatureText(b.textContent || '')
+  const marked = dropped.hasAttribute(EXCLUDED_MARK_ATTR) ? [dropped] : Array.from(dropped.querySelectorAll(`[${EXCLUDED_MARK_ATTR}]`))
+  marked.forEach(m => {
+    const path: number[] = [];
+    for (let el: Element = m; el !== dropped && el.parentElement; el = el.parentElement) {
+      path.unshift(Array.from(el.parentElement.children).indexOf(el));
+    }
+    let target: Element | undefined = kept;
+    for (const i of path) target = target?.children[i];
+    if (m === dropped) target = kept; // the whole twin was excluded: its partner goes too
+    else if (!target || !sameContent(target, m)) {
+      const candidates = Array.from(kept.querySelectorAll(m.tagName)).filter(el => !el.hasAttribute(EXCLUDED_MARK_ATTR) && sameContent(el, m));
+      target = candidates.length === 1 ? candidates[0] : undefined;
+    }
+    if (target) {
+      target.setAttribute(EXCLUDED_MARK_ATTR, m.getAttribute(EXCLUDED_MARK_ATTR) || '');
+    } else {
+      const misses = kept.getAttribute(EXCLUDED_MISS_ATTR);
+      kept.setAttribute(EXCLUDED_MISS_ATTR, (misses ? misses + '\n' : '') + (m.getAttribute(EXCLUDED_MARK_ATTR) || ''));
+    }
+  });
+}
+
 export function cleanupDuplicates(html: string): string {
   if (!html) return html;
 
@@ -852,7 +902,10 @@ export function cleanupDuplicates(html: string): string {
         const first = seenByImg.get(imgUrl)!;
         const result = isResponsiveDuplicate(first, child);
         if (result.match) {
-          if (result.confidence === 'high') child.remove();
+          if (result.confidence === 'high') {
+            transferExclusionMarks(child, first);
+            child.remove();
+          }
         }
       } else {
         seenByImg.set(imgUrl, child);
@@ -2514,6 +2567,25 @@ export function findLeakedExclusions(outputHtml: string, unresolved: string[], s
   return check;
 }
 
+/** #125: second half of a markOnly exclusion pass, run after cleanupDuplicates(): selectors whose
+ *  mark was lost with a dropped twin rejoin `unresolved`, the #99 text-anchor runs on the deduped
+ *  markup (as it always has -- on raw markup every twin-held text would appear twice and the
+ *  anchor would refuse), then every marked element is removed. */
+function finishMarkedExclusions(html: string, unresolved: string[], signatures?: ExclusionSignature[]): { html: string; unresolved: string[] } {
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  const root = container.children.length === 1 && container.firstElementChild ? container.firstElementChild : container;
+  const pending = new Set<Element>(Array.from(container.querySelectorAll(`[${EXCLUDED_MARK_ATTR}]`)));
+  const stillUnresolved = [...unresolved];
+  container.querySelectorAll(`[${EXCLUDED_MISS_ATTR}]`).forEach(el => {
+    (el.getAttribute(EXCLUDED_MISS_ATTR) || '').split('\n').forEach(sel => { if (sel && !stillUnresolved.includes(sel)) stillUnresolved.push(sel) });
+    el.removeAttribute(EXCLUDED_MISS_ATTR);
+  });
+  if (root !== container) anchorUnresolvedByText(root, stillUnresolved, signatures, pending);
+  pending.forEach(el => el.remove());
+  return { html: container.innerHTML, unresolved: stillUnresolved };
+}
+
 /** Hand the result of the latest pipeline run to the refresh engine without persisting it. */
 function recordExclusionCheck(component: SanitizationComponent, check: ExclusionCheck, html: string): void {
   // `html` pins the verdict to the exact card it judged; the engine ignores it for any other string
@@ -2525,8 +2597,8 @@ function recordExclusionCheck(component: SanitizationComponent, check: Exclusion
  * Consolidates the 4-step sequence that was previously duplicated across
  * all refresh paths in refresh-engine.js.
  *
- * Pipeline: cleanupDuplicates → applyExclusions → extractBackgroundImages → extractVideoPosters → preserveImageClassifications → classifyImagesForRefresh
- * (#117: dedup moved ahead of exclusions -- see inline comment below)
+ * Pipeline: resolve exclusions (mark) → cleanupDuplicates → remove marked → extractBackgroundImages → extractVideoPosters → preserveImageClassifications → classifyImagesForRefresh
+ * (#117 / #125: exclusions are resolved before dedup but removed after it -- see inline comment below)
  *
  * @param inputHtml - The raw HTML from a refresh (fetch, background tab, or active tab)
  * @param component - The component metadata object (needs .excludedSelectors, .html_cache, .selector)
@@ -2537,15 +2609,17 @@ export function applySanitizationPipeline(inputHtml: string, component: Sanitiza
   // the image-classification passes below all assign this HTML to .innerHTML, which would
   // otherwise fire (and CSP-block) any on* handler the captured page carried.
   const safeHtml = stripEventHandlers(inputHtml);
-  // #117: dedupe BEFORE exclusions. At capture time the live page's own CSS has already hidden
-  // a responsive/mobile twin before the user can click exclude, so cleanupDuplicates() has
-  // nothing to do there. At refresh (raw fetch, no CSS) both twins are present, and dedup's
-  // structural heuristic is the only thing that can remove the hidden one -- but if exclusions
-  // ran first, the excluded (visible) twin is gone before dedup ever gets to compare the pair,
-  // so the once-hidden twin loses its partner and survives. Deduping first restores the same
-  // single-twin sibling shape the exclusion selector was originally generated against.
-  const deduped = cleanupDuplicates(safeHtml);
-  const { html: withExclusions, unresolved } = applyExclusionsWithStats(deduped, component.excludedSelectors, component.selector, component.exclusionSignatures);
+  // Exclusions are RESOLVED on the raw markup, then dedup runs, then the claimed elements go.
+  //  - Resolve first (#125): a CSS-hidden responsive twin is still in the live DOM at capture, so
+  //    positional (:nth-child) selectors were generated counting it. Deduping first removed those
+  //    twins and shifted every later sibling -- on NPR ~100 of 143 stored selectors stopped matching
+  //    and the card failed its very first refresh.
+  //  - Remove after dedup (#117): if the excluded (visible) twin were removed before dedup, its
+  //    hidden partner would have nothing to pair with and survive. Dedup sees both twins, and
+  //    carries the marks onto the twin it keeps (transferExclusionMarks); the #99 text-anchor
+  //    also runs after dedup, as before (finishMarkedExclusions).
+  const { html: marked, unresolved: markUnresolved } = applyExclusionsWithStats(safeHtml, component.excludedSelectors, component.selector, component.exclusionSignatures, true);
+  const { html: withExclusions, unresolved } = finishMarkedExclusions(cleanupDuplicates(marked), markUnresolved, component.exclusionSignatures);
   const withBgImages = extractBackgroundImages(withExclusions);
   const withVideoPosters = extractVideoPosters(withBgImages, component.url);
   const withPreserved = preserveImageClassifications(withVideoPosters, component.html_cache || '');

@@ -2245,6 +2245,10 @@ export function endRefinement(outcome: 'cancel' | 'detached') {
 // Test seam (mirrors __getActiveExclusionChainForTest): inspect refinement state without exporting the let.
 export const __getRefineStateForTest = () => refineState;
 
+// Test seam (#125): the capture-time exclusion selector generator, so tests can build stored
+// selectors exactly as a real capture does instead of hand-writing them.
+export const __generateExclusionSelectorForTest = (el: HTMLElement, root: HTMLElement) => generateExclusionSelector(el, root);
+
 let _refineShadow: ShadowRoot | null = null;
 
 function removeRefineBar() {

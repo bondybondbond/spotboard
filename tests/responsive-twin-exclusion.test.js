@@ -4,7 +4,8 @@
 // At refresh (raw fetch, no CSS) both twins are present, and dedup's structural heuristic is the
 // only thing that can remove the hidden one -- but running exclusions first removed the visible
 // (excluded) twin before dedup ever compared the pair, so the once-hidden twin lost its partner
-// and survived. Fix: dedupe before exclusions. Fixture card in this file is a structural clone
+// and survived. Fix: dedupe before exclusions are REMOVED (#125: but resolve them before
+// dedup). Fixture card in this file is a structural clone
 // of a real responsive-twin pair found live on theverge.com's homepage hero (2026-09-27) --
 // same image URL, same link, same headline text, one wrapper `display:grid` (visible) and one
 // `display:none` (hidden) -- query strings on the real image URL stripped, everything else real.
@@ -36,18 +37,20 @@ test('#117: an ordinary exclusion with no responsive twin is unaffected by the r
   assert.doesNotMatch(result, /Remove me/)
 })
 
-test('#117: a positional (:nth-child) exclusion on a card with a responsive twin resolves against the POST-dedup sibling set', () => {
-  // Capture-time equivalent DOM (hidden twin already stripped by CSS before the selector was
-  // generated): children are [twinA, target, other] -> target is the 2nd child, a <p>.
+test('#117/#125: a positional (:nth-child) exclusion on a card with a responsive twin resolves against the RAW (capture-shaped) sibling set', () => {
+  // #125 corrected this test's premise. CSS hides a responsive twin, it does not remove it, and
+  // the capture-time positional path counts every child -- hidden twin included. So at capture
+  // the children are [twinA, twinB(hidden), target, other] and the target is the 3rd child.
+  // (The old version asserted p:nth-child(2), i.e. positions counted AFTER dedup; that ordering
+  // broke ~100 of 143 real NPR exclusions on the first refresh.)
   const twinA = '<div class="twinA"><a href="/x">Same Headline</a><img src="https://cdn.example/img.png"></div>'
   const twinB = '<div class="twinB"><a href="/x">Same Headline</a><img src="https://cdn.example/img.png"></div>'
   const target = '<p>Unrelated promo text to exclude</p>'
   const other = '<p>Keep this one</p>'
-  // Refresh-time raw fetch: BOTH twins present, so pre-dedup child order is [twinA, twinB, target, other].
   const html = `<div class="card">${twinA}${twinB}${target}${other}</div>`
-  const component = { selector: 'div.card', excludedSelectors: ['p:nth-child(2)'] }
+  const component = { selector: 'div.card', excludedSelectors: ['p:nth-child(3)'] }
   const result = applySanitizationPipeline(html, component)
-  assert.doesNotMatch(result, /Unrelated promo/, 'positional selector must resolve against the deduped sibling set, matching capture-time position')
+  assert.doesNotMatch(result, /Unrelated promo/, 'positional selector must resolve against the raw sibling set, matching capture-time position')
   assert.match(result, /Keep this one/)
   assert.equal((result.match(/Same Headline/g) || []).length, 1, 'the surviving twin must still be deduped to one')
 })
