@@ -90,3 +90,52 @@ test('Issue #3: fallback-less var() fill/stroke neutralized, valid paints untouc
   assert.equal(gFill.getAttribute('fill'), 'none')
   assert.equal(gFill.querySelector('path.inherits-fill').hasAttribute('fill'), false)
 })
+
+// ---- #97: viewBox-only icon glyphs must not be classified as charts ----
+
+const FA_COMMENT = `<svg class="svg-inline--fa fa-comment fa-w-16 text-gray-400" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="comment" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="currentColor" d="${longPath(400)}"></path></svg>`
+
+test('#97 Font Awesome JS icon (viewBox 512, no width/height, svg-inline--fa): NOT stamped chart', () => {
+  const out = cleanupDuplicates(FA_COMMENT)
+  assert.match(out, /<svg/)
+  assert.doesNotMatch(out, /data-sb-svg/)
+  assert.match(out, /viewBox="0 0 512 512"/)
+})
+
+test('#97 FA marker via data-prefix + data-icon alone (class renamed): NOT stamped chart', () => {
+  const html = FA_COMMENT.replace('svg-inline--fa fa-comment fa-w-16', 'renamed')
+  assert.doesNotMatch(cleanupDuplicates(html), /data-sb-svg/)
+})
+
+test('#97 Unmarked square single-glyph currentColor icon (Ionicons-style 512): NOT stamped chart', () => {
+  const html = `<svg viewBox="0 0 512 512"><path fill="currentColor" d="${longPath(400)}"></path></svg>`
+  assert.doesNotMatch(cleanupDuplicates(html), /data-sb-svg/)
+})
+
+test('#97 Wide single-path currentColor sparkline (viewBox-only 300x100): stays a chart', () => {
+  const html = `<svg viewBox="0 0 300 100"><path fill="none" stroke="currentColor" d="${longPath(400)}"></path></svg>`
+  assert.match(cleanupDuplicates(html), /data-sb-svg="chart"/)
+})
+
+test('#97 Square single-path chart NOT painted with currentColor (rgb stroke): stays a chart', () => {
+  const html = `<svg viewBox="0 0 300 300"><path fill="none" stroke="rgba(38,92,255,1)" d="${longPath(400)}"></path></svg>`
+  assert.match(cleanupDuplicates(html), /data-sb-svg="chart"/)
+})
+
+test('#97 Multi-path non-square viewBox-only chart: stays a chart', () => {
+  const html = `<svg viewBox="0 0 600 240">
+    <path stroke="currentColor" fill="none" d="${longPath(400)}"></path>
+    <path stroke="rgba(217,22,22,1)" fill="none" d="${longPath(400)}"></path>
+  </svg>`
+  assert.match(cleanupDuplicates(html), /data-sb-svg="chart"/)
+})
+
+test('#97 Square single-path chart WITH <text> label: stays a chart', () => {
+  const html = `<svg viewBox="0 0 300 300"><path fill="currentColor" d="${longPath(400)}"></path><text fill="currentColor" x="5" y="10">50%</text></svg>`
+  assert.match(cleanupDuplicates(html), /data-sb-svg="chart"/)
+})
+
+test('#97 Groupon-style small icon (24x24 viewBox, currentColor): unchanged, not stamped', () => {
+  const html = `<svg viewBox="0 0 24 24"><path fill="currentColor" d="${longPath(200)}"></path></svg>`
+  assert.doesNotMatch(cleanupDuplicates(html), /data-sb-svg/)
+})

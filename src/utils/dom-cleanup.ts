@@ -1250,6 +1250,34 @@ export function isSVGRenderable(svg: SVGSVGElement): boolean {
 const CHART_MIN_DIMENSION_PX = 200;
 
 /**
+ * Detects an icon glyph that only *looks* like a chart to Signal B because it is drawn on a
+ * large artboard (Font Awesome 512, Ionicons 512) and sized by the site's CSS, not by
+ * width/height attributes (#97: FA's JS swap of <i> -> <svg viewBox="0 0 512 512"> rendered as
+ * a giant bubble). Two tiers, both deliberately narrow — a sparkline is often one path too, so
+ * "single element, no text" alone must never demote:
+ *  1. Explicit icon-library markers (FA5/FA6 svg-with-js): exact, no chart carries them.
+ *  2. Generic fallback: near-square viewBox AND exactly one shape AND currentColor paint AND
+ *     no <text>. A wide/short single-path sparkline fails the aspect check; a stroke sparkline
+ *     rarely paints with currentColor on a square artboard.
+ */
+function isViewBoxOnlyIcon(svg: SVGSVGElement, vbWidth: number, vbHeight: number): boolean {
+  const cls = svg.getAttribute('class') || '';
+  if (/\bsvg-inline--fa\b/.test(cls)) return true;
+  if (svg.hasAttribute('data-prefix') && svg.hasAttribute('data-icon')) return true;
+
+  if (svg.querySelector('text')) return false;
+  if (!(vbWidth > 0 && vbHeight > 0)) return false;
+  const aspect = Math.max(vbWidth, vbHeight) / Math.min(vbWidth, vbHeight);
+  if (aspect > 1.5) return false;
+
+  const shapes = svg.querySelectorAll('path, circle, rect, polygon, line, polyline, ellipse');
+  if (shapes.length !== 1) return false;
+  const shape = shapes[0];
+  const paint = (name: string) => shape.getAttribute(name) || svg.getAttribute(name) || '';
+  return paint('fill') === 'currentColor' || paint('stroke') === 'currentColor';
+}
+
+/**
  * Classifies an already-renderable, top-level SVG as chart/data-vis for CSS-cap-scoping and
  * viewBox synthesis. Three strong signals, any one sufficient. `d.length` is deliberately NOT
  * a signal here — a complex decorative/broken SVG can also carry a long path, so path length
@@ -1283,7 +1311,7 @@ function isChartSVG(svg: SVGSVGElement): boolean {
       const parts = viewBox.trim().split(/[\s,]+/).map(Number);
       if (parts.length === 4 && parts.every(Number.isFinite) &&
           (parts[2] >= CHART_MIN_DIMENSION_PX || parts[3] >= CHART_MIN_DIMENSION_PX)) {
-        return true;
+        if (!isViewBoxOnlyIcon(svg, parts[2], parts[3])) return true;
       }
     }
   }
