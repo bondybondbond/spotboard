@@ -14,6 +14,7 @@ export function installDomEnv(html = '<!doctype html><html><body></body></html>'
   global.Node = window.Node
   global.HTMLElement = window.HTMLElement
   global.Element = window.Element
+  global.SVGElement = window.SVGElement
   global.DOMParser = window.DOMParser
   global.NodeFilter = window.NodeFilter
   global.getComputedStyle = window.getComputedStyle.bind(window)

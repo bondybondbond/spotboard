@@ -1299,6 +1299,11 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
   // Remove capture-related inline styles from clone
   const cloneElements = [clone, ...Array.from(clone.querySelectorAll('*'))];
   cloneElements.forEach(el => {
+    // #123: SVGElement is not an HTMLElement but carries the same highlight when captured directly
+    if (el instanceof SVGElement) {
+      el.style.removeProperty('cursor');
+      el.style.removeProperty('outline');
+    }
     if (el instanceof HTMLElement) {
       el.style.removeProperty('cursor');
       el.style.removeProperty('outline');
