@@ -2382,6 +2382,17 @@ function showRefineBar() {
   document.getElementById('spotboard-capture-banner')?.style.setProperty('display', 'none', 'important');
 }
 
+// #109: only name actions that are actually available (the disabled buttons carry their own
+// tooltip saying why), so the hint never tells the user to press a disabled Grow/Shrink.
+export function refineHintText(canGrow: boolean, canShrink: boolean): string {
+  if (!canGrow && !canShrink) return 'Continue, or click another element to re-select.'
+  const actions: string[] = []
+  if (canGrow) actions.push('Grow for a bigger area.')
+  if (canShrink) actions.push('Shrink to undo.')
+  actions.push('Click another element to re-select.')
+  return actions.join(' ')
+}
+
 function updateRefineBar() {
   const state = refineState;
   if (!state || !_refineShadow) return;
@@ -2406,8 +2417,7 @@ function updateRefineBar() {
   wash.style.setProperty('height', `${rootRect.height}px`, 'important');
   (_refineShadow.querySelector('#sb-refine-label') as HTMLElement).textContent = 'Selected area';
   (_refineShadow.querySelector('#sb-refine-hint') as HTMLElement).textContent =
-    (canGrow ? 'Grow for a bigger area.' : 'Nothing larger to grow to.') +
-    ' Shrink to undo. Click another element to re-select.';
+    refineHintText(canGrow, state.index > 0);
   // Enabled = filled with a 2px dark border (the fill alone is only 1.4:1 against lime, so the
   // border is what makes it read as a button). Disabled = no fill, dashed lighter border, still-
   // legible text (5:1) and a tooltip saying why -- not just faded, which read as "broken".
