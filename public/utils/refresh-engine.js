@@ -626,6 +626,25 @@ function _finalizeSuccess(sanitizedHtml, component, extras = {}) {
       keepOriginal: true
     };
   }
+  // #72 image-regression gate: a refresh that came back with FEWER images than the card already
+  // holds AND still shows unfilled thumbnail slots is a lazy-load miss (the site never mounted
+  // them), not a real content change -- keep the richer card. Deliberately requires both signals:
+  // fewer images alone is normal churn (yesterday's photo-heavy page, today's text-only one), and
+  // a stored card that is already as degraded as the new one (equal counts) is not blocked.
+  if (typeof LazyLoad !== 'undefined' && component && component.html_cache) {
+    const _cachedImgs = (component.html_cache.match(/<img/gi) || []).length;
+    const _newImgs = (sanitizedHtml.match(/<img/gi) || []).length;
+    if (_cachedImgs >= 3 && _newImgs < _cachedImgs) {
+      // DOMParser is inert (no image loads). A cache that ALREADY has unfilled slots is a
+      // degraded card (or a site with permanent decorative image-class divs) -- comparing
+      // against it would lock the card out of refreshing, so only a clean cache is protected.
+      const _emptyIn = html => LazyLoad.countEmptyImageSlots(new DOMParser().parseFromString(html, 'text/html').body);
+      if (_emptyIn(sanitizedHtml) >= LazyLoad.MIN_EMPTY_SLOTS && _emptyIn(component.html_cache) < LazyLoad.MIN_EMPTY_SLOTS) {
+        console.warn(`[SB-REFRESH] Image-regression guard rejected refresh for ${component.name}: ${_newImgs} images vs ${_cachedImgs} cached, thumbnails still unfilled`);
+        return { success: false, error: 'Refresh returned fewer images', keepOriginal: true };
+      }
+    }
+  }
   // #96 exclusion-integrity gate: applySanitizationPipeline() left its verdict on the component.
   // If an exclusion that did not apply on this render has its captured text back in the card,
   // committing would silently re-show something the user deliberately removed -- keep the last
@@ -1989,10 +2008,10 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
 
     // Extract - WITH SANITIZATION AND IMAGE CLASSIFICATION IN THE TAB
     // Inject DomSnapshot into tab context (needed — executeScript funcs run in tab's isolated world)
-    await chrome.scripting.executeScript({ target: { tabId: atTabId }, files: ['utils/dom-snapshot.js'] });
+    await chrome.scripting.executeScript({ target: { tabId: atTabId }, files: ['utils/dom-snapshot.js', 'utils/lazy-load.js'] });
     // Named (not inline) so the widen-and-retry path below (issue #72) can re-run the
     // identical extraction after resizing, without duplicating this whole function body.
-    const extractFromTab = (sel, fp) => {
+    const extractFromTab = async (sel, fp) => {
         // Find the correct element (by fingerprint if provided)
         let element = null;
         
@@ -2028,6 +2047,15 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
           return null;
         }
 
+        // 🎯 SCROLL-THROUGH LAZY LOAD (issue #72): sites like CNBC only mount a thumbnail once it
+        // is within about a viewport of the scroll position, so a block extracted from a popup
+        // sitting at scrollY=0 holds a few real images and many empty placeholders. Scrolls only
+        // across this block, only when it holds >= MIN_EMPTY_SLOTS empty image slots, bounded by
+        // step/time caps, and restores the scroll position. No-op for ordinary cards.
+        if (window.LazyLoad) {
+          try { await window.LazyLoad.ensureLazyContentLoaded(element) } catch (_) { /* best-effort */ }
+        }
+
         // 🎯 STRUCTURALLY-EXPECTED-BUT-EMPTY IMAGE SLOT DETECTION (issue #72) — must run FIRST,
         // before the hidden-element marking pass below, which would strip a display:none
         // placeholder div before we ever get a chance to see it existed. Generic condition, not
@@ -2040,10 +2068,9 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
         // deliberately — see that guard's comment for why a structural slot check (rather than a
         // generic link-count/content-length proxy) is the right shape for "image expected but
         // missing" here.
-        let hasEmptyImageSlots = false;
-        element.querySelectorAll('[class*="thumbnail" i], [class*="image" i]').forEach(el => {
-          if (!el.querySelector('img, picture') && (el.textContent || '').trim() === '') hasEmptyImageSlots = true;
-        });
+        const hasEmptyImageSlots = window.LazyLoad
+          ? window.LazyLoad.countEmptyImageSlots(element) >= window.LazyLoad.MIN_EMPTY_SLOTS
+          : false;
 
         // Now sanitize and extract the found element
         // Mark hidden elements BEFORE cloning (while CSS is loaded)
@@ -2534,11 +2561,10 @@ async function refreshComponent(component) {
         // thumbnail/image-role containers and leaves every one of them empty is a much stronger,
         // false-positive-resistant signal than "many links" — a text-only site never has these
         // containers at all, so this can't misfire on one.
-        const emptyImageSlots = Array.from(
-          tempDiv.querySelectorAll('[class*="thumbnail" i], [class*="image" i]')
-        ).filter(el => !el.querySelector('img, picture') && (el.textContent || '').trim() === '');
+        // Same slot definition as the tab tier and the scroll-through (LazyLoad, #72) -- one copy.
+        const emptyImageSlotCount = typeof LazyLoad !== 'undefined' ? LazyLoad.countEmptyImageSlots(tempDiv) : 0;
         const hasImagesMissing = (originalImgCount >= 3 && extractedImgCount === 0) ||
-          (extractedImgCount === 0 && emptyImageSlots.length >= 3);
+          (extractedImgCount === 0 && emptyImageSlotCount >= 3);
 
         // IGN PATTERN: Check for empty content containers
         const contentContainers = tempDiv.querySelectorAll('[class*="details"], [class*="content"], [class*="title"]:not(h1):not(h2):not(h3)');

@@ -1,5 +1,6 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
 import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset } from './utils/dom-cleanup';
+import { ensureLazyContentLoaded } from './utils/lazy-load';
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, promoteVideoPosters, classifyImages } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
 import { fitSyncRecord, SAVE_TOO_BIG_MESSAGE, friendlySaveError } from './utils/exclusion-storage';
@@ -3211,7 +3212,18 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
       // ⏳ WAIT 2 SECONDS FOR JS FRAMEWORKS TO RENDER
       log('⏳ Waiting 2s for JavaScript to render...');
       
-      setTimeout(() => {
+      setTimeout(async () => {
+        // #72: a block with unfilled thumbnail slots (scroll-triggered lazy loaders like CNBC's)
+        // is scrolled through once, then the scroll position is restored. No-op for ordinary
+        // blocks. Runs before syncExclusions() so exclusions whose placeholder node the site
+        // replaced while mounting are re-attached by that pass.
+        try {
+          const lazy = await ensureLazyContentLoaded(target);
+          if (lazy.steps > 0) log('🖼️ Lazy content scroll-through:', lazy);
+        } catch (err) {
+          console.warn('⚠️ Lazy content scroll-through failed (capture continues):', err);
+        }
+
         // Capture onboarding state before any async storage calls
         const wasOnboarding = getIsOnboardingMode();
         console.debug('[sb-capture] confirm timeout fired. getIsOnboardingMode()=', getIsOnboardingMode(), 'wasOnboarding=', wasOnboarding);

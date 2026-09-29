@@ -52,6 +52,21 @@ await build({
 fs.copyFileSync('public/utils/dom-snapshot.js', 'dist/utils/dom-snapshot.js');
 console.log('✅ Built public/utils/dom-snapshot.js from src/utils/dom-snapshot.ts');
 
+// lazy-load (#72)
+await build({
+  entryPoints: ['src/utils/lazy-load.ts'],
+  outfile: 'public/utils/lazy-load.js',
+  bundle: true,
+  format: 'iife',
+  globalName: 'LazyLoad',
+  // footer sets window.LazyLoad so it is reachable across separate chrome.scripting.executeScript injections
+  footer: { js: 'window.LazyLoad = LazyLoad;' },
+  target: 'chrome120',
+  banner: { js: '// AUTO-GENERATED from src/utils/lazy-load.ts — DO NOT EDIT' },
+});
+fs.copyFileSync('public/utils/lazy-load.js', 'dist/utils/lazy-load.js');
+console.log('✅ Built public/utils/lazy-load.js from src/utils/lazy-load.ts');
+
 // exclusion-storage (#90)
 await build({
   entryPoints: ['src/utils/exclusion-storage.ts'],
