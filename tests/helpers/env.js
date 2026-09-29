@@ -19,6 +19,8 @@ export function installDomEnv(html = '<!doctype html><html><body></body></html>'
   global.getComputedStyle = window.getComputedStyle.bind(window)
   global.sessionStorage = window.sessionStorage
   global.location = window.location
+  // jsdom has no CSS.escape (real Chrome always does); content.ts uses it for id selectors (#126).
+  global.CSS = window.CSS ?? { escape: s => String(s).replace(/([^\w-])/g, '\\$1') }
 
   global.chrome = {
     runtime: {
