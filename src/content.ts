@@ -1,5 +1,6 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
-import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset } from './utils/dom-cleanup';
+import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset, deriveCrossParentPattern, isUtilityOnlyClass, patternsResolveOnMarkup, PATTERN_MIN_MATCHES, PATTERN_MAX_RULES } from './utils/dom-cleanup';
+import type { ExclusionPattern } from './utils/dom-cleanup';
 import { ensureLazyContentLoaded } from './utils/lazy-load';
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, promoteVideoPosters, classifyImages } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
@@ -170,36 +171,9 @@ function getSimilarSiblings(element: HTMLElement): HTMLElement[] {
 //     vary it per article); exact class on the anchor is the fail-safe.
 // Anything with no classed anchor, or a group of 1, returns [element].
 function getCrossParentGroup(element: HTMLElement, locked: HTMLElement): HTMLElement[] {
-  if (!locked.contains(element) || element === locked) return [element]
-
-  if (element.tagName === 'TIME') {
-    const times = Array.from(locked.querySelectorAll<HTMLElement>('time'))
-    return times.length > 1 && times.includes(element) ? times : [element]
-  }
-
-  const indexPath: number[] = []
-  let anchor: HTMLElement | null = element
-  for (let depth = 0; anchor && anchor !== locked && depth <= 3; depth++) {
-    if (typeof anchor.className === 'string' && anchor.className.trim()) break
-    const par: HTMLElement | null = anchor.parentElement
-    if (!par) return [element]
-    indexPath.unshift(Array.from(par.children).indexOf(anchor))
-    anchor = par
-  }
-  if (indexPath.length > 3 || !anchor || anchor === locked || typeof anchor.className !== 'string' || !anchor.className.trim()) return [element]
-
-  const matches: HTMLElement[] = []
-  locked.querySelectorAll<HTMLElement>(anchor.tagName).forEach(candidate => {
-    if (candidate.className !== anchor!.className) return
-    let node: HTMLElement | undefined = candidate
-    for (const idx of indexPath) {
-      node = node?.children[idx] as HTMLElement | undefined
-      if (!node) return
-    }
-    if (node && node.tagName === element.tagName) matches.push(node)
-  })
-  const outermost = matches.filter(el => !matches.some(other => other !== el && other.contains(el)))
-  return outermost.length > 1 && outermost.includes(element) ? outermost : [element]
+  // #128: the rule itself lives in dom-cleanup.ts so the same code re-resolves a stored pattern at
+  // refresh time -- grouping here and pattern resolution there can never drift apart.
+  return deriveCrossParentPattern(element, locked)?.matches ?? [element]
 }
 
 export function __getSimilarSiblingsForTest(element: HTMLElement, locked: HTMLElement): HTMLElement[] {
@@ -1627,6 +1601,60 @@ function recordExclusion(el: HTMLElement) {
     sig: bulkExclusionInProgress ? similarSignature(el) : null,
     size: el.querySelectorAll('*').length,
   });
+}
+
+/**
+ * #128: turn Shift+click bulk exclusions into stored patterns where that is faithful to what the
+ * user did. A pattern is stored only when ALL of these hold -- otherwise the exclusions stay
+ * individual selectors, exactly as before:
+ *  - the elements came from a bulk group (ledger `sig`) whose rule is the cross-parent rule (#87);
+ *  - every element that rule matches in the captured region is excluded right now (so "every match
+ *    is excluded" -- the refresh-time meaning -- is literally what the user has), which also means a
+ *    member un-excluded after the Shift+click cancels the pattern;
+ *  - there are at least PATTERN_MIN_MATCHES matches, and the anchor class is not styling-only;
+ *  - no bulk entry is an unmounted node of a virtualised list (the match set would be incomplete).
+ * `covered` = excluded elements a pattern now speaks for; they need no selector of their own.
+ */
+function computeExclusionPatterns(root: HTMLElement): { patterns: ExclusionPattern[]; covered: Set<HTMLElement> } {
+  const patterns: ExclusionPattern[] = [];
+  const covered = new Set<HTMLElement>();
+  if (exclusionLedger.some(e => e.sig && (!e.el || !root.contains(e.el)))) return { patterns, covered };
+
+  const seen = new Set<HTMLElement>();
+  const isExcluded = (el: HTMLElement) => excludedElements.some(ex => ex === el || ex.contains(el));
+  for (const entry of exclusionLedger) {
+    const el = entry.el;
+    if (!entry.sig || !el || seen.has(el) || !excludedElements.includes(el)) continue;
+    // Same provenance as getSimilarSiblings(): a table-column group or a same-parent sibling group was
+    // NOT produced by the cross-parent rule, so it must not be widened into one -- those stay individual.
+    if (((getTableColumnCells(el, root)?.length) ?? 0) > 1) continue;
+    const parent = el.parentElement;
+    if (parent && Array.from(parent.children).filter(s => s.tagName === el.tagName && s.className === el.className).length > 1) continue;
+    const derived = deriveCrossParentPattern(el, root);
+    if (!derived) continue;
+    const { rule, matches } = derived;
+    matches.forEach(m => seen.add(m));
+    if (matches.length < PATTERN_MIN_MATCHES) continue;
+    if (rule.a.toLowerCase() !== 'time' && isUtilityOnlyClass(rule.c)) continue;
+    if (!matches.every(isExcluded)) continue;
+    if (patterns.length >= PATTERN_MAX_RULES) break;
+    if (patterns.some(p => p.a === rule.a && p.c === rule.c && p.t === rule.t && p.p.join(',') === rule.p.join(','))) continue;
+    patterns.push(rule);
+    matches.forEach(m => { if (excludedElements.includes(m)) covered.add(m); });
+  }
+  return { patterns, covered };
+}
+
+export function __computeExclusionPatternsForTest(root: HTMLElement) {
+  return computeExclusionPatterns(root);
+}
+
+// Test-only: the same flag-wrapped toggle the live Shift+click and preview Shift+click paths use.
+export function __bulkExcludeForTest(group: HTMLElement[]): void {
+  pushExclusionUndo();
+  bulkExclusionInProgress = true;
+  group.forEach(el => toggleExclusion(el));
+  bulkExclusionInProgress = false;
 }
 
 function dropFromLedger(el: HTMLElement) {
@@ -3255,12 +3283,27 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         // uniqueness verified within the capture root, since they're applied via
         // querySelectorAll(selector) at refresh time and have no fingerprint tiebreaker.
         syncExclusions(); // #112: drop/re-attach exclusions whose node left the page before selectors are built
+        // #128: elements a stored pattern speaks for need no selector of their own. They are still
+        // removed from the captured HTML below (sanitizeHTML gets the full excludedElements list);
+        // only what is STORED (selectors, signatures, the per-selector re-check) shrinks -- that is
+        // where the capture-time cost per exclusion came from.
+        let { patterns: exclusionPatterns, covered: patternCovered } = computeExclusionPatterns(target);
+        // Same live-vs-serialized proof #61 gives selectors: a pattern must resolve to exactly its capture
+        // count on the serialized capture HTML (what refresh will be handed), or its elements stay individual.
+        if (exclusionPatterns.length > 0) {
+          if (!patternsResolveOnMarkup(target.outerHTML, exclusionPatterns)) {
+            console.warn('⚠️ Exclusion pattern did not re-resolve on the serialized capture HTML -- keeping individual selectors');
+            exclusionPatterns = [];
+            patternCovered = new Set();
+          }
+        }
+        const individualElements = excludedElements.filter(el => !patternCovered.has(el));
         const excludedSelectors: string[] = [];
-        excludedElements.forEach(el => {
+        individualElements.forEach(el => {
           const selector = generateExclusionSelector(el, target);
           excludedSelectors.push(selector);
         });
-        console.log('🎯 Generated', excludedSelectors.length, 'exclusion selectors');
+        console.log('🎯 Generated', excludedSelectors.length, 'exclusion selectors', exclusionPatterns.length ? `+ ${exclusionPatterns.length} pattern(s) covering ${patternCovered.size} elements` : '');
 
         // #61: prove each selector actually matches something when re-applied by
         // dom-cleanup.ts's applyExclusions() against the SERIALIZED capture HTML -- the exact
@@ -3288,7 +3331,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         // Computed here, synchronously, while excludedElements still lines up 1:1 with
         // excludedSelectors and the elements are still live.
         const exclusionSignatures = buildExclusionSignatures(
-          excludedElements.map((el, i) => ({ sel: excludedSelectors[i], elementHtml: el.outerHTML })),
+          individualElements.map((el, i) => ({ sel: excludedSelectors[i], elementHtml: el.outerHTML })),
           cleanedHTML
         );
 
@@ -3468,6 +3511,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
             structureMarker,
             positionBased: finalPositionBased,
             excludedSelectors,
+            exclusionPatterns,
             html_cache: component.html_cache,
             rawCaptureLength: component.rawCaptureLength,
             exclusionSignatures
@@ -3495,6 +3539,8 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
             structureMarker: metadata.structureMarker, // issue #77: capture-time identity marker for feed-rotation rescue
             positionBased: finalPositionBased, // 🎯 BATCH 2: User's final selection from Advanced panel
             excludedSelectors: excludedSelectors, // synced for cross-device when it fits (#90)
+            // #128: patterns are tiny, so they always ride in the sync record (absent = none)
+            ...(exclusionPatterns.length ? { exclusionPatterns } : {}),
             last_refresh: component.last_refresh,
             created_at: component.created_at // Track creation time for analytics
           });
@@ -3532,6 +3578,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                 html_cache: component.html_cache,
                 last_refresh: component.last_refresh,
                 excludedSelectors: excludedSelectors,
+                ...(exclusionPatterns.length ? { exclusionPatterns } : {}),
                 rawCaptureLength: component.rawCaptureLength,
                 // #96: local-only (device-specific like html_cache); absent = "unverified"
                 exclusionSignatures: exclusionSignatures
@@ -3601,7 +3648,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
                       params: {
                         url_domain: new URL(window.location.href).hostname,
                         capture_mode: finalPositionBased ? 'position' : 'selector',
-                        has_exclusions: excludedSelectors.length > 0,
+                        has_exclusions: excludedSelectors.length > 0 || exclusionPatterns.length > 0,
                         empty_warning_bypassed: bypassedEmptyWarning
                       }
                     });

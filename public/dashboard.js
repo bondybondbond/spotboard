@@ -107,6 +107,10 @@ function validateExportPayload(payload) {
       if (c && c.excludedSelectors != null && !Array.isArray(c.excludedSelectors)) {
         issues.push(`Card ${i + 1}: excludedSelectors is not a list`);
       }
+      // #128: optional field; an older export simply has none
+      if (c && c.exclusionPatterns != null && !Array.isArray(c.exclusionPatterns)) {
+        issues.push(`Card ${i + 1}: exclusionPatterns is not a list`);
+      }
       // A duplicate id would silently collapse to one card when keyed into
       // syncWrites/componentsData in applyImportedBoard() — surface it instead.
       if (c && c.id) {
@@ -244,6 +248,7 @@ async function applyImportedBoard(payload) {
       html_cache: card.html_cache,
       last_refresh: card.last_refresh,
       ...(exportedExclusions ? { excludedSelectors: exportedExclusions } : {}),
+      ...(Array.isArray(card.exclusionPatterns) ? { exclusionPatterns: card.exclusionPatterns } : {}),
       ...(rawCaptureLength ? { rawCaptureLength } : {}),
       ...(Array.isArray(exclusionSignatures) ? { exclusionSignatures } : {})
     };

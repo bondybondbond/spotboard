@@ -150,6 +150,177 @@ export const EXCLUDED_MARK_ATTR = 'data-sb-excluded';
 /** Refresh-time report on a kept responsive twin: selectors whose mark could not be carried onto it (#125). */
 const EXCLUDED_MISS_ATTR = 'data-sb-excluded-miss';
 
+// ---------------------------------------------------------------------------------------
+// #128 -- exclusion patterns: "every element of this kind in the captured region is excluded".
+//
+// A Shift+click bulk exclusion (#34/#87) already means exactly that to the user, but it used to be
+// stored as one position path per item -- which decays as a reshuffling page (NPR) moves things
+// around, and made capture slower the more items were excluded. When the group comes from the
+// cross-parent rule below and EVERY match was excluded, the rule itself is stored instead.
+//
+// Semantics (deliberately not "no element of this kind may exist"): the pattern defines what to
+// remove. After it is applied nothing of that kind is left in the region, so a survivor check
+// would be vacuous. Its failure signals are the ones that mean the rule can no longer be trusted:
+// it matches nothing (site renamed the class -> the excluded content is back) or vastly more than
+// it did at capture (the class was repurposed -> mass deletion). Both fail the refresh closed.
+// ---------------------------------------------------------------------------------------
+
+/** One stored pattern. Compact: it rides in the chrome.storage.sync record. */
+export interface ExclusionPattern {
+  /** anchor tag: the element itself when it has its own class, else its nearest classed ancestor (<=3 up) */
+  a: string;
+  /** anchor EXACT className ('' for the <time> rule) */
+  c: string;
+  /** child-index path from the anchor down to the excluded element ([] when it is the anchor) */
+  p: number[];
+  /** target tag (uppercase, as el.tagName) */
+  t: string;
+  /** matches at capture time -- the drift baseline */
+  n: number;
+}
+
+/** A card never stores more rules than this (they ride in the sync record); extra groups stay individual. */
+export const PATTERN_MAX_RULES = 10;
+/** Fewer than this many matches is a handful of clicks, not a pattern. */
+export const PATTERN_MIN_MATCHES = 3;
+/** Refresh fails closed when a pattern matches more than this many times its capture-time count. */
+export const PATTERN_MAX_GROWTH = 3;
+
+// Class tokens that describe styling, not what the element is -- a rule built only from these
+// ("flex items-center", "size--all-s") would match unrelated things, so no pattern is stored and
+// the exclusions stay individual, exactly as before.
+const UTILITY_TOKEN_RE = /^(?:[a-z0-9]+:)?(?:-?(?:flex|grid|block|inline|inline-block|inline-flex|hidden|relative|absolute|fixed|sticky|truncate|underline|italic|uppercase|lowercase|capitalize|bold|container|wrap|row|col|img|icon|text|font|leading|tracking|items|justify|content|self|place|gap|space|order|grow|shrink|basis|p[xytblrse]?|m[xytblrse]?|w|h|min|max|size|bg|border|rounded|shadow|opacity|overflow|cursor|pointer|z|top|left|right|bottom|inset|align|float|clear|object|transition|duration|ease|animate|hover|focus|active|group|sr)(?:[-_]{1,2}[\w./:%-]+)?|\d+)$/i;
+
+/** True when every class token is a styling utility (or there are none). */
+export function isUtilityOnlyClass(className: string): boolean {
+  const tokens = className.trim().split(/\s+/).filter(Boolean);
+  return tokens.length === 0 || tokens.every(tok => UTILITY_TOKEN_RE.test(tok));
+}
+
+/** Elements matching a stored pattern inside `root` (descendants only), outermost only, document order. */
+export function resolveExclusionPattern(root: ParentNode, rule: Pick<ExclusionPattern, 'a' | 'c' | 'p' | 't'>): HTMLElement[] {
+  if (rule.a.toLowerCase() === 'time') {
+    return Array.from(root.querySelectorAll<HTMLElement>('time'));
+  }
+  const matches: HTMLElement[] = [];
+  root.querySelectorAll<HTMLElement>(rule.a).forEach(candidate => {
+    if (candidate.className !== rule.c) return;
+    let node: HTMLElement | undefined = candidate;
+    for (const idx of rule.p) {
+      node = node?.children[idx] as HTMLElement | undefined;
+      if (!node) return;
+    }
+    if (node && node.tagName === rule.t) matches.push(node);
+  });
+  return matches.filter(el => !matches.some(other => other !== el && other.contains(el)));
+}
+
+/**
+ * The cross-parent "similar elements" rule (#87) for `element` inside `locked`, or null when it
+ * has none. Single source of truth: content.ts's getCrossParentGroup() groups with it at capture,
+ * and refresh re-resolves the stored rule with resolveExclusionPattern().
+ */
+export function deriveCrossParentPattern(element: HTMLElement, locked: HTMLElement): { rule: ExclusionPattern; matches: HTMLElement[] } | null {
+  if (!locked.contains(element) || element === locked) return null;
+
+  if (element.tagName === 'TIME') {
+    const times = Array.from(locked.querySelectorAll<HTMLElement>('time'));
+    return times.length > 1 && times.includes(element) ? { rule: { a: 'time', c: '', p: [], t: 'TIME', n: times.length }, matches: times } : null;
+  }
+
+  const indexPath: number[] = [];
+  let anchor: HTMLElement | null = element;
+  for (let depth = 0; anchor && anchor !== locked && depth <= 3; depth++) {
+    if (typeof anchor.className === 'string' && anchor.className.trim()) break;
+    const par: HTMLElement | null = anchor.parentElement;
+    if (!par) return null;
+    indexPath.unshift(Array.from(par.children).indexOf(anchor));
+    anchor = par;
+  }
+  if (indexPath.length > 3 || !anchor || anchor === locked || typeof anchor.className !== 'string' || !anchor.className.trim()) return null;
+
+  const rule = { a: anchor.tagName, c: anchor.className, p: indexPath, t: element.tagName, n: 0 };
+  const matches = resolveExclusionPattern(locked, rule);
+  if (matches.length < 2 || !matches.includes(element)) return null;
+  rule.n = matches.length;
+  return { rule, matches };
+}
+
+/** Why a stored pattern cannot be trusted on this markup, or null when it is fine. */
+export function patternFault(rule: ExclusionPattern, matchCount: number): string | null {
+  if (matchCount === 0) return 'matched nothing';
+  if (matchCount > Math.max(rule.n, 1) * PATTERN_MAX_GROWTH) return `matched ${matchCount} elements (was ${rule.n} at capture)`;
+  return null;
+}
+
+/** Human-readable name of a pattern for logs. */
+export function describePattern(rule: ExclusionPattern): string {
+  const cls = rule.c ? '.' + rule.c.trim().split(/\s+/).join('.') : '';
+  return `${rule.a.toLowerCase()}${cls}${rule.p.length ? ' > [' + rule.p.join(',') + ']' : ''} -> ${rule.t.toLowerCase()}`;
+}
+
+/**
+ * Refresh time: claim (mark, not remove -- same contract as applyExclusionsWithStats markOnly)
+ * every element each stored pattern matches inside the captured region. A pattern that cannot be
+ * trusted marks nothing and is reported in `faults`; the caller fails the refresh closed.
+ * Parsed into a <template> (inert -- nothing loads, and leading <style>/<link> stay in the markup,
+ * which a DOMParser body would drop).
+ */
+export function markPatternExclusions(html: string, patterns?: ExclusionPattern[] | null): { html: string; faults: string[]; counts: number[] } {
+  const faults: string[] = [];
+  const counts: number[] = [];
+  if (patterns == null) return { html, faults, counts };
+  // Anything other than a list (a corrupt or hand-edited record) cannot be trusted and must not be
+  // read as "no patterns" -- that would silently bring the excluded content back.
+  if (!Array.isArray(patterns)) { faults.push('invalid patterns field'); return { html, faults, counts }; }
+  if (!html || patterns.length === 0) return { html, faults, counts };
+
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const frag = tpl.content;
+  const queryRoot: ParentNode =
+    frag.children.length === 1 && frag.firstElementChild
+      ? frag.firstElementChild
+      : frag;
+
+  patterns.forEach(rule => {
+    if (!rule || typeof rule.a !== 'string' || typeof rule.c !== 'string' || typeof rule.t !== 'string' || !Array.isArray(rule.p) || typeof rule.n !== 'number' || !Number.isFinite(rule.n) || rule.n < 1) {
+      faults.push('invalid rule');
+      counts.push(-1);
+      return;
+    }
+    let matches: HTMLElement[];
+    try {
+      matches = resolveExclusionPattern(queryRoot, rule);
+    } catch {
+      faults.push(`${String(rule.a)}: invalid rule`);
+      counts.push(-1);
+      return;
+    }
+    // Capture resolves DESCENDANTS of the region element; with several top-level nodes the fragment is the
+    // query root and would also offer those top-level nodes (incl. the region element itself) as matches.
+    if (queryRoot === frag) matches = matches.filter(m => m.parentNode !== frag);
+    counts.push(matches.length);
+    const fault = patternFault(rule, matches.length);
+    if (fault) {
+      faults.push(`${describePattern(rule)} ${fault}`);
+      return;
+    }
+    matches.forEach(el => el.setAttribute(EXCLUDED_MARK_ATTR, 'pattern'));
+  });
+  return { html: tpl.innerHTML, faults, counts };
+}
+
+/**
+ * Capture time (#61-style proof): does every pattern resolve to EXACTLY its capture-time count on the
+ * serialized capture HTML -- the markup refresh will be handed? If not, the caller keeps the
+ * exclusions as individual selectors.
+ */
+export function patternsResolveOnMarkup(html: string, patterns: ExclusionPattern[]): boolean {
+  const proof = markPatternExclusions(html, patterns);
+  return proof.faults.length === 0 && proof.counts.length === patterns.length && proof.counts.every((n, i) => n === patterns[i].n);
+}
+
 /**
  * Apply user exclusions to HTML content
  * Removes DOM elements that user explicitly excluded during capture or editing
@@ -2461,6 +2632,8 @@ interface SanitizationComponent {
   html_cache?: string;
   selector?: string;
   exclusionSignatures?: ExclusionSignature[];
+  /** #128: "every element of this kind in the region is excluded" rules, beside excludedSelectors */
+  exclusionPatterns?: ExclusionPattern[] | null;
   url?: string;
 }
 
@@ -2544,6 +2717,8 @@ export interface ExclusionCheck {
   leaked: string[];
   /** unresolved selectors we had no signature for (cannot tell if their content is back) */
   unverified: string[];
+  /** #128: stored patterns that cannot be trusted on this markup (matched nothing / far too many) */
+  patternFaults?: string[];
 }
 
 /**
@@ -2578,7 +2753,7 @@ function finishMarkedExclusions(html: string, unresolved: string[], signatures?:
   const pending = new Set<Element>(Array.from(container.querySelectorAll(`[${EXCLUDED_MARK_ATTR}]`)));
   const stillUnresolved = [...unresolved];
   container.querySelectorAll(`[${EXCLUDED_MISS_ATTR}]`).forEach(el => {
-    (el.getAttribute(EXCLUDED_MISS_ATTR) || '').split('\n').forEach(sel => { if (sel && !stillUnresolved.includes(sel)) stillUnresolved.push(sel) });
+    (el.getAttribute(EXCLUDED_MISS_ATTR) || '').split('\n').forEach(sel => { if (sel && sel !== 'pattern' && !stillUnresolved.includes(sel)) stillUnresolved.push(sel) });
     el.removeAttribute(EXCLUDED_MISS_ATTR);
   });
   if (root !== container) anchorUnresolvedByText(root, stillUnresolved, signatures, pending);
@@ -2618,13 +2793,16 @@ export function applySanitizationPipeline(inputHtml: string, component: Sanitiza
   //    hidden partner would have nothing to pair with and survive. Dedup sees both twins, and
   //    carries the marks onto the twin it keeps (transferExclusionMarks); the #99 text-anchor
   //    also runs after dedup, as before (finishMarkedExclusions).
-  const { html: marked, unresolved: markUnresolved } = applyExclusionsWithStats(safeHtml, component.excludedSelectors, component.selector, component.exclusionSignatures, true);
+  //  - #128: stored patterns claim their matches first (same mark, same removal point), so a
+  //    pattern-covered card needs no per-item selectors at all.
+  const { html: patternMarked, faults: patternFaults } = markPatternExclusions(safeHtml, component.exclusionPatterns);
+  const { html: marked, unresolved: markUnresolved } = applyExclusionsWithStats(patternMarked, component.excludedSelectors, component.selector, component.exclusionSignatures, true);
   const { html: withExclusions, unresolved } = finishMarkedExclusions(cleanupDuplicates(marked), markUnresolved, component.exclusionSignatures);
   const withBgImages = extractBackgroundImages(withExclusions);
   const withVideoPosters = extractVideoPosters(withBgImages, component.url);
   const withPreserved = preserveImageClassifications(withVideoPosters, component.html_cache || '');
   const finalHtml = classifyImagesForRefresh(withPreserved);
   // #96: judged on the FINAL card, since that's what the user will see
-  recordExclusionCheck(component, findLeakedExclusions(finalHtml, unresolved, component.exclusionSignatures), finalHtml);
+  recordExclusionCheck(component, { ...findLeakedExclusions(finalHtml, unresolved, component.exclusionSignatures), patternFaults }, finalHtml);
   return finalHtml;
 }

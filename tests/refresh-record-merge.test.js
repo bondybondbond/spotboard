@@ -200,3 +200,23 @@ test('a legacy card whose exclusions no longer fit inline gets them written to l
   assert.equal(sync['comp-a'].exclusionsStorage, 'local')
   assert.equal(local.a.excludedSelectors.length, 400)
 })
+
+// #128: exclusion patterns are a capture-derived field no refresh owns -- they must survive both a
+// committed refresh and a failed one (including the pattern-fault failure), in sync AND local.
+test('exclusionPatterns survive a committed and a failed refresh write (#128)', async () => {
+  const patterns = [{ a: 'SPAN', c: 'credit', p: [], t: 'SPAN', n: 99 }]
+  seed('a', { exclusionPatterns: patterns })
+  local.a.exclusionPatterns = patterns
+  await g.persistRefreshOutcomes([{ component: load('a'), result: okResult }])
+  assert.deepEqual(sync['comp-a'].exclusionPatterns, patterns)
+  assert.deepEqual(local.a.exclusionPatterns, patterns)
+
+  seed('b', { exclusionPatterns: patterns })
+  local.b.exclusionPatterns = patterns
+  await g.persistRefreshOutcomes([{ component: load('b'), result: { success: false, error: 'Exclusion pattern stopped matching', keepOriginal: true, patternFault: true } }])
+  assert.equal(sync['comp-b'].lastOutcome, 'failed')
+  assert.equal(sync['comp-b'].lastErrorCode, 'pattern_unapplied')
+  assert.deepEqual(sync['comp-b'].exclusionPatterns, patterns)
+  assert.deepEqual(local.b.exclusionPatterns, patterns)
+  assert.equal(local.b.html_cache, oldHtml) // last good copy kept
+})

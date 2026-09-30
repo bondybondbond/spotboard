@@ -141,6 +141,9 @@ function classifyError(errorString) {
   if (errorLower.includes('excluded content')) {
     return 'exclusions_unapplied';  // #96: user-excluded content came back in the refreshed card
   }
+  if (errorLower.includes('exclusion pattern')) {
+    return 'pattern_unapplied';  // #128: a stored "exclude all like this" rule stopped matching / matched far too much
+  }
   if (errorLower.includes(RENDER_DEGRADED_ERROR.toLowerCase())) {
     return 'render_degraded';  // #101: every browser capture was hidden + collapsed; last good copy kept
   }
@@ -173,6 +176,7 @@ function getErrorLabel(errorCode) {
     'content_drift': "Content changed significantly",
     'content_lost': "Card came back empty",
     'exclusions_unapplied': "Excluded content came back — re-capture this card",
+    'pattern_unapplied': "An “exclude all like this” rule no longer fits this page — re-capture this card",
     'render_degraded': "Page didn't fully load — kept your last good copy",
     'unknown': "Refresh failed"
   };
@@ -186,7 +190,7 @@ function getErrorLabel(errorCode) {
  * A non-failed card with no html_cache that has already attempted a refresh (lastAttemptAt)
  * also qualifies; a brand-new card mid-first-capture has no attempt yet and does not.
  */
-const RECAPTURE_ERROR_CODES = ['layout_changed', 'content_lost', 'exclusions_unapplied'];
+const RECAPTURE_ERROR_CODES = ['layout_changed', 'content_lost', 'exclusions_unapplied', 'pattern_unapplied'];
 function shouldOfferRecapture(component) {
   if (!component) return false;
   if (component.lastOutcome === 'failed') {
@@ -663,6 +667,18 @@ function _finalizeSuccess(sanitizedHtml, component, extras = {}) {
       exclusionLeak: true
     };
   }
+  // #128: a stored pattern that matched nothing (site renamed the class -> the excluded content is
+  // back) or far more than at capture (class repurposed -> mass deletion) cannot be trusted. Same
+  // fail-closed stance as the leak gate above: keep the last good copy, name the cause, offer Re-capture.
+  if (_xc && _xc.patternFaults && _xc.patternFaults.length > 0) {
+    console.warn(`[SB-REFRESH] Exclusion pattern guard: ${_xc.patternFaults.length} pattern(s) cannot be trusted for ${component && component.name}`, _xc.patternFaults);
+    return {
+      success: false,
+      error: 'Exclusion pattern stopped matching',
+      keepOriginal: true,
+      patternFault: true
+    };
+  }
   if (DEBUG && _xc && _xc.unverified && _xc.unverified.length > 0) {
     console.log(`[SB-REFRESH] ${_xc.unverified.length} unapplied exclusion(s) cannot be verified (no captured text) for ${component && component.name}`);
   }
@@ -898,6 +914,7 @@ const _GA4_ERROR_LABEL = {
   content_drift: 'content_drift', // NEW (was 'unknown' before)
   content_lost: 'content_lost',   // NEW (was 'unknown' before)
   exclusions_unapplied: 'exclusions_unapplied', // #96
+  pattern_unapplied: 'pattern_unapplied', // #128
   render_degraded: 'render_degraded', // #101
   unknown: 'unknown'
 };
@@ -931,7 +948,7 @@ function trackRefreshFailure(component, result, isRetry = false) {
         url_domain: new URL(component.url).hostname,
         error_type: errorType,
         selector_type: component.positionBased ? 'position' : 'selector',
-        has_exclusions: !!(component.excludedSelectors && component.excludedSelectors.length > 0),
+        has_exclusions: !!((component.excludedSelectors && component.excludedSelectors.length > 0) || (component.exclusionPatterns && component.exclusionPatterns.length > 0)),
         fallback_used: fallbackUsed,
         ...(isRetry ? { is_retry: true } : {})
       }

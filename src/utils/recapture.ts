@@ -11,6 +11,7 @@ export interface RecaptureResult {
   structureMarker?: unknown
   positionBased: boolean
   excludedSelectors: string[]
+  exclusionPatterns?: unknown[]
   html_cache: string
   rawCaptureLength: number
   exclusionSignatures?: unknown
@@ -42,6 +43,9 @@ export function mergeRecapture(
     lastErrorCode: null,
     lastErrorAt: null
   }
+  // #128: patterns belong to the capture that derived them -- replace, never inherit a stale set.
+  if (capture.exclusionPatterns && capture.exclusionPatterns.length) sync.exclusionPatterns = capture.exclusionPatterns
+  else delete sync.exclusionPatterns
   // A stale identity marker from the old selector must not survive when the new capture has none.
   if (capture.structureMarker) sync.structureMarker = capture.structureMarker
   else delete sync.structureMarker
@@ -55,6 +59,8 @@ export function mergeRecapture(
     rawCaptureLength: capture.rawCaptureLength,
     exclusionSignatures: capture.exclusionSignatures
   }
+  if (capture.exclusionPatterns && capture.exclusionPatterns.length) local.exclusionPatterns = capture.exclusionPatterns
+  else delete local.exclusionPatterns
   // Drift baseline belongs to the old selector's output.
   delete local.originalCaptureLength
 
