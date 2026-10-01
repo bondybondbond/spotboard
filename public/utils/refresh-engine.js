@@ -654,6 +654,8 @@ function _finalizeSuccess(sanitizedHtml, component, extras = {}) {
   // committing would silently re-show something the user deliberately removed -- keep the last
   // good content instead. Deliberately NO retry on richer tiers here: measured on Kalshi, no tier
   // resolved every exclusion, so retries only cost time (and popups) without changing the outcome.
+  // (Pattern rules are the exception, upstream of this gate: tabBasedRefresh tries further tiers for
+  // a card whose stored pattern faults on a candidate -- the layout differs per tier, #132.)
   // The verdict only counts for the exact HTML it was computed on (a later pipeline pass on a
   // different candidate must not be judged by an earlier pass's result, or vice versa).
   const _xcRaw = component && component.__exclusionCheck;
@@ -1112,9 +1114,37 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
  *
  * Used in: refreshComponent() when direct fetch fails or for known problematic sites
  */
-async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0, skipToActive = false, skipToOffscreen = false, { assess = null } = {}) {
+async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0, skipToActive = false, skipToOffscreen = false, { assess = null, layoutOk = null } = {}) {
   // Per-call local flag — parallel-refresh safe (no shared module-level state)
   let activeFocusNeeded = false;
+  // #132: `layoutOk(html)` is true when the card's stored "exclude all like this" rules still
+  // resolve on that candidate (a COMPATIBILITY check, never an acceptance: every gate and the
+  // final pattern guard still judge whatever is returned). Browser tiers render different layouts
+  // (background tab = window width, popups = ~300px), and a rule built on the capture-width layout
+  // faults on the narrow one. Absent for cards without patterns -> none of the below applies.
+  //  - layoutMatch: first candidate rejected ONLY by the large-image heuristics but compatible.
+  //    Returned only if a later tier proved a different layout (layoutMismatchSeen) and #101 passes.
+  //  - firstFaulting: first otherwise-acceptable candidate that faulted, so when every tier faults the
+  //    caller still gets markup to raise the specific "rule no longer fits" cause (not a generic failure).
+  let layoutMatch = null;
+  let layoutMismatchSeen = false;
+  let firstFaulting = null;
+  const isCompatible = html => !layoutOk || layoutOk(html);
+  // Only a candidate that this tier would otherwise have ACCEPTED (images fine, #101 fine) is kept as the
+  // fault to report; a degraded one must not turn a render_degraded outcome into "re-capture this card".
+  const noteMismatch = (html, tierActiveFocus, imagesOk, meta, tier) => {
+    layoutMismatchSeen = true;
+    if (imagesOk && !firstFaulting && passesQualityGate(html, meta, tier)) firstFaulting = { html, activeFocusNeeded: tierActiveFocus };
+  };
+  // Last word on every non-accepting exit once the tiers are exhausted. A remembered compatible
+  // candidate wins only on positive proof that another tier rendered a different layout (a tier that
+  // merely timed out proves nothing) and only if the #101 gate accepts it.
+  const settle = () => {
+    if (layoutMatch && layoutMismatchSeen && passesQualityGate(layoutMatch.html, layoutMatch.meta, 'layout-match')) {
+      return { html: layoutMatch.html, activeFocusNeeded: false };
+    }
+    return firstFaulting ? { html: firstFaulting.html, activeFocusNeeded: firstFaulting.activeFocusNeeded } : null;
+  };
   // #101: `assess(html, pageVisible)` -> assessCaptureQuality() result. Runs after each tier's own
   // gates accept; a rejected capture moves on to the next tier, and a rejected focused-popup
   // capture ends as renderDegraded (caller keeps the last good copy).
@@ -1164,11 +1194,19 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
         // escalate on an absolute floor too, giving the active-tab tier a chance to run and
         // self-learn requiresActiveFocus
         // (confirmed live on HotUKDeals: 65 imgs in a focused tab vs 5 in an unfocused capture).
-        if ((expectedImgCount >= 3 && resultImgCount === 0) ||
+        const imagesGone = expectedImgCount >= 3 && resultImgCount === 0;
+        const imagesDegraded = imagesGone ||
             (expectedLargeImgCount >= 1 && resultLargeImgCount === 0) ||
-            (expectedImgCount >= 5 && resultLargeImgCount <= 1)) {
+            (expectedImgCount >= 5 && resultLargeImgCount <= 1);
+        const compatible = isCompatible(result); // #132
+        if (imagesDegraded) {
           if (DEBUG) console.log('[SB-REFRESH]', new URL(url).hostname, 'images degraded expected=', expectedImgCount + '/' + expectedLargeImgCount, 'got=', resultImgCount + '/' + resultLargeImgCount, '→ trying offscreen');
+          // #132: only the large-image heuristics may be overridden by a layout match; "every image gone" never.
+          if (!compatible) noteMismatch(result, false, false);
+          else if (layoutOk && !imagesGone && !layoutMatch) layoutMatch = { html: result, meta: bgMeta };
           // Fall through to offscreen window
+        } else if (!compatible) {
+          noteMismatch(result, false, true, bgMeta, 'background'); // wrong layout for the stored rules -> try the next tier
         } else if (passesQualityGate(result, bgMeta, 'background')) {
           return { html: result, activeFocusNeeded: false };
         }
@@ -1186,15 +1224,21 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     if (offscreenHtml) {
       const offImgCount = (offscreenHtml.match(/<img/gi) || []).length;
       const offLargeImgCount = (offscreenHtml.match(LARGE_IMG_RE) || []).length;
+      const offCompatible = isCompatible(offscreenHtml); // #132
       // Gate 1: zero images → fall through
       if (expectedImgCount >= 3 && offImgCount === 0) {
         if (DEBUG) console.log('🪟 [Offscreen] Zero images → trying active popup');
+        if (!offCompatible) noteMismatch(offscreenHtml, false, false);
       // Gate 2: zero large images → Vue child components didn't mount (unfocused compositor frame).
       // Use strict === 0 to avoid false positives on sites with variable content counts (e.g. Zoopla).
       // Sites like Zoopla get fewer large images due to content rotation, not Vue mounting failure.
       // HotUKDeals gets 0 large images in offscreen (box--contents never mounts without focus).
       } else if (expectedLargeImgCount >= 5 && offLargeImgCount === 0) {
         if (DEBUG) console.log('🪟 [Offscreen] Large imgs absent:', offLargeImgCount, '/', expectedLargeImgCount, '→ trying active popup');
+        if (!offCompatible) noteMismatch(offscreenHtml, false, false);
+        else if (layoutOk && !layoutMatch) layoutMatch = { html: offscreenHtml, meta: offMeta };
+      } else if (!offCompatible) {
+        noteMismatch(offscreenHtml, false, true, offMeta, 'offscreen'); // #132: wrong layout for the stored rules -> active popup
       } else if (passesQualityGate(offscreenHtml, offMeta, 'offscreen')) {
         if (DEBUG) console.log('🪟 [Offscreen] Accepted:', offImgCount, 'imgs', offLargeImgCount, 'large (classifyFallback will resize)');
         return { html: offscreenHtml, activeFocusNeeded: false };
@@ -1206,12 +1250,19 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     activeFocusNeeded = true;
     const activeMeta = {};
     const fallbackResult = await tryActiveTab(url, selector, fingerprint, activeMeta);
+    // #132: the last tier rendered a layout the stored rules don't fit. Prefer a compatible candidate an
+    // earlier tier set aside; otherwise hand back the first faulting one so the caller names the real cause.
+    // Never learns requiresActiveFocus from this (the returned flag comes from the settled candidate).
+    if (fallbackResult && !isCompatible(fallbackResult)) {
+      noteMismatch(fallbackResult, true, true, activeMeta, 'active');
+      return settle() || { html: null, activeFocusNeeded: false, renderDegraded: true };
+    }
     if (fallbackResult && !passesQualityGate(fallbackResult, activeMeta, 'active')) {
       return { html: null, activeFocusNeeded: false, renderDegraded: true };
     }
     if (fallbackResult) return { html: fallbackResult, activeFocusNeeded: true };
 
-    return { html: null, activeFocusNeeded: false };
+    return settle() || { html: null, activeFocusNeeded: false };
   } catch (error) {
     console.error('Tab refresh failed:', error);
     return { html: null, activeFocusNeeded: false };
@@ -1224,9 +1275,15 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
  * with the saved copy. Every refreshComponent / drift-guard tab path goes through here.
  */
 function _tabRefreshForComponent(component, fingerprint, expectedImgCount, expectedLargeImgCount) {
+  // #132: only cards with stored "exclude all like this" rules get a layout-compatibility check, run on
+  // the same input and with the same function the pipeline's pattern guard uses (never stricter than it).
+  const patterns = component.exclusionPatterns;
+  const layoutOk = Array.isArray(patterns) && patterns.length > 0
+    ? html => markPatternExclusions(stripEventHandlers(html), patterns).faults.length === 0
+    : null;
   return tabBasedRefresh(component.url, component.selector, fingerprint, expectedImgCount, expectedLargeImgCount,
     component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true,
-    { assess: (html, pageVisible) => assessCaptureQuality(applySanitizationPipeline(html, component), component.html_cache, pageVisible) });
+    { assess: (html, pageVisible) => assessCaptureQuality(applySanitizationPipeline(html, component), component.html_cache, pageVisible), layoutOk });
 }
 
 function _renderDegradedResult() {
