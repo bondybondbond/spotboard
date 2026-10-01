@@ -142,3 +142,35 @@ test('if the proposed root is removed from the page, Grow fails safely and ends 
   assert.equal(events[0].params.outcome, 'detached')
   reset()
 })
+
+// #127: the lime top strip follows the same rule as the panel hint -- no "Grow" when Grow is disabled.
+const stripText = () => document.getElementById('spotboard-refine-banner').textContent
+const stripInstructions = () => document.querySelector('#spotboard-refine-banner [data-sb-strip-instructions]')
+
+test('top strip names Grow only while Grow is available, and follows Grow/Shrink', () => {
+  reset()
+  const { leaf } = fixture()
+  startRefinement(leaf, leaf, false)
+  assert.match(stripText(), /Grow to include more/)
+  growRefinement()
+  growRefinement() // column: <body> above it is the boundary, so Grow is now disabled
+  assert.doesNotMatch(stripText(), /grow/i)
+  assert.match(stripText(), /Click another element to re-select/)
+  assert.match(stripText(), /Enter to continue/)
+  assert.match(stripText(), /Esc to cancel/)
+  assert.match(stripText(), /^CAPTURE MODE · Step 2 of 2 - /)
+  shrinkRefinement()
+  assert.match(stripText(), /Grow to include more/)
+  reset()
+})
+
+test('top strip is not rebuilt by scroll/resize while Grow availability is unchanged', () => {
+  reset()
+  const { leaf } = fixture()
+  startRefinement(leaf, leaf, false)
+  const before = stripInstructions().firstChild
+  window.dispatchEvent(new window.Event('resize'))
+  window.dispatchEvent(new window.Event('resize'))
+  assert.equal(stripInstructions().firstChild, before)
+  reset()
+})

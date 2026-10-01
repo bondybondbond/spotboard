@@ -2252,7 +2252,10 @@ function createCaptureStrip(id: string, step: 1 | 2, instructions: (Node | strin
   logo.style.cssText = 'width: 20px !important; height: 20px !important; max-width: none !important; flex: none !important; margin: 0 8px 0 0 !important; pointer-events: none;';
   const text = document.createElement('span');
   text.style.pointerEvents = 'none';
-  text.append(stripBold('CAPTURE MODE'), ` \u00b7 Step ${step} of 2 - `, ...instructions);
+  const instructionSpan = document.createElement('span');
+  instructionSpan.setAttribute('data-sb-strip-instructions', '');
+  instructionSpan.append(...instructions);
+  text.append(stripBold('CAPTURE MODE'), ` \u00b7 Step ${step} of 2 - `, instructionSpan);
   strip.append(logo, text);
   return strip;
 }
@@ -2264,10 +2267,8 @@ function showRefineBar() {
   window.addEventListener('scroll', updateRefineBar, true); // keep the wash on the root as the page moves
   window.addEventListener('resize', updateRefineBar);
 
-  document.body.appendChild(createCaptureStrip('spotboard-refine-banner', 2, [
-    stripBold('Grow'), ' to include more, or ', stripBold('click'), ' another element to re-select \u00b7 ',
-    stripKbd('Enter'), ' to continue \u00b7 ', stripKbd('Esc'), ' to cancel'
-  ]));
+  // Assumes Grow is available; updateRefineBar (called straight after) re-renders it if not.
+  document.body.appendChild(createCaptureStrip('spotboard-refine-banner', 2, stripPartsToNodes(refineStripParts(true))));
 
   const panel = document.createElement('div');
   panel.style.cssText = `
@@ -2328,11 +2329,41 @@ export function refineHintText(canGrow: boolean, canShrink: boolean): string {
   return actions.join(' ')
 }
 
+// #127: the top strip follows the same rule as the hint -- never tell the user to Grow when Grow is
+// disabled. Pure data so it can be unit-tested; stripPartsToNodes turns it into DOM.
+type StripPart = { kind: 'bold' | 'kbd' | 'text'; text: string }
+export function refineStripParts(canGrow: boolean): StripPart[] {
+  const parts: StripPart[] = canGrow
+    ? [
+        { kind: 'bold', text: 'Grow' }, { kind: 'text', text: ' to include more, or ' },
+        { kind: 'bold', text: 'click' }, { kind: 'text', text: ' another element to re-select · ' }
+      ]
+    : [
+        { kind: 'bold', text: 'Click' }, { kind: 'text', text: ' another element to re-select · ' }
+      ]
+  parts.push(
+    { kind: 'kbd', text: 'Enter' }, { kind: 'text', text: ' to continue · ' },
+    { kind: 'kbd', text: 'Esc' }, { kind: 'text', text: ' to cancel' }
+  )
+  return parts
+}
+
+function stripPartsToNodes(parts: StripPart[]): (Node | string)[] {
+  return parts.map(p => p.kind === 'bold' ? stripBold(p.text) : p.kind === 'kbd' ? stripKbd(p.text) : p.text)
+}
+
 function updateRefineBar() {
   const state = refineState;
   if (!state || !_refineShadow) return;
   const current = state.chain[state.index];
   const canGrow = !!(state.chain[state.index + 1] ?? getGrowCandidate(current));
+  // Re-render the strip only when Grow availability flips (this runs on every scroll/resize).
+  const stripInstructions = document.querySelector('#spotboard-refine-banner [data-sb-strip-instructions]') as HTMLElement | null;
+  const stripKey = canGrow ? 'grow' : 'nogrow';
+  if (stripInstructions && stripInstructions.dataset.sbGrow !== stripKey) {
+    stripInstructions.dataset.sbGrow = stripKey;
+    stripInstructions.replaceChildren(...stripPartsToNodes(refineStripParts(canGrow)));
+  }
   // No tag name / pixel size in the UI: the outline already shows what is selected, and "ol 1248x288"
   // is developer language (the same detail is in the DEBUG "Grow path" log).
   // The hover wash carries on over the proposed root, so "this area" reads the same before and
