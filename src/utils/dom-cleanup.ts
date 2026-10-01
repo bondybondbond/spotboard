@@ -854,7 +854,48 @@ function transferExclusionMarks(dropped: Element, kept: Element): void {
   });
 }
 
-export function cleanupDuplicates(html: string): string {
+/** #131: counts of the class tokens and short data-* attribute values in `root`'s subtree. Story-
+ *  and layout-agnostic on purpose (no URLs, ids or text), so what two twins differ in is the
+ *  *variant* (NPR's `.square` vs `.wide`), not the story. SpotBoard's own marks and stamps
+ *  (data-sb-*, data-spotboard-*, data-scale-context) are skipped. */
+function variantFeatureCounts(root: Element): Map<string, number> {
+  const counts = new Map<string, number>();
+  const add = (key: string) => counts.set(key, (counts.get(key) || 0) + 1);
+  [root, ...Array.from(root.querySelectorAll('*'))].forEach(el => {
+    el.classList.forEach(token => add('.' + token));
+    for (const attr of Array.from(el.attributes)) {
+      if (!attr.name.startsWith('data-') || /^data-(sb|spotboard|scale)-/.test(attr.name)) continue;
+      if (attr.value.length <= 24 && !/[/?=&]/.test(attr.value)) add(`[${attr.name}=${attr.value}]`);
+    }
+  });
+  return counts;
+}
+
+/** #131: which of two responsive twins refresh should keep. Tier-1 markup has no CSS, so neither
+ *  twin is known to be the visible one; the saved card is the evidence of what capture saw.
+ *  Each twin is scored by how often the features that tell it apart from its partner occur in
+ *  the saved card. `second` wins only on a strictly higher score, otherwise `first` (the
+ *  pre-#131 behaviour, also the answer when there is no saved card or no distinguishing feature). */
+function preferSavedTwin(first: Element, second: Element, savedCounts: Map<string, number> | null): Element {
+  if (!savedCounts) return first;
+  const a = variantFeatureCounts(first);
+  const b = variantFeatureCounts(second);
+  let scoreA = 0;
+  let scoreB = 0;
+  new Set([...a.keys(), ...b.keys()]).forEach(key => {
+    // Present in one twin, absent from the other: a token both twins carry (a different number of
+    // times) says nothing about which variant this is.
+    const inA = a.has(key);
+    const inB = b.has(key);
+    if (inA && !inB) scoreA += savedCounts.get(key) || 0;
+    else if (inB && !inA) scoreB += savedCounts.get(key) || 0;
+  });
+  return scoreB > scoreA ? second : first;
+}
+
+/** @param savedHtml The card's last stored HTML (refresh only). Used solely to pick which responsive
+ *  twin survives (#131); omitted, the first twin always wins, as before. */
+export function cleanupDuplicates(html: string, savedHtml?: string): string {
   if (!html) return html;
 
   // 🎯 STRIP INLINE EVENT HANDLERS (string level, BEFORE any DOM parse): captured pages carry
@@ -1065,6 +1106,15 @@ export function cleanupDuplicates(html: string): string {
   // variants using hashed CSS module classes that are invisible to selector-based dedup.
   // Without CSS, all variants are visible → articles appear twice.
   // v1: log only. Remove the TODO gate once console logs confirm correct matches.
+  // #131: parsed once, and only if a twin pair is actually found. DOMParser keeps it inert (no image loads).
+  let savedCounts: Map<string, number> | null | undefined;
+  const getSavedCounts = () => {
+    if (savedCounts === undefined) {
+      savedCounts = savedHtml ? variantFeatureCounts(new DOMParser().parseFromString(savedHtml, 'text/html').body) : null;
+    }
+    return savedCounts;
+  };
+
   temp.querySelectorAll('*').forEach(parent => {
     const children = Array.from(parent.children);
     if (children.length < 2) return;
@@ -1080,8 +1130,15 @@ export function cleanupDuplicates(html: string): string {
         const result = isResponsiveDuplicate(first, child);
         if (result.match) {
           if (result.confidence === 'high') {
-            transferExclusionMarks(child, first);
-            child.remove();
+            if (preferSavedTwin(first, child, getSavedCounts()) === child) {
+              // The later twin matches the saved card: it takes the first twin's place.
+              transferExclusionMarks(first, child);
+              first.replaceWith(child);
+              seenByImg.set(imgUrl, child);
+            } else {
+              transferExclusionMarks(child, first);
+              child.remove();
+            }
           }
         }
       } else {
@@ -2803,7 +2860,7 @@ export function applySanitizationPipeline(inputHtml: string, component: Sanitiza
   //    pattern-covered card needs no per-item selectors at all.
   const { html: patternMarked, faults: patternFaults } = markPatternExclusions(safeHtml, component.exclusionPatterns);
   const { html: marked, unresolved: markUnresolved } = applyExclusionsWithStats(patternMarked, component.excludedSelectors, component.selector, component.exclusionSignatures, true);
-  const { html: withExclusions, unresolved } = finishMarkedExclusions(cleanupDuplicates(marked), markUnresolved, component.exclusionSignatures);
+  const { html: withExclusions, unresolved } = finishMarkedExclusions(cleanupDuplicates(marked, component.html_cache), markUnresolved, component.exclusionSignatures);
   const withBgImages = extractBackgroundImages(withExclusions);
   const withVideoPosters = extractVideoPosters(withBgImages, component.url);
   const withPreserved = preserveImageClassifications(withVideoPosters, component.html_cache || '');
