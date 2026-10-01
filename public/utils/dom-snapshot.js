@@ -21,9 +21,11 @@ var DomSnapshot = (() => {
   // src/utils/dom-snapshot.ts
   var dom_snapshot_exports = {};
   __export(dom_snapshot_exports, {
+    HIDDEN_MARK_ATTR: () => HIDDEN_MARK_ATTR,
     classifyImages: () => classifyImages,
     cloneWithShadow: () => cloneWithShadow,
     harmonizeRepeatedImageRuns: () => harmonizeRepeatedImageRuns,
+    markHiddenElements: () => markHiddenElements,
     promoteBackgroundImages: () => promoteBackgroundImages,
     promoteLazyImages: () => promoteLazyImages,
     promoteVideoPosters: () => promoteVideoPosters
@@ -301,6 +303,60 @@ var DomSnapshot = (() => {
       }
     });
     harmonizeRepeatedImageRuns(root);
+  }
+  var HIDDEN_MARK_ATTR = "data-spotboard-hidden";
+  var ARIA_VISUAL_TAGS = /* @__PURE__ */ new Set(["IMG", "PICTURE", "VIDEO", "CANVAS", "SVG"]);
+  function markHiddenElements(root, profile) {
+    const full = profile === "capture";
+    const rootRect = root.getBoundingClientRect();
+    const findClippingAncestor = (el) => {
+      let parent = el.parentElement;
+      while (parent && parent !== root) {
+        const style = window.getComputedStyle(parent);
+        const overflowX = style.overflowX;
+        const overflow = style.overflow;
+        const isClipping = overflow === "hidden" || overflow === "scroll" || overflow === "auto" || overflow === "clip" || overflowX === "hidden" || overflowX === "scroll" || overflowX === "auto" || overflowX === "clip";
+        if (isClipping) {
+          const parentRect = parent.getBoundingClientRect();
+          if (parentRect.width < rootRect.width && parentRect.width > 50) return parentRect;
+        }
+        parent = parent.parentElement;
+      }
+      return rootRect;
+    };
+    const stripped = [];
+    root.querySelectorAll("*").forEach((el) => {
+      const t = el.style.transform;
+      if (t && (t.includes("translate3d") || t.includes("translateX"))) {
+        stripped.push({ el, transform: t, willChange: el.style.willChange });
+        el.style.removeProperty("transform");
+        el.style.removeProperty("will-change");
+      }
+    });
+    const marked = [];
+    root.querySelectorAll("*").forEach((el) => {
+      if (!(el instanceof HTMLElement)) return;
+      const computed = window.getComputedStyle(el);
+      const isDisplayNone = computed.display === "none";
+      const isVisibilityHidden = computed.visibility === "hidden";
+      const isOpacityZero = full && computed.opacity === "0";
+      const isAriaHiddenDecorative = el.getAttribute("aria-hidden") === "true" && !ARIA_VISUAL_TAGS.has(el.tagName) && (el.textContent?.trim().length ?? 0) === 0 && !el.querySelector("img, picture, video, canvas, svg");
+      const rect = el.getBoundingClientRect();
+      const clipRect = findClippingAncestor(el);
+      const isOffScreen = (rect.width > 0 || rect.height > 0) && (rect.right < clipRect.left || rect.left > clipRect.right);
+      const isLoadedImg = full && el.tagName === "IMG" && el.naturalWidth > 0;
+      if (isDisplayNone && !isLoadedImg || isVisibilityHidden || isOpacityZero || isAriaHiddenDecorative || isOffScreen) {
+        el.setAttribute(HIDDEN_MARK_ATTR, "true");
+        marked.push(el);
+      }
+    });
+    return {
+      marked,
+      restoreTransforms: () => stripped.forEach(({ el, transform, willChange }) => {
+        el.style.transform = transform;
+        if (willChange) el.style.willChange = willChange;
+      })
+    };
   }
   return __toCommonJS(dom_snapshot_exports);
 })();

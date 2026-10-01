@@ -956,8 +956,14 @@ export function cleanupDuplicates(html: string): string {
     // and toggle UI. Without CSS, div.caption (long desc + duplicate credit) + toggle
     // buttons all become visible. span.credit (always-visible short credit) is kept.
     'div.caption[aria-label="Image caption"]', // Hidden expanded caption with long description
-    'b.toggle-caption',                        // "toggle caption" button text
-    'b.hide-caption',                          // "hide caption" button text
+    // #130: these two used to be 'b.toggle-caption' / 'b.hide-caption', which could never match -- the
+    // real markup is <button class="toggle-caption"><b>..</b><abbr>i</abbr></button>, the <b> has no
+    // class -- so every refresh brought back one "toggle caption i" button per image. Remove the button.
+    'button.toggle-caption',                   // "toggle caption i" button (whole control)
+    'button.hide-caption',                     // "hide caption" button (whole control)
+    // Page title NPR hides with an off-screen screen-reader-only class (left:-10000px). Capture drops
+    // it by geometry; direct fetch has no CSS, so it is listed here. Known-site rule, like the rest.
+    'h1.homepage-h1',
 
     // 🎯 NPR BRIGHTSPOT AUDIO PLAYER — controls bar + hidden dropdown (direct-fetch)
     // audio-module-controls-wrap: the entire audio player row — "Listen · 2:49", duration,

@@ -2,7 +2,7 @@ console.log("🚀 SpotBoard: Content Script Loaded");
 import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset, deriveCrossParentPattern, isUtilityOnlyClass, patternsResolveOnMarkup, PATTERN_MIN_MATCHES, PATTERN_MAX_RULES } from './utils/dom-cleanup';
 import type { ExclusionPattern } from './utils/dom-cleanup';
 import { ensureLazyContentLoaded } from './utils/lazy-load';
-import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, promoteVideoPosters, classifyImages } from './utils/dom-snapshot';
+import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, promoteVideoPosters, classifyImages, markHiddenElements, HIDDEN_MARK_ATTR } from './utils/dom-snapshot';
 import { initOnboarding, advanceOnboardingCoach, getIsOnboardingMode, getIsPlaygroundPage } from './onboarding-coach';
 import { fitSyncRecord, SAVE_TOO_BIG_MESSAGE, friendlySaveError } from './utils/exclusion-storage';
 import { mergeRecapture } from './utils/recapture';
@@ -1070,100 +1070,10 @@ export const PREVIEW_PID_ATTR = 'data-sb-pid';
 
 export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement[] = [], previewMap?: Map<string, HTMLElement>): string {
   // 🎯 STEP 1: Mark hidden elements in ORIGINAL DOM (before cloning)
-  // Check computed styles on live DOM elements, then mark them for removal
-  const allOriginalElements = [element, ...Array.from(element.querySelectorAll('*'))];
-  const markedElements: HTMLElement[] = [];
-  
-  // Get the captured element's bounding rect for relative position checking
-  const containerRect = element.getBoundingClientRect();
-  
-  // Helper: Find nearest ancestor that clips content (carousel container)
-  const findClippingAncestor = (el: HTMLElement): DOMRect => {
-    let parent = el.parentElement;
-    while (parent && parent !== element) {
-      const style = window.getComputedStyle(parent);
-      // Check all overflow values that cause clipping
-      const overflowX = style.overflowX;
-      const overflow = style.overflow;
-      const isClipping = 
-        overflow === 'hidden' || overflow === 'scroll' || overflow === 'auto' || overflow === 'clip' ||
-        overflowX === 'hidden' || overflowX === 'scroll' || overflowX === 'auto' || overflowX === 'clip';
-      
-      if (isClipping) {
-        const parentRect = parent.getBoundingClientRect();
-        // Only use this container if it's narrower than our current reference (actual clipping)
-        // and reasonably sized (not a tiny element)
-        if (parentRect.width < containerRect.width && parentRect.width > 50) {
-          return parentRect;
-        }
-      }
-      parent = parent.parentElement;
-    }
-    return containerRect; // Fallback to outer container
-  };
-  
-  
-  // 🎯 STRIP CAROUSEL TRANSFORMS FROM LIVE DOM (before off-screen check)
-  // JS carousels (Owl, Swiper, Slick, Flickity) apply translate3d/translateX as inline styles
-  // to scroll slides. getBoundingClientRect() respects the live transform → off-screen slides
-  // appear outside the clip rect → removed before cloning → no images in capture.
-  // Strip before the visibility check; restore after cloning.
-  const strippedTransforms: Array<{ el: HTMLElement; transform: string; willChange: string }> = [];
-  element.querySelectorAll<HTMLElement>('*').forEach(el => {
-    const t = el.style.transform;
-    if (t && (t.includes('translate3d') || t.includes('translateX'))) {
-      strippedTransforms.push({ el, transform: t, willChange: el.style.willChange });
-      el.style.removeProperty('transform');
-      el.style.removeProperty('will-change');
-    }
-  });
-
-
-  allOriginalElements.forEach(el => {
-    if (el instanceof HTMLElement && el !== element) {
-      const computed = window.getComputedStyle(el);
-      
-      // 🎯 COMPREHENSIVE VISIBILITY CHECK
-      // Method 1: CSS-based hiding
-      const isDisplayNone = computed.display === 'none';
-      const isVisibilityHidden = computed.visibility === 'hidden';
-      const isOpacityZero = computed.opacity === '0';
-
-      // Method 1b: aria-hidden — but only strip EMPTY decorative elements (icon fonts, spacers).
-      // Do NOT strip non-empty aria-hidden elements: sites like BBC Sport mark all visual content
-      // (team names, scores, badge images) as aria-hidden alongside a visually-hidden a11y span.
-      // Blanket removal = blank captures. aria-hidden = hidden from screen readers, NOT from display.
-      const ARIA_VISUAL_TAGS = new Set(['IMG', 'PICTURE', 'VIDEO', 'CANVAS', 'SVG']);
-      const isAriaHiddenDecorative = el.getAttribute('aria-hidden') === 'true' &&
-        !ARIA_VISUAL_TAGS.has(el.tagName) &&
-        (el.textContent?.trim().length ?? 0) === 0 &&
-        !el.querySelector('img, picture, video, canvas, svg');
-      
-      // Method 2: Off-screen positioning (carousel slides)
-      // Use the nearest clipping ancestor (overflow:hidden) for bounds check
-      const rect = el.getBoundingClientRect();
-      const clipRect = findClippingAncestor(el);
-      const isOffScreenLeft = rect.right < clipRect.left;   // Fully left of clip container
-      const isOffScreenRight = rect.left > clipRect.right;  // Fully right of clip container
-      // Guard: skip elements with zero bounding rect (display:contents wrappers, e.g. HotUKDeals
-      // box--contents). These have no rendered box of their own — rect={0,0,0,0} — but their
-      // children ARE visible and positioned. Treating zero-rect as off-screen strips all children.
-      const isOffScreen = (rect.width > 0 || rect.height > 0) && (isOffScreenLeft || isOffScreenRight);
-      
-      // Exception: loaded images (naturalWidth > 0) should never be hidden by display:none alone.
-      // Carousels (Owl, Swiper, etc.) hide inactive slides with inline style="display:none" and
-      // restore them via external CSS (.active img { display:block !important }). The external CSS
-      // wins on the live page but is absent in the dashboard → inline display:none makes the img
-      // invisible. Capture it regardless; we strip the inline display:none from the clone below.
-      const isLoadedImg = el.tagName === 'IMG' && (el as HTMLImageElement).naturalWidth > 0;
-      const isHidden = (isDisplayNone && !isLoadedImg) || isVisibilityHidden || isOpacityZero || isAriaHiddenDecorative || isOffScreen;
-
-      if (isHidden) {
-        el.setAttribute('data-spotboard-hidden', 'true');
-        markedElements.push(el);
-      }
-    }
-  });
+  // Computed-style visibility check on the live DOM, marked for removal from the clone. The check
+  // itself (incl. stripping/restoring inline carousel transforms around it) is shared with the
+  // tab-based refresh tiers via DomSnapshot (#130) so capture and refresh cannot drift apart.
+  const { marked: markedElements, restoreTransforms } = markHiddenElements(element, 'capture');
 
   // 🎯 IMAGE CONTEXT CLASSIFICATION (BEFORE CLONING)
   // Unified container-walk classification via dom-snapshot — single source of truth.
@@ -1236,7 +1146,7 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
   }
 
   // Clean up markers from original DOM (restore page to pristine state)
-  markedElements.forEach(el => el.removeAttribute('data-spotboard-hidden'));
+  markedElements.forEach(el => el.removeAttribute(HIDDEN_MARK_ATTR));
   element.querySelectorAll('[data-bg-w]').forEach(el => {
     el.removeAttribute('data-bg-w');
     el.removeAttribute('data-bg-h');
@@ -1244,11 +1154,8 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
   element.querySelectorAll('[data-spotboard-force-visible]').forEach(el =>
     el.removeAttribute('data-spotboard-force-visible'));
   // Restore carousel transforms stripped before visibility check
-  strippedTransforms.forEach(({ el, transform, willChange }) => {
-    el.style.transform = transform;
-    if (willChange) el.style.willChange = willChange;
-  });
-  
+  restoreTransforms();
+
   // 🎯 REMOVE USER-EXCLUDED ELEMENTS
   // Matched via the data-spotboard-excluded marker set on the live nodes before cloning.
   // querySelectorAll returns document order, so for a nested pair the ancestor is removed

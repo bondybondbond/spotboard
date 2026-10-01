@@ -394,3 +394,108 @@ export function classifyImages(root: Element): void {
   });
   harmonizeRepeatedImageRuns(root);
 }
+
+// ── Hidden-element marking (#130) ────────────────────────────────────────────────────────────
+// ONE definition of "hidden on the live page", shared by capture (content.ts sanitizeHTML) and the
+// three tab-based refresh tiers (refresh-engine.js). Before #130 capture ran this full check
+// inline while each tab tier ran its own copy that tested only display:none, so an element hidden
+// any other way (off-screen, visibility:hidden, empty aria-hidden) was captured out but came back
+// on refresh. Direct fetch (tier 1) has no CSS at all and cannot use this — its only defence is the
+// known-site list in cleanupDuplicates.
+//
+// Profiles differ on purpose, and the differences are the documented residual of #130:
+//  - 'capture': the full check, run on a page the user has settled on.
+//  - 'tab': same, minus (a) opacity:0 — a freshly loaded background tab can still be mid
+//    fade-in (unverified, so not risked), and (b) the loaded-image display:none carve-out — capture
+//    un-hides those on its clone afterwards and the tab tiers have no such step, so they keep
+//    dropping them as they always did.
+export type HiddenProfile = 'capture' | 'tab'
+
+export const HIDDEN_MARK_ATTR = 'data-spotboard-hidden'
+
+const ARIA_VISUAL_TAGS = new Set(['IMG', 'PICTURE', 'VIDEO', 'CANVAS', 'SVG'])
+
+/**
+ * Marks every hidden descendant of `root` with data-spotboard-hidden="true" ON THE LIVE DOM, so the
+ * marker rides along with cloneWithShadow(); the caller removes marked nodes from its clone and then
+ * clears the markers from the live page (`marked`) and calls `restoreTransforms()`.
+ * Inline carousel transforms (translate3d / translateX) are stripped first and restored by
+ * `restoreTransforms()`: Owl/Swiper/Slick scroll slides with them, which would otherwise push
+ * inactive slides "off-screen" and out of the card. Capture always did this; tab tiers now must too.
+ */
+export function markHiddenElements(root: HTMLElement, profile: HiddenProfile): { marked: HTMLElement[]; restoreTransforms: () => void } {
+  const full = profile === 'capture'
+  const rootRect = root.getBoundingClientRect()
+
+  // Nearest ancestor that clips content (carousel container) — bounds for the off-screen check.
+  const findClippingAncestor = (el: HTMLElement): DOMRect => {
+    let parent = el.parentElement
+    while (parent && parent !== root) {
+      const style = window.getComputedStyle(parent)
+      const overflowX = style.overflowX
+      const overflow = style.overflow
+      const isClipping =
+        overflow === 'hidden' || overflow === 'scroll' || overflow === 'auto' || overflow === 'clip' ||
+        overflowX === 'hidden' || overflowX === 'scroll' || overflowX === 'auto' || overflowX === 'clip'
+      if (isClipping) {
+        const parentRect = parent.getBoundingClientRect()
+        // Only a container narrower than the capture root (actual clipping) and not tiny.
+        if (parentRect.width < rootRect.width && parentRect.width > 50) return parentRect
+      }
+      parent = parent.parentElement
+    }
+    return rootRect
+  }
+
+  const stripped: Array<{ el: HTMLElement; transform: string; willChange: string }> = []
+  root.querySelectorAll<HTMLElement>('*').forEach(el => {
+    const t = el.style.transform
+    if (t && (t.includes('translate3d') || t.includes('translateX'))) {
+      stripped.push({ el, transform: t, willChange: el.style.willChange })
+      el.style.removeProperty('transform')
+      el.style.removeProperty('will-change')
+    }
+  })
+
+  const marked: HTMLElement[] = []
+  root.querySelectorAll('*').forEach(el => {
+    if (!(el instanceof HTMLElement)) return
+    const computed = window.getComputedStyle(el)
+
+    const isDisplayNone = computed.display === 'none'
+    const isVisibilityHidden = computed.visibility === 'hidden'
+    const isOpacityZero = full && computed.opacity === '0'
+
+    // aria-hidden: only EMPTY decorative elements (icon fonts, spacers). Non-empty aria-hidden is
+    // hidden from screen readers, NOT from the display — BBC Sport marks all its visible scores so.
+    const isAriaHiddenDecorative = el.getAttribute('aria-hidden') === 'true' &&
+      !ARIA_VISUAL_TAGS.has(el.tagName) &&
+      (el.textContent?.trim().length ?? 0) === 0 &&
+      !el.querySelector('img, picture, video, canvas, svg')
+
+    // Off-screen positioning (carousel slides, left:-10000px screen-reader text). A zero rect
+    // (display:contents wrappers) is not off-screen — its children are positioned and visible.
+    const rect = el.getBoundingClientRect()
+    const clipRect = findClippingAncestor(el)
+    const isOffScreen = (rect.width > 0 || rect.height > 0) &&
+      (rect.right < clipRect.left || rect.left > clipRect.right)
+
+    // Loaded images are never dropped for display:none alone: carousels hide inactive slides with
+    // inline display:none and re-show them via external CSS the dashboard doesn't have; capture
+    // keeps the image and strips the inline display:none from its clone.
+    const isLoadedImg = full && el.tagName === 'IMG' && (el as HTMLImageElement).naturalWidth > 0
+
+    if ((isDisplayNone && !isLoadedImg) || isVisibilityHidden || isOpacityZero || isAriaHiddenDecorative || isOffScreen) {
+      el.setAttribute(HIDDEN_MARK_ATTR, 'true')
+      marked.push(el)
+    }
+  })
+
+  return {
+    marked,
+    restoreTransforms: () => stripped.forEach(({ el, transform, willChange }) => {
+      el.style.transform = transform
+      if (willChange) el.style.willChange = willChange
+    }),
+  }
+}

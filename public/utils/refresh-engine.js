@@ -1531,18 +1531,10 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null, meta = 
         if (!element) return null;
 
         // Mark hidden elements BEFORE cloning (while CSS is loaded)
-        const allElements = [element, ...Array.from(element.querySelectorAll('*'))];
-        const marked = [];
-        
-        allElements.forEach(el => {
-          if (el instanceof HTMLElement && el !== element) {
-            const computed = window.getComputedStyle(el);
-            if (computed.display === 'none') {
-              el.setAttribute('data-spotboard-hidden', 'true');
-              marked.push(el);
-            }
-          }
-        });
+        // #130: same hidden-element check as capture (DomSnapshot, shared with content.ts), minus
+        // opacity:0 and the loaded-image carve-out -- see HiddenProfile in dom-snapshot.ts.
+        const _hid = window.DomSnapshot.markHiddenElements(element, 'tab');
+        const marked = _hid.marked.slice();
         
         // Convert lazy-loaded images BEFORE cloning (shared via DomSnapshot)
         window.DomSnapshot.promoteLazyImages(element);
@@ -1574,6 +1566,7 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null, meta = 
 
         // Clean up original DOM
         marked.forEach(el => el.removeAttribute('data-spotboard-hidden'));
+        _hid.restoreTransforms();
 
         // Remove marked elements from clone
         const hiddenInClone = clone.querySelectorAll('[data-spotboard-hidden="true"]');
@@ -1826,18 +1819,10 @@ async function tryOffscreenWindow(url, selector, fingerprint = null, meta = {}) 
 
         // Now sanitize and extract the found element
         // Mark hidden elements BEFORE cloning (while CSS is loaded)
-        const allElements = [element, ...Array.from(element.querySelectorAll('*'))];
-        const marked = [];
-
-        allElements.forEach(el => {
-          if (el instanceof HTMLElement && el !== element) {
-            const computed = window.getComputedStyle(el);
-            if (computed.display === 'none') {
-              el.setAttribute('data-spotboard-hidden', 'true');
-              marked.push(el);
-            }
-          }
-        });
+        // #130: same hidden-element check as capture (DomSnapshot, shared with content.ts), minus
+        // opacity:0 and the loaded-image carve-out -- see HiddenProfile in dom-snapshot.ts.
+        const _hid = window.DomSnapshot.markHiddenElements(element, 'tab');
+        const marked = _hid.marked.slice();
 
         // Convert lazy-loaded images BEFORE cloning (shared via DomSnapshot)
         window.DomSnapshot.promoteLazyImages(element);
@@ -1866,6 +1851,7 @@ async function tryOffscreenWindow(url, selector, fingerprint = null, meta = {}) 
 
         // Clean up original DOM
         marked.forEach(el => el.removeAttribute('data-spotboard-hidden'));
+        _hid.restoreTransforms();
 
         // Remove marked elements from clone
         const hiddenInClone = clone.querySelectorAll('[data-spotboard-hidden="true"]');
@@ -2091,18 +2077,10 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
 
         // Now sanitize and extract the found element
         // Mark hidden elements BEFORE cloning (while CSS is loaded)
-        const allElements = [element, ...Array.from(element.querySelectorAll('*'))];
-        const marked = [];
-        
-        allElements.forEach(el => {
-          if (el instanceof HTMLElement && el !== element) {
-            const computed = window.getComputedStyle(el);
-            if (computed.display === 'none') {
-              el.setAttribute('data-spotboard-hidden', 'true');
-              marked.push(el);
-            }
-          }
-        });
+        // #130: same hidden-element check as capture (DomSnapshot, shared with content.ts), minus
+        // opacity:0 and the loaded-image carve-out -- see HiddenProfile in dom-snapshot.ts.
+        const _hid = window.DomSnapshot.markHiddenElements(element, 'tab');
+        const marked = _hid.marked.slice();
         
         // Convert lazy-loaded images BEFORE cloning (shared via DomSnapshot)
         window.DomSnapshot.promoteLazyImages(element);
@@ -2134,6 +2112,7 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
 
         // Clean up original DOM
         marked.forEach(el => el.removeAttribute('data-spotboard-hidden'));
+        _hid.restoreTransforms();
 
         // Remove marked elements from clone
         const hiddenInClone = clone.querySelectorAll('[data-spotboard-hidden="true"]');
