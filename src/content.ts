@@ -2676,6 +2676,11 @@ function getPreviewCSS(): string {
       align-self: flex-start !important;
       overflow: visible;
     }
+    /* #136: drop the site's native-pixel min-height on the chart's direct wrapper, otherwise a
+       chart scaled down to card width leaves a blank band under it. Keep in sync with dashboard.html. */
+    :has(> svg[data-sb-svg="chart"]) {
+      min-height: 0 !important;
+    }
 
     /* Font normalization */
     body, li, li span, li p, div, p {

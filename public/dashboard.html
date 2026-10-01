@@ -1093,6 +1093,13 @@
       align-self: flex-start !important;
       overflow: visible;
     }
+    /* #136: the chart's own wrapper often keeps the site's native-pixel min-height (Kalshi:
+       250px for a 912x250 chart). Scaled to card width the chart is shorter than that, so the
+       leftover height shows as a blank band under it. Direct parent only — a min-height further
+       up may be legitimate layout for non-chart siblings. */
+    .component-content :has(> svg[data-sb-svg="chart"]) {
+      min-height: 0 !important;
+    }
     /* Only show pointer on actual links */
     .component-content a.canvas-link {
       cursor: pointer !important;
