@@ -314,7 +314,8 @@ test('capture proof: patterns must re-resolve to EXACTLY their capture count on 
 
 test('source guards: confirm path uses the proof + drops covered elements; import validates and keeps patterns', () => {
   const content = fs.readFileSync(new URL('../src/content.ts', import.meta.url), 'utf8')
-  assert.match(content, /patternsResolveOnMarkup\(target\.outerHTML, exclusionPatterns\)/)
+  assert.match(content, /proveExclusionPatterns\(target, exclusionPatterns\)/)           // #141: the confirm path goes through the capture proof...
+  assert.match(content, /patternsResolveOnMarkup\(markup, patterns\)/)                     // ...which still re-resolves on the serialized capture HTML
   assert.match(content, /individualElements\.forEach\(el =>/)          // selectors only for elements no pattern covers
   assert.match(content, /individualElements\.map\(\(el, i\) => \(\{ sel: excludedSelectors\[i\]/) // signatures likewise
   assert.match(content, /sanitizeHTML\(target, excludedElements\)/)    // but ALL excluded elements still leave the stored HTML

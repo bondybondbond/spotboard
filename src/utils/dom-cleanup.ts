@@ -177,6 +177,9 @@ export interface ExclusionPattern {
   t: string;
   /** matches at capture time -- the drift baseline */
   n: number;
+  /** #141: the same exclusion in the site's OTHER rendering (a CSS-hidden twin). Written only at capture,
+   *  only when every match's twin was proven one-to-one (deriveTwinAlternate). An older build ignores it. */
+  alt?: Omit<ExclusionPattern, 'alt'>;
 }
 
 /** A card never stores more rules than this (they ride in the sync record); extra groups stay individual. */
@@ -246,6 +249,49 @@ export function deriveCrossParentPattern(element: HTMLElement, locked: HTMLEleme
   return { rule, matches };
 }
 
+/**
+ * #141: the rule for the hidden twin of everything `rule` matches, or null. Capture time only, when both
+ * renderings sit in the page. Text is used HERE, to prove the pairing; what is stored stays structural.
+ * Deliberately conservative -- any doubt returns null and the card behaves exactly as before:
+ *  - every match is visible (a rule that already reaches hidden copies, like NPR's, needs no alternate);
+ *  - each match has exactly ONE hidden twin: same tag, identical text (digits kept), not inside or
+ *    around a match, and local (the ancestor it shares with the match holds no other match);
+ *  - twins are distinct, and the structural rule derived from them selects exactly them, in order.
+ */
+export function deriveTwinAlternate(rule: ExclusionPattern, root: HTMLElement, isHidden: (el: HTMLElement) => boolean): Omit<ExclusionPattern, 'alt'> | null {
+  const matches = resolveExclusionPattern(root, rule);
+  if (matches.length === 0 || matches.length !== rule.n || matches.some(isHidden)) return null;
+
+  const text = (el: HTMLElement) => (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const hiddenByText = new Map<string, HTMLElement[]>();
+  root.querySelectorAll<HTMLElement>(rule.t).forEach(el => {
+    if (!isHidden(el)) return;
+    const t = text(el);
+    if (t) (hiddenByText.get(t) || hiddenByText.set(t, []).get(t)!).push(el);
+  });
+
+  const isLocal = (match: HTMLElement, twin: HTMLElement) => {
+    let shared: HTMLElement | null = match.parentElement;
+    while (shared && !shared.contains(twin)) shared = shared.parentElement;
+    return !!shared && matches.every(other => other === match || !shared!.contains(other));
+  };
+
+  const twins: HTMLElement[] = [];
+  for (const match of matches) {
+    const t = text(match);
+    let candidates = (t && hiddenByText.get(t)) || [];
+    candidates = candidates.filter(c => !matches.some(m => m.contains(c) || c.contains(m)) && isLocal(match, c));
+    candidates = candidates.filter(c => !candidates.some(o => o !== c && o.contains(c))); // a nested same-text chain is one twin
+    if (candidates.length !== 1) return null;
+    twins.push(candidates[0]);
+  }
+  if (new Set(twins).size !== twins.length) return null;
+
+  const derived = deriveCrossParentPattern(twins[0], root);
+  if (!derived || derived.matches.length !== twins.length || derived.matches.some((el, i) => el !== twins[i])) return null;
+  return derived.rule;
+}
+
 /** Why a stored pattern cannot be trusted on this markup, or null when it is fine. */
 export function patternFault(rule: ExclusionPattern, matchCount: number): string | null {
   if (matchCount === 0) return 'matched nothing';
@@ -266,14 +312,15 @@ export function describePattern(rule: ExclusionPattern): string {
  * Parsed into a <template> (inert -- nothing loads, and leading <style>/<link> stay in the markup,
  * which a DOMParser body would drop).
  */
-export function markPatternExclusions(html: string, patterns?: ExclusionPattern[] | null): { html: string; faults: string[]; counts: number[] } {
+export function markPatternExclusions(html: string, patterns?: ExclusionPattern[] | null): { html: string; faults: string[]; counts: number[]; altCounts: Array<number | null> } {
   const faults: string[] = [];
   const counts: number[] = [];
-  if (patterns == null) return { html, faults, counts };
+  const altCounts: Array<number | null> = [];
+  if (patterns == null) return { html, faults, counts, altCounts };
   // Anything other than a list (a corrupt or hand-edited record) cannot be trusted and must not be
   // read as "no patterns" -- that would silently bring the excluded content back.
-  if (!Array.isArray(patterns)) { faults.push('invalid patterns field'); return { html, faults, counts }; }
-  if (!html || patterns.length === 0) return { html, faults, counts };
+  if (!Array.isArray(patterns)) { faults.push('invalid patterns field'); return { html, faults, counts, altCounts }; }
+  if (!html || patterns.length === 0) return { html, faults, counts, altCounts };
 
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
@@ -283,42 +330,61 @@ export function markPatternExclusions(html: string, patterns?: ExclusionPattern[
       ? frag.firstElementChild
       : frag;
 
+  const wellFormed = (rule: ExclusionPattern | undefined) =>
+    !!rule && typeof rule.a === 'string' && typeof rule.c === 'string' && typeof rule.t === 'string' && Array.isArray(rule.p) &&
+    typeof rule.n === 'number' && Number.isFinite(rule.n) && rule.n >= 1;
+  const resolve = (rule: Omit<ExclusionPattern, 'alt'>) => {
+    const matches = resolveExclusionPattern(queryRoot, rule);
+    // Capture resolves DESCENDANTS of the region element; with several top-level nodes the fragment is the
+    // query root and would also offer those top-level nodes (incl. the region element itself) as matches.
+    return queryRoot === frag ? matches.filter(m => m.parentNode !== frag) : matches;
+  };
+
   patterns.forEach(rule => {
-    if (!rule || typeof rule.a !== 'string' || typeof rule.c !== 'string' || typeof rule.t !== 'string' || !Array.isArray(rule.p) || typeof rule.n !== 'number' || !Number.isFinite(rule.n) || rule.n < 1) {
+    // `alt` (#141) is optional, but a PRESENT alt that is malformed cannot be trusted: fail closed.
+    if (!wellFormed(rule) || (rule.alt !== undefined && !wellFormed(rule.alt as ExclusionPattern))) {
       faults.push('invalid rule');
       counts.push(-1);
+      altCounts.push(null);
       return;
     }
     let matches: HTMLElement[];
+    let altMatches: HTMLElement[] = [];
     try {
-      matches = resolveExclusionPattern(queryRoot, rule);
+      matches = resolve(rule);
+      if (rule.alt) altMatches = resolve(rule.alt);
     } catch {
       faults.push(`${String(rule.a)}: invalid rule`);
       counts.push(-1);
+      altCounts.push(null);
       return;
     }
-    // Capture resolves DESCENDANTS of the region element; with several top-level nodes the fragment is the
-    // query root and would also offer those top-level nodes (incl. the region element itself) as matches.
-    if (queryRoot === frag) matches = matches.filter(m => m.parentNode !== frag);
     counts.push(matches.length);
-    const fault = patternFault(rule, matches.length);
-    if (fault) {
-      faults.push(`${describePattern(rule)} ${fault}`);
-      return;
+    altCounts.push(rule.alt ? altMatches.length : null);
+    // With an alternate the rule is satisfied by EITHER rendering (refresh may see only one of them);
+    // each rendering that is present is held to its own drift baseline. Without one: as before.
+    const checks: Array<[Omit<ExclusionPattern, 'alt'>, number]> = rule.alt ? [[rule, matches.length], [rule.alt, altMatches.length]] : [[rule, matches.length]];
+    const present = checks.filter(([, n]) => n > 0);
+    const failed = present.length === 0 ? [[rule, 0] as [Omit<ExclusionPattern, 'alt'>, number]] : present;
+    for (const [r, n] of failed) {
+      const fault = patternFault(r as ExclusionPattern, n);
+      if (fault) { faults.push(`${describePattern(r as ExclusionPattern)} ${fault}`); return; }
     }
-    matches.forEach(el => el.setAttribute(EXCLUDED_MARK_ATTR, 'pattern'));
+    matches.concat(altMatches).forEach(el => el.setAttribute(EXCLUDED_MARK_ATTR, 'pattern'));
   });
-  return { html: tpl.innerHTML, faults, counts };
+  return { html: tpl.innerHTML, faults, counts, altCounts };
 }
 
 /**
  * Capture time (#61-style proof): does every pattern resolve to EXACTLY its capture-time count on the
- * serialized capture HTML -- the markup refresh will be handed? If not, the caller keeps the
- * exclusions as individual selectors.
+ * serialized capture HTML -- the markup refresh will be handed? An alternate (#141) must prove itself
+ * the same way: both renderings are in the page at capture, so each must hit its own count. If not,
+ * the caller drops the alternates, then (if still failing) keeps the exclusions as individual selectors.
  */
 export function patternsResolveOnMarkup(html: string, patterns: ExclusionPattern[]): boolean {
   const proof = markPatternExclusions(html, patterns);
-  return proof.faults.length === 0 && proof.counts.length === patterns.length && proof.counts.every((n, i) => n === patterns[i].n);
+  return proof.faults.length === 0 && proof.counts.length === patterns.length &&
+    proof.counts.every((n, i) => n === patterns[i].n && (!patterns[i].alt || proof.altCounts[i] === patterns[i].alt!.n));
 }
 
 /**

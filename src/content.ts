@@ -1,5 +1,5 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
-import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset, deriveCrossParentPattern, isUtilityOnlyClass, patternsResolveOnMarkup, PATTERN_MIN_MATCHES, PATTERN_MAX_RULES } from './utils/dom-cleanup';
+import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset, deriveCrossParentPattern, deriveTwinAlternate, isUtilityOnlyClass, patternsResolveOnMarkup, PATTERN_MIN_MATCHES, PATTERN_MAX_RULES } from './utils/dom-cleanup';
 import type { ExclusionPattern } from './utils/dom-cleanup';
 import { ensureLazyContentLoaded } from './utils/lazy-load';
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, promoteVideoPosters, classifyImages, markHiddenElements, HIDDEN_MARK_ATTR } from './utils/dom-snapshot';
@@ -1550,6 +1550,55 @@ function computeExclusionPatterns(root: HTMLElement): { patterns: ExclusionPatte
     matches.forEach(m => { if (excludedElements.includes(m)) covered.add(m); });
   }
   return { patterns, covered };
+}
+
+/**
+ * #141: record, on each pattern, the same exclusion in the site's CSS-hidden twin layout so the rule
+ * still resolves when refresh sees only that layout. Capture-time only; every doubt leaves the rule
+ * as it was (deriveTwinAlternate). An alternate weighs one extra rule against PATTERN_MAX_RULES, so the
+ * worst-case stored size does not grow; when the cap is reached the rule is kept and only the alternate is skipped.
+ */
+function attachTwinAlternates(root: HTMLElement, patterns: ExclusionPattern[]) {
+  let budget = PATTERN_MAX_RULES - patterns.length;
+  if (budget <= 0) return;
+  const { marked, restoreTransforms } = markHiddenElements(root, 'capture'); // the same "hidden" capture drops
+  const hidden = new Set<HTMLElement>(marked);
+  const isHidden = (el: HTMLElement) => {
+    for (let node: HTMLElement | null = el; node && node !== root; node = node.parentElement) if (hidden.has(node)) return true;
+    return false;
+  };
+  try {
+    for (const rule of patterns) {
+      if (budget <= 0) break;
+      let alt = null;
+      try { alt = deriveTwinAlternate(rule, root, isHidden); } catch { /* any doubt (even an unusable tag name) -> no alt */ }
+      if (alt) { rule.alt = alt; budget--; }
+    }
+  } finally {
+    marked.forEach(el => el.removeAttribute(HIDDEN_MARK_ATTR));
+    restoreTransforms();
+  }
+}
+
+/**
+ * Capture-time proof (#128, #141): the patterns that may be stored. Alternates are attached first and must
+ * resolve to their capture counts on the serialized capture HTML; if any does not, ALL alternates are dropped
+ * (today's behaviour); if the plain rules still do not resolve, none are stored and the exclusions stay individual.
+ */
+function proveExclusionPatterns(target: HTMLElement, patterns: ExclusionPattern[]): ExclusionPattern[] {
+  if (patterns.length === 0) return patterns;
+  attachTwinAlternates(target, patterns);
+  const markup = target.outerHTML;
+  if (patternsResolveOnMarkup(markup, patterns)) return patterns;
+  if (patterns.some(p => p.alt)) {
+    patterns.forEach(p => { delete p.alt; });
+    if (patternsResolveOnMarkup(markup, patterns)) return patterns;
+  }
+  return [];
+}
+
+export function __proveExclusionPatternsForTest(root: HTMLElement, patterns: ExclusionPattern[]) {
+  return proveExclusionPatterns(root, patterns);
 }
 
 export function __computeExclusionPatternsForTest(root: HTMLElement) {
@@ -3234,9 +3283,9 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
         // Same live-vs-serialized proof #61 gives selectors: a pattern must resolve to exactly its capture
         // count on the serialized capture HTML (what refresh will be handed), or its elements stay individual.
         if (exclusionPatterns.length > 0) {
-          if (!patternsResolveOnMarkup(target.outerHTML, exclusionPatterns)) {
+          exclusionPatterns = proveExclusionPatterns(target, exclusionPatterns);
+          if (exclusionPatterns.length === 0) {
             console.warn('⚠️ Exclusion pattern did not re-resolve on the serialized capture HTML -- keeping individual selectors');
-            exclusionPatterns = [];
             patternCovered = new Set();
           }
         }
