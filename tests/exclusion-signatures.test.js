@@ -265,9 +265,19 @@ test('known edge: a saved card that already holds the leaked elements gives equa
   assert.deepEqual(findLeakedExclusions(savedWithLeak, [sel], undefined, savedWithLeak).leaked, [])
 })
 
-test('known edge: a feed that grows past the saved count on a generic two-level tail is flagged (until Re-capture)', () => {
+test('#145 evidence: a tail the saved card also holds is shared with kept content -> a feed that grew is NOT flagged', () => {
   const sel = 'ul:nth-child(2) > li:nth-child(1) > p:nth-child(1)'
   const saved = '<ul><li><p>one</p></li></ul>'
   const grown = '<ul><li><p>one</p></li><li><p>two</p></li></ul>'
-  assert.deepEqual(findLeakedExclusions(grown, [sel], undefined, saved).leaked, [sel])
+  const check = findLeakedExclusions(grown, [sel], undefined, saved)
+  assert.deepEqual(check.leaked, [])
+  assert.deepEqual(check.unverified, [sel])
+})
+
+test('#145 evidence (HotUKDeals regression): 39 positional exclusions sharing `span > span`, 231 in the saved card and 235 today -> nothing flagged', () => {
+  const spans = n => '<div>' + '<span><span>x</span></span>'.repeat(n) + '</div>'
+  const sels = Array.from({ length: 39 }, (_, i) => `article:nth-child(${i + 3}) > div:nth-child(2) > span:nth-child(2) > span:nth-child(1)`)
+  const check = findLeakedExclusions(spans(235), sels, undefined, spans(231))
+  assert.deepEqual(check.leaked, [])
+  assert.equal(check.unverified.length, 39)
 })

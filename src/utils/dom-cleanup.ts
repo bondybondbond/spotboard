@@ -2845,15 +2845,16 @@ export function buildExclusionSignatures(excluded: { sel: string; elementHtml: s
 // positional selectors) used to be waved through even when its content was visibly back: next.io
 // returned 6 excluded bylines and reported success. There is nothing stored to compare, but the
 // SAVED CARD is a baseline of what the user kept. So: reduce the selector to what the element IS
-// (drop ids and positions, keep its last two levels, e.g. `li > p`) and count how many elements
-// match in the refreshed card vs the saved card. More than the user kept = something excluded is
-// back. Corroborating evidence, not proof, with known edges: a site that renames the class passes
-// (as it did before); a card whose SAVED copy already holds the leaked elements passes (equal
-// counts); and a feed that grows past the saved card's count on ANY tail it shares with content
-// the user kept (`li > p`, or a classed `div.item` once its position is stripped) can be flagged,
-// and stays flagged until Re-capture because the saved card does not move. A lone bare tag is
-// never counted. Needs no new stored data. Absent a saved card (nothing
-// to compare), the exclusion stays unverified.
+// (drop ids and positions, keep its last two levels, e.g. `li > p`) and look for that kind of
+// element in the refreshed card. It only counts as evidence when the saved card holds NONE of that
+// kind: then the tail identifies exactly what the user removed, and finding it again means it is
+// back (next.io: 15 `li > p` bylines refreshed, 0 saved). A tail the saved card DOES hold is shared
+// with content the user kept, so a higher count there is just a feed that changed (HotUKDeals:
+// `span > span` 235 refreshed vs 231 saved flagged 39 exclusions and blocked a working card), and
+// stays unverified. Corroborating evidence, not proof, with known edges: a site that renames the
+// class passes (as it did before); a card whose SAVED copy already holds the leaked elements
+// passes; an exclusion whose kind is also kept in the card can't be judged. A lone bare tag is never
+// counted. Needs no new stored data. Absent a saved card (nothing to compare), it stays unverified.
 
 /** Length of the CSS escape that starts at the backslash s[i]: `\31 ` (up to 6 hex digits + one space, as CSS.escape emits for a leading digit) or `\:` (one char). */
 function escapeLength(s: string, i: number): number {
@@ -2954,7 +2955,8 @@ export function findLeakedExclusions(outputHtml: string, unresolved: string[], s
       outDoc = document.createElement('div'); outDoc.innerHTML = outputHtml;
       savedDoc = document.createElement('div'); savedDoc.innerHTML = savedHtml as string;
     }
-    try { return outDoc.querySelectorAll(tail).length > savedDoc.querySelectorAll(tail).length; } catch { return false; }
+    // evidence only for a kind the saved card has none of; a shared tail is ambiguous (see above)
+    try { return savedDoc.querySelectorAll(tail).length === 0 && outDoc.querySelectorAll(tail).length > 0; } catch { return false; }
   };
   const seen = new Set<string>();
   unresolved.forEach(sel => {
