@@ -75,7 +75,7 @@ function injectOnboardingCoach() {
     '50%{box-shadow:0 8px 32px rgba(0,0,0,.35),0 0 0 2px #fff,0 0 0 5px rgba(102,126,234,.55);}}',
     '#sb-card-step1{top:auto;bottom:120px;right:20px;}',
     '.pos-left{top:50%;left:20px;right:auto;bottom:auto;transform:translateY(-50%);}',
-    // #31: Step 2 is a big centred prompt — the red hover frame is the interaction, this just says "go".
+    // #31: Step 2 is a big centred prompt — the dashed green hover frame is the interaction, this just says "go".
     '.pos-center{top:64px;left:50%;right:auto;bottom:auto;transform:translateX(-50%);',
     'width:440px;max-width:calc(100vw - 40px);text-align:center;padding:22px 26px;}',
     '.pos-center .coach-title{font-size:18px;}',
@@ -166,14 +166,14 @@ function injectOnboardingCoach() {
   }
 
   shadow.appendChild(_makeCard('sb-card-step1', 'Step 1 of 3', 'Start capturing',
-    'Click the SpotBoard icon in your toolbar, then choose Save a Spot. SpotBoard keeps the section you choose updated for you.',
+    'Click the SpotBoard icon in your toolbar, then choose Save a Spot. SpotBoard saves the section you choose to your board.',
     '\uD83D\uDCA1 Don\u2019t see it? Click the \uD83E\uDDE9 puzzle piece, then pin SpotBoard.'));
   const card2 = _makeCard('sb-card-step2', 'Step 2 of 3', 'Click any section to track it',
-    'A dashed green frame follows your cursor \u2014 click the block you want to save.');
+    'A dashed green frame follows your cursor \u2014 click the block you want to save, then press Continue.');
   card2.classList.add('pos-center');
   shadow.appendChild(card2);
   const card3 = _makeCard('sb-card-step3', 'Step 3 of 3', 'Confirm your capture',
-    'A green frame marks your selection. Press Confirm Spot \u2014 top right \u2014 to save it.');
+    'A green frame marks your selection. Press Confirm Spot in the panel on the right to save it.');
   card3.classList.add('pos-confirm');
   shadow.appendChild(card3);
 
@@ -193,7 +193,7 @@ function injectOnboardingCoach() {
   titleC.textContent = 'You did it!';
   const bodyC = document.createElement('div');
   bodyC.className = 'coach-body';
-  bodyC.textContent = 'Your first spot is saved and will stay updated automatically.';
+  bodyC.textContent = 'Your first spot is saved. Press Refresh on your board whenever you want to see what’s new.';
   const openBtn = document.createElement('button');
   openBtn.id = 'sb-open-board';
   openBtn.className = 'coach-open-board';

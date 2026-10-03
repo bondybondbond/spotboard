@@ -42,3 +42,10 @@ test('strip with Grow unavailable: never mentions Grow, still offers re-select/E
   assert.doesNotMatch(text, /grow/i)
   assert.equal(text, 'Click another element to re-select · Enter to continue · Esc to cancel')
 })
+
+// #151: Esc is ignored during onboarding, so the strip must not promise it there.
+test('strip with canCancel=false (onboarding): no Esc promise, everything else unchanged', () => {
+  const text = canGrow => refineStripParts(canGrow, false).map(p => p.text).join('')
+  assert.equal(text(true), 'Grow to include more, or click another element to re-select · Enter to continue')
+  assert.equal(text(false), 'Click another element to re-select · Enter to continue')
+})

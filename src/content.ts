@@ -2317,7 +2317,7 @@ function showRefineBar() {
   window.addEventListener('resize', updateRefineBar);
 
   // Assumes Grow is available; updateRefineBar (called straight after) re-renders it if not.
-  document.body.appendChild(createCaptureStrip('spotboard-refine-banner', 2, stripPartsToNodes(refineStripParts(true))));
+  document.body.appendChild(createCaptureStrip('spotboard-refine-banner', 2, stripPartsToNodes(refineStripParts(true, !getIsOnboardingMode()))));
 
   const panel = document.createElement('div');
   panel.style.cssText = `
@@ -2381,7 +2381,7 @@ export function refineHintText(canGrow: boolean, canShrink: boolean): string {
 // #127: the top strip follows the same rule as the hint -- never tell the user to Grow when Grow is
 // disabled. Pure data so it can be unit-tested; stripPartsToNodes turns it into DOM.
 type StripPart = { kind: 'bold' | 'kbd' | 'text'; text: string }
-export function refineStripParts(canGrow: boolean): StripPart[] {
+export function refineStripParts(canGrow: boolean, canCancel = true): StripPart[] {
   const parts: StripPart[] = canGrow
     ? [
         { kind: 'bold', text: 'Grow' }, { kind: 'text', text: ' to include more, or ' },
@@ -2390,10 +2390,9 @@ export function refineStripParts(canGrow: boolean): StripPart[] {
     : [
         { kind: 'bold', text: 'Click' }, { kind: 'text', text: ' another element to re-select · ' }
       ]
-  parts.push(
-    { kind: 'kbd', text: 'Enter' }, { kind: 'text', text: ' to continue · ' },
-    { kind: 'kbd', text: 'Esc' }, { kind: 'text', text: ' to cancel' }
-  )
+  parts.push({ kind: 'kbd', text: 'Enter' }, { kind: 'text', text: ' to continue' })
+  // #151: Esc is ignored during onboarding, so the strip must not promise it there
+  if (canCancel) parts.push({ kind: 'text', text: ' · ' }, { kind: 'kbd', text: 'Esc' }, { kind: 'text', text: ' to cancel' })
   return parts
 }
 
@@ -2411,7 +2410,7 @@ function updateRefineBar() {
   const stripKey = canGrow ? 'grow' : 'nogrow';
   if (stripInstructions && stripInstructions.dataset.sbGrow !== stripKey) {
     stripInstructions.dataset.sbGrow = stripKey;
-    stripInstructions.replaceChildren(...stripPartsToNodes(refineStripParts(canGrow)));
+    stripInstructions.replaceChildren(...stripPartsToNodes(refineStripParts(canGrow, !getIsOnboardingMode())));
   }
   // No tag name / pixel size in the UI: the outline already shows what is selected, and "ol 1248x288"
   // is developer language (the same detail is in the DEBUG "Grow path" log).
@@ -3984,7 +3983,11 @@ function showCaptureBanner() {
         stripBold(`\u201c${recaptureCtx.label.length > 40 ? recaptureCtx.label.slice(0, 40) + '\u2026' : recaptureCtx.label}\u201d`),
         ' \u00b7 ', stripKbd('Esc'), ' to cancel'
       ]
-    : [stripBold('hover'), ' to preview, ', stripBold('click'), ' on any content you want to add to your board \u00b7 ', stripKbd('Esc'), ' to cancel'];
+    : [
+        stripBold('hover'), ' to preview, ', stripBold('click'), ' on any content you want to add to your board',
+        // Esc is ignored while the onboarding coach is up (handleKeydown), so don't promise it (#151)
+        ...(getIsOnboardingMode() ? [] : [' \u00b7 ', stripKbd('Esc'), ' to cancel'])
+      ];
   document.body.appendChild(createCaptureStrip('spotboard-capture-banner', 1, instructions));
 }
 

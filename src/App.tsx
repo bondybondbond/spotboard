@@ -199,7 +199,7 @@ function App() {
             </div>
             <div className="sb-step">
               <span className="sb-step-num">3</span>
-              <span>Click to save it to your board</span>
+              <span>Click it, then press <strong>Continue</strong> and <strong>Confirm Spot</strong></span>
             </div>
           </div>
         </div>
