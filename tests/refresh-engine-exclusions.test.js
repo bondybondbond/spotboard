@@ -49,7 +49,7 @@ test('gate: a verdict computed for a DIFFERENT html string is ignored (no cross-
   assert.equal(r.success, true)
 })
 
-test('gate: legacy card with no signatures never fails on this gate', () => {
+test('gate: legacy card with no signatures and no sign of the excluded content never fails on this gate', () => {
   const c = comp({ exclusionSignatures: undefined })
   const html = g.applySanitizationPipeline('<div class="card"><p>Body text for card, long enough</p><ul><li>a</li><li>b</li><li>c</li></ul><div>Yes 90¢ No 11¢ tap to trade</div></div>', c)
   assert.equal(g._finalizeSuccess(html, c, {}).success, true)
@@ -179,4 +179,23 @@ test('refreshAll: a PAUSED card keeps its signatures in the rewritten local reco
   assert.ok(written, 'refreshAll wrote componentsData')
   assert.deepEqual(written.paused.exclusionSignatures, SIGS)
   assert.deepEqual(written.active.exclusionSignatures, SIGS)
+})
+
+// ---------- #145: unsigned exclusions judged against the saved card ----------
+
+test('#145 gate: unsigned exclusion whose content is back (more matches than the saved card) fails closed, keeps the last copy', () => {
+  const c = comp({ excludedSelectors: ['ul:nth-child(2) > li:nth-child(1) > p:nth-child(1)'], exclusionSignatures: undefined })
+  const html = g.applySanitizationPipeline('<div class="card"><h2>Title</h2><p>Some real content that is long enough to matter here.</p><ul><li>a</li><li>b</li><li>c</li></ul><ul><li><p>By A. Writer</p></li></ul></div>', c)
+  const r = g._finalizeSuccess(html, c, {})
+  assert.equal(r.success, false)
+  assert.equal(r.exclusionLeak, true)
+  assert.equal(r.keepOriginal, true)
+  assert.equal(g.classifyError(r.error), 'exclusions_unapplied')
+})
+
+test('#145 gate: unsigned exclusion that is legitimately absent (nothing of its kind in the card) still refreshes', () => {
+  const c = comp({ excludedSelectors: ['button.modal__close'], exclusionSignatures: undefined })
+  const html = g.applySanitizationPipeline('<div class="card"><h2>Title</h2><p>Some real content that is long enough to matter here.</p><ul><li>a</li><li>b</li><li>c</li></ul></div>', c)
+  assert.deepEqual(c.__exclusionCheck.unverified, ['button.modal__close'])
+  assert.equal(g._finalizeSuccess(html, c, {}).success, true)
 })

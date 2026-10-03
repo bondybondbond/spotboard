@@ -2775,8 +2775,8 @@ interface SanitizationComponent {
 // thing the user removed is back on screen (not fine). Selectors alone can't tell these apart.
 // So at capture we also store a small TEXT signature of each excluded element; at refresh, an
 // exclusion whose selector did not apply is only a problem if its signature text is present in
-// the refreshed card. Icon/image-only exclusions have no text, so they cannot be verified and
-// are treated as unverified (never a failure) -- a known v1 limitation.
+// the refreshed card. Exclusions with no text cannot be checked this way; #145 (below) gives them
+// a weaker, saved-card-based check, and anything it cannot judge stays unverified (never a failure).
 // ---------------------------------------------------------------------------------------
 
 export interface ExclusionSignature {
@@ -2841,10 +2841,94 @@ export function buildExclusionSignatures(excluded: { sel: string; elementHtml: s
   return Array.from(bySel.values());
 }
 
+// #145 -- an exclusion with no saved text (cards saved before signatures, icon/image-only elements,
+// positional selectors) used to be waved through even when its content was visibly back: next.io
+// returned 6 excluded bylines and reported success. There is nothing stored to compare, but the
+// SAVED CARD is a baseline of what the user kept. So: reduce the selector to what the element IS
+// (drop ids and positions, keep its last two levels, e.g. `li > p`) and count how many elements
+// match in the refreshed card vs the saved card. More than the user kept = something excluded is
+// back. Corroborating evidence, not proof, with known edges: a site that renames the class passes
+// (as it did before); a card whose SAVED copy already holds the leaked elements passes (equal
+// counts); and a feed that grows past the saved card's count on ANY tail it shares with content
+// the user kept (`li > p`, or a classed `div.item` once its position is stripped) can be flagged,
+// and stays flagged until Re-capture because the saved card does not move. A lone bare tag is
+// never counted. Needs no new stored data. Absent a saved card (nothing
+// to compare), the exclusion stays unverified.
+
+/** Length of the CSS escape that starts at the backslash s[i]: `\31 ` (up to 6 hex digits + one space, as CSS.escape emits for a leading digit) or `\:` (one char). */
+function escapeLength(s: string, i: number): number {
+  const hex = s.slice(i + 1, i + 9).match(/^[0-9a-fA-F]{1,6}[ \t\n\r\f]?/);
+  return 1 + (hex ? hex[0].length : (s[i + 1] ? 1 : 0));
+}
+
+/** Split a selector into compounds with their combinator, ignoring brackets, parens, quotes and escapes. */
+function selectorCompounds(sel: string): { comb: string; compound: string }[] {
+  const parts: { comb: string; compound: string }[] = [];
+  let cur = '';
+  let comb = ' ';
+  let depth = 0;
+  let quote: string | null = null;
+  const push = () => { if (cur.trim()) parts.push({ comb, compound: cur.trim() }); cur = ''; };
+  for (let i = 0; i < sel.length; i++) {
+    const ch = sel[i];
+    if (ch === '\\') { const n = escapeLength(sel, i); cur += sel.slice(i, i + n); i += n - 1; continue; }
+    if (quote) { cur += ch; if (ch === quote) quote = null; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
+    if (ch === '[' || ch === '(') depth++;
+    if (ch === ']' || ch === ')') depth--;
+    if (depth === 0 && (ch === '>' || ch === '+' || ch === '~')) { push(); comb = ch; continue; }
+    if (depth === 0 && ch === ' ') { if (cur.trim()) { push(); comb = ' '; } continue; }
+    cur += ch;
+  }
+  push();
+  return parts;
+}
+
+/** What the excluded element IS (tag, classes, attributes), without where it sat (ids, :nth-*, :first-child...). */
+function stripPosition(compound: string): string {
+  // ids are dropped only at the top level: a `#` inside [href="#top"] or :not(#x) is part of what the element is
+  let out = '';
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = 0; i < compound.length; i++) {
+    const ch = compound[i];
+    if (ch === '\\') { const n = escapeLength(compound, i); out += compound.slice(i, i + n); i += n - 1; continue; }
+    if (quote) { out += ch; if (ch === quote) quote = null; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; out += ch; continue; }
+    if (ch === '[' || ch === '(') depth++;
+    if (ch === ']' || ch === ')') depth--;
+    if (ch === '#' && depth === 0) {
+      i++;
+      while (i < compound.length && !/[.[:#\s>+~]/.test(compound[i])) i += compound[i] === '\\' ? escapeLength(compound, i) : 1;
+      i--;
+      continue;
+    }
+    out += ch;
+  }
+  return out
+    .replace(/:scope/g, '')
+    .replace(/:(?:nth-child|nth-of-type|nth-last-child|nth-last-of-type)\([^)]*\)/g, '')
+    .replace(/:(?:first|last|only)-(?:child|of-type)/g, '');
+}
+
+/**
+ * Last two levels of a selector with position stripped, or null when too little is left to say
+ * anything about it. A lone bare tag (`div`, `button`) matches half the page, so counting it would
+ * flag any card that merely grew: it needs a class/attribute, or a parent level beside it (`li > p`).
+ */
+export function exclusionTailOf(selector: string): string | null {
+  const parts = selectorCompounds(selector).map(p => ({ comb: p.comb, compound: stripPosition(p.compound) }));
+  const last = parts[parts.length - 1];
+  if (!last || !last.compound) return null;
+  const prev = parts[parts.length - 2];
+  if (prev && prev.compound) return `${prev.compound}${last.comb === ' ' ? ' ' : ` ${last.comb} `}${last.compound}`;
+  return /[.[]/.test(last.compound) ? last.compound : null;
+}
+
 export interface ExclusionCheck {
-  /** unresolved selectors whose excluded text is back in the refreshed card */
+  /** unresolved selectors whose excluded content is back in the refreshed card (by saved text, or #145 tail count) */
   leaked: string[];
-  /** unresolved selectors we had no signature for (cannot tell if their content is back) */
+  /** unresolved selectors with no saved text and no evidence either way (nothing to compare, or the tail count did not grow) */
   unverified: string[];
   /** #128: stored patterns that cannot be trusted on this markup (matched nothing / far too many) */
   patternFaults?: string[];
@@ -2854,18 +2938,30 @@ export interface ExclusionCheck {
  * Refresh time: which unresolved exclusions have their content back in `outputHtml`?
  * Present means MORE copies of the signature than the captured card legitimately kept.
  */
-export function findLeakedExclusions(outputHtml: string, unresolved: string[], signatures?: ExclusionSignature[]): ExclusionCheck {
+export function findLeakedExclusions(outputHtml: string, unresolved: string[], signatures?: ExclusionSignature[], savedHtml?: string): ExclusionCheck {
   const check: ExclusionCheck = { leaked: [], unverified: [] };
   if (unresolved.length === 0) return check;
   const sigBySel = new Map<string, ExclusionSignature>();
   (signatures || []).forEach(s => sigBySel.set(s.sel, s));
   const outputText = signatureText(outputHtml);
+  // #145: parsed once, only if an unsigned selector needs them
+  let outDoc: HTMLElement | null = null;
+  let savedDoc: HTMLElement | null = null;
+  const tailCameBack = (sel: string): boolean => {
+    const tail = savedHtml ? exclusionTailOf(sel) : null;
+    if (!tail) return false;
+    if (!outDoc || !savedDoc) {
+      outDoc = document.createElement('div'); outDoc.innerHTML = outputHtml;
+      savedDoc = document.createElement('div'); savedDoc.innerHTML = savedHtml as string;
+    }
+    try { return outDoc.querySelectorAll(tail).length > savedDoc.querySelectorAll(tail).length; } catch { return false; }
+  };
   const seen = new Set<string>();
   unresolved.forEach(sel => {
     if (seen.has(sel)) return;
     seen.add(sel);
     const entry = sigBySel.get(sel);
-    if (!entry) { check.unverified.push(sel); return; }
+    if (!entry) { (tailCameBack(sel) ? check.leaked : check.unverified).push(sel); return; }
     if (countOccurrences(outputText, entry.sig) > entry.keep) check.leaked.push(sel);
   });
   return check;
@@ -2932,6 +3028,6 @@ export function applySanitizationPipeline(inputHtml: string, component: Sanitiza
   const withPreserved = preserveImageClassifications(withVideoPosters, component.html_cache || '');
   const finalHtml = classifyImagesForRefresh(withPreserved);
   // #96: judged on the FINAL card, since that's what the user will see
-  recordExclusionCheck(component, { ...findLeakedExclusions(finalHtml, unresolved, component.exclusionSignatures), patternFaults }, finalHtml);
+  recordExclusionCheck(component, { ...findLeakedExclusions(finalHtml, unresolved, component.exclusionSignatures, component.html_cache), patternFaults }, finalHtml);
   return finalHtml;
 }
