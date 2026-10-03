@@ -1561,9 +1561,11 @@ function renderEmptyState(container) {
 const SUBSEQUENT_EMPTY_CATEGORIES = [
   { label: 'News',    domains: ['bbc.co.uk', 'cnn.com', 'npr.org'] },
   { label: 'Sports',  domains: ['espn.com', 'as.com', 'sportskeeda.com'] },
-  { label: 'Tech',    domains: ['wired.com', 'producthunt.com', 'theverge.com'] },
-  { label: 'Deals',   domains: ['amazon.com', 'hotukdeals.com', 'slickdeals.net'] }
+  { label: 'More',    domains: ['wired.com', 'theverge.com', 'hotukdeals.com'] }
 ];
+// #153: every site listed here must pass a real capture + refresh on a fresh install.
+// Removed after failing that audit: producthunt.com (#155), amazon.com, slickdeals.net (bot wall).
+
 // Full URLs for domains whose bare-domain redirect drops query params (e.g. bbc.co.uk → www.bbc.co.uk/news)
 const DOMAIN_URL_OVERRIDES = {
   'bbc.co.uk': 'https://www.bbc.co.uk/news',
