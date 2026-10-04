@@ -93,12 +93,21 @@ test('capture: fewer than 3 matches is a handful of clicks, not a pattern', () =
   assert.equal(__computeExclusionPatternsForTest(root).patterns.length, 0)
 })
 
-test('capture: styling-only class tokens never form a pattern (stays individual, as before)', () => {
+// #161 (declared test edit, invariant 6): this used to assert that a styling-only class NEVER forms a pattern.
+// That refusal is lifted -- the capture proof (every match excluded, >=3, re-resolves) still applies and refresh holds
+// such a rule to a 2x growth bound. The "unrelated matches stay individual" half is kept below.
+test('capture: styling-only class tokens form a pattern only when every match is excluded', () => {
   reset(); document.body.textContent = ''
   const root = cls('div', 'wrap', Array.from({ length: 4 }, (_, i) => cls('section', 'box', [cls('div', 'flex items-center gap-2', [], `row ${i}`)])))
   document.body.appendChild(root)
   __bulkExcludeForTest(all(root, 'div.flex'))
-  assert.equal(__computeExclusionPatternsForTest(root).patterns.length, 0)
+  assert.equal(__computeExclusionPatternsForTest(root).patterns.length, 1)
+  // the same utility string also sits on something the user kept -> not "every match", so no rule
+  reset(); document.body.textContent = ''
+  const root2 = cls('div', 'wrap', [...Array.from({ length: 4 }, (_, i) => cls('section', 'box', [cls('div', 'flex items-center gap-2', [], `row ${i}`)])), cls('footer', 'foot', [cls('div', 'flex items-center gap-2', [], 'keep me')])])
+  document.body.appendChild(root2)
+  __bulkExcludeForTest(all(root2, 'section div.flex'))
+  assert.equal(__computeExclusionPatternsForTest(root2).patterns.length, 0)
   for (const c of ['flex items-center', 'size--all-s', 'text-xs font-bold', 'hover:underline', 'mob:gap-0', 'cursor-default', '']) assert.equal(isUtilityOnlyClass(c), true, c)
   for (const c of ['credit', 'slug-wrap', 'audio-module', 'credit flex', 'category__header', 'cept-vote-temp']) assert.equal(isUtilityOnlyClass(c), false, c)
 })

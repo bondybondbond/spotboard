@@ -1,5 +1,5 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
-import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset, deriveCrossParentPattern, deriveTwinAlternate, isUtilityOnlyClass, patternsResolveOnMarkup, PATTERN_MIN_MATCHES, PATTERN_MAX_RULES } from './utils/dom-cleanup';
+import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset, deriveCrossParentPattern, deriveTwinAlternate, patternsResolveOnMarkup, PATTERN_MIN_MATCHES, PATTERN_MAX_RULES } from './utils/dom-cleanup';
 import type { ExclusionPattern } from './utils/dom-cleanup';
 import { ensureLazyContentLoaded } from './utils/lazy-load';
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, promoteVideoPosters, classifyImages, markHiddenElements, HIDDEN_MARK_ATTR } from './utils/dom-snapshot';
@@ -1518,7 +1518,8 @@ function recordExclusion(el: HTMLElement) {
  *  - every element that rule matches in the captured region is excluded right now (so "every match
  *    is excluded" -- the refresh-time meaning -- is literally what the user has), which also means a
  *    member un-excluded after the Shift+click cancels the pattern;
- *  - there are at least PATTERN_MIN_MATCHES matches, and the anchor class is not styling-only;
+ *  - there are at least PATTERN_MIN_MATCHES matches (a styling-only anchor class, e.g. Tailwind, is allowed since #161:
+ *    the same proof applies and refresh holds such a rule to a tighter growth bound, see patternFault);
  *  - no bulk entry is an unmounted node of a virtualised list (the match set would be incomplete).
  * `covered` = excluded elements a pattern now speaks for; they need no selector of their own.
  */
@@ -1542,7 +1543,6 @@ function computeExclusionPatterns(root: HTMLElement): { patterns: ExclusionPatte
     const { rule, matches } = derived;
     matches.forEach(m => seen.add(m));
     if (matches.length < PATTERN_MIN_MATCHES) continue;
-    if (rule.a.toLowerCase() !== 'time' && isUtilityOnlyClass(rule.c)) continue;
     if (!matches.every(isExcluded)) continue;
     if (patterns.length >= PATTERN_MAX_RULES) break;
     if (patterns.some(p => p.a === rule.a && p.c === rule.c && p.t === rule.t && p.p.join(',') === rule.p.join(','))) continue;

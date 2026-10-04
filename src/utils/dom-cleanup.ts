@@ -188,6 +188,8 @@ export const PATTERN_MAX_RULES = 10;
 export const PATTERN_MIN_MATCHES = 3;
 /** Refresh fails closed when a pattern matches more than this many times its capture-time count. */
 export const PATTERN_MAX_GROWTH = 3;
+/** #161: a rule identified only by styling utilities (Tailwind) is low-confidence, so it gets less room to grow. */
+export const PATTERN_MAX_GROWTH_UTILITY = 2;
 
 // Class tokens that describe styling, not what the element is -- a rule built only from these
 // ("flex items-center", "size--all-s") would match unrelated things, so no pattern is stored and
@@ -295,7 +297,9 @@ export function deriveTwinAlternate(rule: ExclusionPattern, root: HTMLElement, i
 /** Why a stored pattern cannot be trusted on this markup, or null when it is fine. */
 export function patternFault(rule: ExclusionPattern, matchCount: number): string | null {
   if (matchCount === 0) return 'matched nothing';
-  if (matchCount > Math.max(rule.n, 1) * PATTERN_MAX_GROWTH) return `matched ${matchCount} elements (was ${rule.n} at capture)`;
+  // Computed from the class, never stored: older records and Kalshi's alternate rules get the same bound.
+  const growth = rule.a.toLowerCase() !== 'time' && isUtilityOnlyClass(rule.c) ? PATTERN_MAX_GROWTH_UTILITY : PATTERN_MAX_GROWTH;
+  if (matchCount > Math.max(rule.n, 1) * growth) return `matched ${matchCount} elements (was ${rule.n} at capture)`;
   return null;
 }
 
