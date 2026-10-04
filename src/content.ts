@@ -219,11 +219,12 @@ chrome.runtime.sendMessage({ type: 'CHECK_CAPTURE' }, (shouldCapture: boolean | 
   if (chrome.runtime.lastError) return;
   if (!shouldCapture) return;
   if (typeof shouldCapture === 'object' && shouldCapture.recapture) recaptureCtx = shouldCapture.recapture;
-  const _doCapture = () => setTimeout(() => toggleCapture(true), 800);
+  // #156: open paused, not armed -- capture mode would otherwise eat the clicks on the site's
+  // consent pop-up (9 of 12 picker sites). The user starts it from the panel (or the toolbar icon).
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    _doCapture();
+    showPausedCapture();
   } else {
-    window.addEventListener('DOMContentLoaded', _doCapture);
+    window.addEventListener('DOMContentLoaded', showPausedCapture);
   }
 });
 
@@ -3991,6 +3992,100 @@ function showCaptureBanner() {
   document.body.appendChild(createCaptureStrip('spotboard-capture-banner', 1, instructions));
 }
 
+// #156: auto-started capture (picker, Re-capture) waits here instead of arming straight away, so
+// the page -- and its consent pop-up -- works normally until the user presses Start. Nothing is
+// intercepted while paused: no capture listeners, no strip. Parked top-right because observed
+// consent banners sit bottom / centre / top-left (ESPN reaches y=12). Not auto-focused: consent
+// tools trap focus and a fight there would strand the user. Esc is deliberately NOT bound -- some
+// consent pop-ups close on Esc, and that must not also cancel the capture.
+// A flag, not "is the panel in the DOM": a page that rebuilds <body> can drop the panel, and the
+// toolbar icon must still start this capture with its Re-capture link rather than a normal one.
+let capturePaused = false;
+function isCapturePaused(): boolean {
+  return capturePaused;
+}
+
+function showPausedCapture() {
+  if (capturePaused) return;
+  if (isCapturing) { endPausedCapture(); return; } // already capturing -- just stop the re-offer
+  capturePaused = true;
+  const { shadow } = createOverlayShadowHost('spotboard-paused-capture');
+
+  const panel = document.createElement('div');
+  panel.setAttribute('role', 'region');
+  panel.setAttribute('aria-label', 'SpotBoard capture');
+  panel.style.cssText = `
+    position: fixed !important; top: 16px !important; right: 20px !important;
+    width: 250px !important; box-sizing: border-box !important;
+    background: ${CAPTURE_LIME} !important; color: #000000 !important; padding: 12px 14px 14px 16px !important;
+    border-radius: 12px !important; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+    font-family: ${OVERLAY_FONT} !important; pointer-events: auto !important; text-transform: none !important;
+    text-align: left !important; line-height: 1.35 !important;
+  `;
+
+  const head = document.createElement('div');
+  head.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 6px;';
+  const logo = document.createElement('img');
+  logo.src = chrome.runtime.getURL('icon-16.png');
+  logo.alt = '';
+  logo.style.cssText = 'width: 18px; height: 18px; max-width: none; flex: none; margin: 0;';
+  const title = document.createElement('div');
+  title.style.cssText = 'flex: 1; font-size: 14px; font-weight: 600; word-break: break-word;';
+  title.textContent = recaptureCtx
+    ? `Ready to re-capture “${recaptureCtx.label.length > 40 ? recaptureCtx.label.slice(0, 40) + '…' : recaptureCtx.label}”`
+    : 'SpotBoard is ready';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.id = 'sb-paused-close';
+  close.setAttribute('aria-label', 'Cancel capture');
+  close.title = 'Cancel';
+  close.textContent = '×';
+  close.style.cssText = 'flex: none; align-self: flex-start; width: 28px; height: 28px; margin: -4px -6px 0 0; padding: 0; border: none; border-radius: 6px; background: transparent; color: #000; font-size: 22px; line-height: 1; cursor: pointer; font-family: inherit;';
+  close.addEventListener('mouseenter', () => { close.style.background = 'rgba(0,0,0,0.12)'; });
+  close.addEventListener('mouseleave', () => { close.style.background = 'transparent'; });
+  head.append(logo, title, close);
+
+  const body = document.createElement('div');
+  body.style.cssText = 'font-size: 13px;';
+  body.textContent = 'If the site shows a pop-up, close it first.';
+
+  const start = document.createElement('button');
+  start.type = 'button';
+  start.id = 'sb-paused-start';
+  start.textContent = 'Start capturing';
+  start.style.cssText = 'margin-top: 12px; box-sizing: border-box; border: 2px solid transparent; border-radius: 6px; background: #1c1c1e; color: #ffffff; font-size: 13px; font-weight: 600; line-height: 1; padding: 9px 14px; cursor: pointer; font-family: inherit;';
+
+  for (const [button, action] of [[start, startPausedCapture], [close, cancelPausedCapture]] as const) {
+    button.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); action(); });
+  }
+  panel.append(head, body, start);
+  shadow.appendChild(panel);
+}
+
+function endPausedCapture() {
+  capturePaused = false;
+  document.getElementById('spotboard-paused-capture')?.remove();
+  chrome.runtime.sendMessage({ type: 'CAPTURE_PAUSE_END' }, () => { void chrome.runtime.lastError; });
+}
+
+export function startPausedCapture() {
+  if (!isCapturePaused()) return;
+  endPausedCapture();
+  toggleCapture(true);
+}
+
+export function cancelPausedCapture() {
+  if (!isCapturePaused()) return;
+  endPausedCapture();
+  recaptureCtx = null; // #52: cancelled -- the card stays exactly as it was
+}
+
+export const __showPausedCaptureForTest = (recapture?: { cardId: string; sessionId: string; label: string }) => {
+  recaptureCtx = recapture || null;
+  showPausedCapture();
+};
+export const __getCaptureStateForTest = () => ({ isCapturing, paused: isCapturePaused(), recaptureCtx });
+
 // 🎯 #60: shown for the whole exclusion-mode step (from when the overlay first opens) —
 // reuses the top-banner slot (rather than duplicating instructions in the overlay too) recolored
 // into an "exclusion mode" indicator. Shown for the whole exclusion-mode duration —
@@ -4152,6 +4247,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.message === "TOGGLE_CAPTURE" || request.type === "TOGGLE_CAPTURE") {
+    // #156: the toolbar icon while the paused panel is up means "start" -- keep a re-capture's
+    // card link rather than silently turning it into a normal capture (a duplicate card).
+    if (isCapturePaused()) { startPausedCapture(); return; }
     recaptureCtx = null; // #52: the popup starts/stops a NORMAL capture -- never a re-capture
     toggleCapture();
   }

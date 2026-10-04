@@ -345,8 +345,41 @@ async function matchPendingTab(key: 'pendingOnboardingTabId' | 'pendingCaptureTa
 type RecaptureLatest = Record<string, { sessionId: string; tabId: number }>;
 const RECAPTURE_START_WINDOW_MS = 2 * 60 * 1000;
 
+// #156: an auto-started capture opens paused so the user can deal with the site's consent pop-up
+// first. Some consent tools reload the page on a choice (CNN, ESPN), which would lose the paused
+// state and the pending handshake (consumed on first use) -- so the CHECK_CAPTURE answer is kept
+// per tab and re-offered to the same tab + page (origin + path: a consent reload stays on the page,
+// browsing on to an article does not) until the user presses Start or Cancel (CAPTURE_PAUSE_END),
+// the tab closes, or this window lapses -- long enough to read a consent dialog or work through its
+// "Manage options" screens, short enough that an abandoned tab doesn't keep the offer for good.
+type CaptureAnswer = true | { recapture: { cardId: string; sessionId: string; label: string } };
+type PausedCaptures = Record<string, { answer: CaptureAnswer; page: string; at: number }>;
+const PAUSED_CAPTURE_WINDOW_MS = 10 * 60 * 1000;
+
+// Read-modify-write of one shared record: serialise it, or two tabs (or a Start racing another
+// tab's CHECK_CAPTURE) can drop or resurrect each other's entry.
+let pausedCapturesQueue: Promise<unknown> = Promise.resolve();
+function updatePausedCaptures(tabId: number, entry: PausedCaptures[string] | null): Promise<void> {
+  const run = pausedCapturesQueue.then(() => writePausedCapture(tabId, entry));
+  pausedCapturesQueue = run.catch(() => {});
+  return run;
+}
+
+async function writePausedCapture(tabId: number, entry: PausedCaptures[string] | null) {
+  const { pausedCaptures = {} } = await chrome.storage.session.get('pausedCaptures') as { pausedCaptures?: PausedCaptures };
+  if (entry) pausedCaptures[tabId] = entry;
+  else if (pausedCaptures[tabId]) delete pausedCaptures[tabId];
+  else return;
+  await chrome.storage.session.set({ pausedCaptures });
+}
+
+const senderPage = (sender: chrome.runtime.MessageSender) => {
+  try { const u = new URL(sender.url || sender.tab?.url || ''); return u.origin + u.pathname; } catch { return ''; }
+};
+
 // #52: closing the tab abandons its re-capture -- drop any handshake or latest-session bound to it.
 chrome.tabs.onRemoved.addListener(async (tabId) => {
+  try { await updatePausedCaptures(tabId, null); } catch { /* session storage unavailable */ }
   try {
     const { pendingRecapture, recaptureLatest } = await chrome.storage.session.get(['pendingRecapture', 'recaptureLatest']) as { pendingRecapture?: { tabId: number }; recaptureLatest?: RecaptureLatest };
     if (pendingRecapture && pendingRecapture.tabId === tabId) await chrome.storage.session.remove('pendingRecapture');
@@ -382,10 +415,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Capture auto-start pull model: content script asks if it should start capture
   if (request.type === 'CHECK_CAPTURE') {
     const tabId = sender.tab?.id;
+    const page = senderPage(sender);
     (async () => {
       try {
+        // #156: same tab + page asking again while paused (consent reload) -> same answer.
+        if (tabId !== undefined) {
+          await pausedCapturesQueue; // see any Start/Cancel that is still being written
+          const { pausedCaptures = {} } = await chrome.storage.session.get('pausedCaptures') as { pausedCaptures?: PausedCaptures };
+          const paused = pausedCaptures[tabId];
+          if (paused) {
+            if (paused.page === page && Date.now() - paused.at < PAUSED_CAPTURE_WINDOW_MS) { sendResponse(paused.answer); return; }
+            await updatePausedCaptures(tabId, null); // moved on to another page or went stale
+          }
+        }
         const matched = await matchPendingTab('pendingCaptureTabId', tabId);
         if (!matched) { sendResponse(false); return; }
+        let answer: CaptureAnswer = true;
         // #52: a re-capture start also leaves a tab-bound pendingRecapture; consume it (only if
         // fresh) and record it as the latest session for that card so an older tab is superseded.
         const { pendingRecapture } = await chrome.storage.session.get('pendingRecapture') as { pendingRecapture?: { tabId: number; cardId: string; sessionId: string; label: string; startedAt: number } };
@@ -395,16 +440,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             const { recaptureLatest = {} } = await chrome.storage.session.get('recaptureLatest') as { recaptureLatest?: RecaptureLatest };
             recaptureLatest[pendingRecapture.cardId] = { sessionId: pendingRecapture.sessionId, tabId };
             await chrome.storage.session.set({ recaptureLatest });
-            sendResponse({ recapture: { cardId: pendingRecapture.cardId, sessionId: pendingRecapture.sessionId, label: pendingRecapture.label } });
-            return;
+            answer = { recapture: { cardId: pendingRecapture.cardId, sessionId: pendingRecapture.sessionId, label: pendingRecapture.label } };
           }
         }
-        sendResponse(true);
+        await updatePausedCaptures(tabId!, { answer, page, at: Date.now() });
+        sendResponse(answer);
       } catch {
         sendResponse(false);
       }
     })();
     return true;
+  }
+
+  // #156: the user pressed Start or Cancel on the paused panel -- stop re-offering it to this tab.
+  if (request.type === 'CAPTURE_PAUSE_END') {
+    const tabId = sender.tab?.id;
+    if (tabId !== undefined) updatePausedCaptures(tabId, null).catch(() => {});
+    return;
   }
 
   // #52: save-time check that this tab's re-capture is still the latest for its card.
