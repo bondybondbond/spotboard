@@ -3104,12 +3104,15 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
     try {
       const { pendingRefreshFailureToast } = await chrome.storage.session.get('pendingRefreshFailureToast');
       await chrome.storage.session.remove('pendingRefreshFailureToast');
-      if (pendingRefreshFailureToast
-          && Array.isArray(pendingRefreshFailureToast.failed)
-          && pendingRefreshFailureToast.failed.length
+      // #164: entries need a card id so "Retry failed cards" can target them (a stash written
+      // by a pre-#164 build has none — drop it rather than offer a button that can't retry).
+      const restoredFailures = pendingRefreshFailureToast && Array.isArray(pendingRefreshFailureToast.failed)
+        ? pendingRefreshFailureToast.failed.filter(f => f && f.id)
+        : [];
+      if (restoredFailures.length
           && Date.now() - (pendingRefreshFailureToast.ts || 0) < 60000
           && typeof showRefreshFailureToast === 'function') {
-        showRefreshFailureToast(pendingRefreshFailureToast.failed, pendingRefreshFailureToast.successCount);
+        showRefreshFailureToast(restoredFailures, pendingRefreshFailureToast.successCount);
       }
     } catch (e) {
       console.warn('Pending refresh-failure toast restore failed:', e);

@@ -307,7 +307,7 @@ const REFRESH_FAILURE_TOAST_TTL_MS = 10000;
  * after refreshAll()'s reload from the persisted list — see issue #12. The manager's
  * showFailureToast() method delegates here so there is exactly one implementation.
  *
- * @param {Array<{name:string, errorCode:string}>} failedComponents
+ * @param {Array<{id:string, name:string, errorCode:string}>} failedComponents
  * @param {number|null} [successCount] - cards that DID refresh, for the mixed-outcome line
  */
 function showRefreshFailureToast(failedComponents, successCount = null) {
@@ -368,6 +368,9 @@ function showRefreshFailureToast(failedComponents, successCount = null) {
   });
 
   failureToast.querySelector('.toast-retry-btn').addEventListener('click', () => {
+    // A refresh is already running (button disabled): keep the banner so Retry stays available
+    const refreshAllBtn = document.getElementById('refresh-all-btn');
+    if (refreshAllBtn && refreshAllBtn.disabled) return;
     clearTimeout(dismissTimer);
     dismiss();
     if (typeof retryFailedComponents === 'function') {
@@ -444,8 +447,9 @@ class RefreshToastManager {
   /**
    * Record a failed component for the final failure toast
    */
-  recordFailure(componentName, errorCode) {
+  recordFailure(componentName, errorCode, id) {
     this.failedComponents.push({
+      id, // #164: retry targets cards by id, never by name (two cards can share a name)
       name: componentName,
       errorCode: errorCode || 'unknown'
     });
@@ -553,20 +557,23 @@ class RefreshToastManager {
 const toastManager = new RefreshToastManager();
 
 /**
- * Retry failed components from the batch failure toast
- * This is called by the retry button in the failure toast
- * Simply triggers the main Refresh All button which will retry all components
+ * Retry ONLY the cards listed in the batch failure toast (#164) — by id, through the
+ * normal refreshAll() path. Cards deleted or paused since the failure are skipped by
+ * refreshAll's own id filter. Flagged as a retry so it isn't counted as a fresh Refresh All.
  */
 async function retryFailedComponents(failedComponentsList) {
-  console.log('Retrying failed components:', failedComponentsList.map(f => f.name));
-
-  // Trigger the main refresh all button
-  const refreshAllBtn = document.getElementById('refresh-all-btn');
-  if (refreshAllBtn && !refreshAllBtn.disabled) {
-    refreshAllBtn.click();
-  } else {
-    console.warn('Refresh All button not available or disabled');
+  const ids = (failedComponentsList || []).map(f => f.id).filter(Boolean);
+  if (ids.length === 0) {
+    console.warn('Retry failed cards: no card ids to retry');
+    return;
   }
+
+  const refreshAllBtn = document.getElementById('refresh-all-btn');
+  if (!refreshAllBtn || refreshAllBtn.disabled) {
+    console.warn('Refresh already running or button not available');
+    return;
+  }
+  await refreshAll(ids, { isRetry: true });
 }
 
 /**
@@ -3022,17 +3029,18 @@ async function runWithConcurrency(items, fn, limit) {
  * serialized per issue #33, since concurrent focus-tier popups race for the OS's single
  * focused-window slot; normal pool runs first)
  */
-async function refreshAll(allowedIds = null) {
+async function refreshAll(allowedIds = null, { isRetry = false } = {}) {
   const btn = document.getElementById('refresh-all-btn');
   const refreshStartTime = Date.now(); // GA4: Track refresh duration
-  
+
   // Show loading state on button
   btn.disabled = true;
   btn.textContent = '⏳ Refreshing...';
   btn.style.background = '#6c757d';
-  
-  // Track refresh click (Batch 4)
-  trackRefreshClick();
+
+  // Track refresh click (Batch 4). A "Retry failed cards" run (#164) is not a fresh
+  // Refresh All click — counting it would skew the refresh-frequency metrics.
+  if (!isRetry) trackRefreshClick();
   
   try {
     // Get components from hybrid storage (sync metadata + local data)
@@ -3082,7 +3090,8 @@ async function refreshAll(allowedIds = null) {
 
     // Handle all-paused case
     if (activeComponents.length === 0) {
-      btn.textContent = `✅ All ${pausedComponents.length} paused`;
+      // #164: every card to retry was deleted or paused since the failure
+      btn.textContent = isRetry ? '✅ Nothing to retry' : `✅ All ${pausedComponents.length} paused`;
       setTimeout(() => {
         btn.textContent = '🔄 Refresh All';
         btn.style.background = '#007bff';
@@ -3092,7 +3101,9 @@ async function refreshAll(allowedIds = null) {
     }
     
     // Start toast with active count (show paused count if any)
-    const toastMessage = pausedComponents.length > 0 
+    const toastMessage = isRetry
+      ? `Retrying ${activeComponents.length} card${activeComponents.length !== 1 ? 's' : ''}`
+      : pausedComponents.length > 0
       ? `${activeComponents.length} active (${pausedComponents.length} paused)`
       : `${activeComponents.length} components`;
     toastManager.startRefresh(activeComponents.length, toastMessage);
@@ -3142,8 +3153,8 @@ async function refreshAll(allowedIds = null) {
       // 🎯 BATCH 5: Track individual refresh failures (one refresh_failed event per failing card).
       // Shared taxonomy + event builder — see trackRefreshFailure() / classifyError().
       if (!refreshResult.success) {
-        toastManager.recordFailure(displayName, classifyError(refreshResult.error));
-        trackRefreshFailure(comp, refreshResult, false);
+        toastManager.recordFailure(displayName, classifyError(refreshResult.error), comp.id);
+        trackRefreshFailure(comp, refreshResult, isRetry);
       }
 
       // Mark this component as complete
@@ -3164,7 +3175,7 @@ async function refreshAll(allowedIds = null) {
     await persistRefreshOutcomes(activeComponents.map(comp => ({ component: comp, result: componentRefreshMap.get(comp.id) })));
     
     // Show success toast with paused count
-    toastManager.finishAll(pausedComponents.length);
+    toastManager.finishAll(isRetry ? 0 : pausedComponents.length);
     
     // Log summary to console (minimal)
     const successCount = results.filter(r => r.success).length;
@@ -3173,9 +3184,9 @@ async function refreshAll(allowedIds = null) {
       : `Refresh complete: ${successCount}/${activeComponents.length}`;
     if (DEBUG) console.log(logMessage);
     
-    // GA4: Track refresh completion (Batch 4)
+    // GA4: Track refresh completion (Batch 4) — not for a retry run (#164)
     try {
-      if (typeof window.GA4 !== 'undefined') {
+      if (!isRetry && typeof window.GA4 !== 'undefined') {
         const failCount = results.filter(r => !r.success).length;
         // Build domain string with GA4's 100-char hard limit.
         // Loop ensures no domain is ever chopped mid-string — only full domains included.
@@ -3211,7 +3222,7 @@ async function refreshAll(allowedIds = null) {
       try {
         await chrome.storage.session.set({
           [PENDING_FAILURE_TOAST_KEY]: {
-            failed: toastManager.failedComponents.map(f => ({ name: f.name, errorCode: f.errorCode })),
+            failed: toastManager.failedComponents.map(f => ({ id: f.id, name: f.name, errorCode: f.errorCode })),
             successCount: results.filter(r => r.success).length,
             ts: Date.now()
           }

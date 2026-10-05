@@ -7,6 +7,8 @@
 - **Amazon cards now refresh** (#160): Amazon gives each tile a new random ID every time its page loads, so a card captured there could never be found again and showed "Site layout changed". SpotBoard now recognises that pattern (many same-shaped random IDs on one page), skips them, and locks onto the tile by a stable name instead.
 - **Refreshed Amazon cards no longer show every label twice** (#165): Amazon keeps a hidden copy of each label and price for screen readers ("Shoes Under $50Shoes Under $50", "With Deal: $21.41$21.41"). Capture always left those copies out, but refresh brought them back. Refresh now drops them too: text the site hides permanently with its own stylesheet, positioned outside the page layout and with no fade, is removed. Content a site fades in as you scroll is kept, because a background refresh can't tell whether that fade has run yet. A card that already refreshed with doubled labels may show "Site layout changed" once; press **Re-capture** to fix it.
 
+- **"Retry failed cards" now retries only the failed cards** (#164): after a Refresh All where some cards couldn't refresh, the Retry button used to refresh every card on the board again. It now refreshes just the cards listed in the warning — the ones that already worked are left alone — and still works after the page reloads. A card you deleted or paused in the meantime is skipped, and cards that share a name are told apart. A retry is not counted as a new Refresh All in usage stats.
+
 ## [1.4.3] - 2026-10-05
 
 ### Added
