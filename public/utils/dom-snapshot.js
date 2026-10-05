@@ -25,6 +25,7 @@ var DomSnapshot = (() => {
     classifyImages: () => classifyImages,
     cloneWithShadow: () => cloneWithShadow,
     harmonizeRepeatedImageRuns: () => harmonizeRepeatedImageRuns,
+    isResidentOpacityZero: () => isResidentOpacityZero,
     markHiddenElements: () => markHiddenElements,
     promoteBackgroundImages: () => promoteBackgroundImages,
     promoteLazyImages: () => promoteLazyImages,
@@ -306,6 +307,16 @@ var DomSnapshot = (() => {
   }
   var HIDDEN_MARK_ATTR = "data-spotboard-hidden";
   var ARIA_VISUAL_TAGS = /* @__PURE__ */ new Set(["IMG", "PICTURE", "VIDEO", "CANVAS", "SVG"]);
+  var hasPositiveDuration = (list) => list.split(",").some((d) => parseFloat(d) > 0);
+  function isResidentOpacityZero(el, computed) {
+    if (computed.opacity !== "0" || el.style.opacity !== "") return false;
+    if (computed.position !== "absolute" && computed.position !== "fixed") return false;
+    const props = computed.transitionProperty.split(",").map((p) => p.trim());
+    const durations = computed.transitionDuration.split(",");
+    const transitionsOpacity = props.some((p, i) => (p === "opacity" || p === "all") && parseFloat(durations[i % durations.length]) > 0);
+    const animates = computed.animationName !== "none" && hasPositiveDuration(computed.animationDuration);
+    return !transitionsOpacity && !animates;
+  }
   function markHiddenElements(root, profile) {
     const full = profile === "capture";
     const rootRect = root.getBoundingClientRect();
@@ -339,7 +350,7 @@ var DomSnapshot = (() => {
       const computed = window.getComputedStyle(el);
       const isDisplayNone = computed.display === "none";
       const isVisibilityHidden = computed.visibility === "hidden";
-      const isOpacityZero = full && computed.opacity === "0";
+      const isOpacityZero = full ? computed.opacity === "0" : isResidentOpacityZero(el, computed);
       const isAriaHiddenDecorative = el.getAttribute("aria-hidden") === "true" && !ARIA_VISUAL_TAGS.has(el.tagName) && (el.textContent?.trim().length ?? 0) === 0 && !el.querySelector("img, picture, video, canvas, svg");
       const rect = el.getBoundingClientRect();
       const clipRect = findClippingAncestor(el);

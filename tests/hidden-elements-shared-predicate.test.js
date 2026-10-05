@@ -62,13 +62,74 @@ test('negative: non-empty aria-hidden text and aria-hidden images are kept', () 
   for (const profile of ['capture', 'tab']) assert.deepEqual(hiddenIds(root, profile), [], profile)
 })
 
-test('documented residual: opacity:0 and loaded display:none images differ between profiles', () => {
+test('documented residual: inline opacity:0 and loaded display:none images differ between profiles', () => {
   const root = mount(`
     <p id="fade" style="opacity:0">appearing</p>
     <img id="slide" style="display:none" src="s.png">`)
   Object.defineProperty(root.querySelector('#slide'), 'naturalWidth', { value: 300 })
   assert.deepEqual(hiddenIds(root, 'capture'), ['fade'])         // loaded image kept, opacity dropped
-  assert.deepEqual(hiddenIds(root, 'tab'), ['slide'])            // opacity not risked, old image behaviour
+  assert.deepEqual(hiddenIds(root, 'tab'), ['slide'])            // inline opacity = possible reveal, kept
+})
+
+// #165: Amazon's screen-reader copies are hidden by stylesheet opacity:0 alone (absolute, no fade) and
+// came back doubled on every tab refresh. A <head> stylesheet stands in for Amazon's CSS; longhands
+// only, because jsdom does not expand the transition/animation shorthands.
+function withSheet(css, fn) {
+  const style = document.createElement('style')
+  style.textContent = css
+  document.head.appendChild(style)
+  try { fn() } finally { style.remove() }
+}
+
+test('tab drops resting out-of-flow stylesheet opacity:0 (Amazon .a-offscreen), keeps every fade-in shape', () => {
+  withSheet(`
+    .a-offscreen { position: absolute; left: 0; opacity: 0; }
+    .sr-fixed { position: fixed; opacity: 0; }
+    .reveal-fade { position: absolute; opacity: 0; transition-property: opacity; transition-duration: 0.4s; }
+    .reveal-all { position: absolute; opacity: 0; transition-property: all; transition-duration: 0.3s; }
+    .reveal-anim { position: absolute; opacity: 0; animation-name: fadeIn; animation-duration: 1s; }
+    .reveal-zero-anim { position: absolute; opacity: 0; animation-name: none; animation-duration: 0s; }
+    .in-flow { opacity: 0; }
+    .other-transition { position: absolute; opacity: 0; transition-property: transform; transition-duration: 0.4s; }`, () => {
+    const root = mount(`
+      <span id="offscreen" class="a-offscreen">With Deal: $21.41</span>
+      <span id="fixed" class="sr-fixed">Skip to content</span>
+      <span id="inline-abs" style="position:absolute;opacity:0">Framer Motion initial</span>
+      <div id="fade" class="reveal-fade">AOS block</div>
+      <div id="all" class="reveal-all">Tailwind transition-all</div>
+      <div id="anim" class="reveal-anim">animate.css</div>
+      <div id="noanim" class="reveal-zero-anim">resting</div>
+      <div id="inflow" class="in-flow">in-flow reveal</div>
+      <div id="transform-only" class="other-transition">slides in</div>`)
+    assert.deepEqual(hiddenIds(root, 'tab'), ['fixed', 'noanim', 'offscreen', 'transform-only'])
+    // capture is unchanged: every opacity:0 goes
+    assert.deepEqual(hiddenIds(root, 'capture'),
+      ['all', 'anim', 'fade', 'fixed', 'inflow', 'inline-abs', 'noanim', 'offscreen', 'transform-only'])
+  })
+})
+
+// Durations, not names, decide: Chrome reports `transition: all 0s` on every element by default
+// (Amazon's .a-offscreen included), and a named 0s animation is no fade either.
+test('tab treats zero-duration transitions/animations as resting, and matches durations per property', () => {
+  withSheet(`
+    .browser-default { position: absolute; opacity: 0; transition-property: all; transition-duration: 0s; }
+    .instant-anim { position: absolute; opacity: 0; animation-name: fadeIn; animation-duration: 0s; }
+    .opacity-instant { position: absolute; opacity: 0; transition-property: transform, opacity; transition-duration: 0.4s, 0s; }
+    .opacity-fades { position: absolute; opacity: 0; transition-property: transform, opacity; transition-duration: 0s, 0.4s; }`, () => {
+    const root = mount(`
+      <span id="default" class="browser-default">With Deal: $21.41</span>
+      <span id="instant" class="instant-anim">x</span>
+      <span id="opacity-instant" class="opacity-instant">x</span>
+      <span id="opacity-fades" class="opacity-fades">x</span>`)
+    assert.deepEqual(hiddenIds(root, 'tab'), ['default', 'instant', 'opacity-instant'])
+  })
+})
+
+test('tab keeps opacity just above 0 (Framer appear animations use 0.001) and partial opacity', () => {
+  withSheet('.appear { position: absolute; opacity: 0.001; } .dim { position: absolute; opacity: 0.5; }', () => {
+    const root = mount(`<div id="appear" class="appear">Hero</div><div id="dim" class="dim">Dimmed</div>`)
+    assert.deepEqual(hiddenIds(root, 'tab'), [])
+  })
 })
 
 test('carousel slides moved off-screen by an inline transform are NOT dropped, and the transform is restored', () => {

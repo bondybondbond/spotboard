@@ -405,15 +405,39 @@ export function classifyImages(root: Element): void {
 //
 // Profiles differ on purpose, and the differences are the documented residual of #130:
 //  - 'capture': the full check, run on a page the user has settled on.
-//  - 'tab': same, minus (a) opacity:0 — a freshly loaded background tab can still be mid
-//    fade-in (unverified, so not risked), and (b) the loaded-image display:none carve-out — capture
-//    un-hides those on its clone afterwards and the tab tiers have no such step, so they keep
-//    dropping them as they always did.
+//  - 'tab': same, except (a) opacity:0 only counts in the screen-reader-copy shape (see
+//    isResidentOpacityZero) — a background tab never runs rAF/IntersectionObserver, so fade-in
+//    content can still sit at opacity:0 there, and (b) the loaded-image display:none carve-out —
+//    capture un-hides those on its clone afterwards and the tab tiers have no such step, so they
+//    keep dropping them as they always did.
+//  Tripwire (#165): this is the second targeted exception to the shared check. A third one means
+//  stop adding conditions and record what capture dropped instead (or #129).
 export type HiddenProfile = 'capture' | 'tab'
 
 export const HIDDEN_MARK_ATTR = 'data-spotboard-hidden'
 
 const ARIA_VISUAL_TAGS = new Set(['IMG', 'PICTURE', 'VIDEO', 'CANVAS', 'SVG'])
+
+const hasPositiveDuration = (list: string) => list.split(',').some(d => parseFloat(d) > 0)
+
+// #165: opacity:0 that is a resting part of the page, not a fade-in that hasn't run. Amazon's
+// screen-reader copies (.a-offscreen) are hidden by opacity:0 alone and came back doubled on every
+// refresh. All three must hold, each measured on real pages:
+//  - set by a stylesheet: Framer Motion / GSAP / ScrollReveal start reveals with an INLINE opacity:0
+//  - nothing animates opacity: AOS / Tailwind reveals carry an opacity transition
+//  - out of normal flow (absolute/fixed): without this, an in-flow framer.com block was dropped
+// Known gap: a script-driven el.animate() fade leaves no inline style or CSS animation, so an
+// absolutely positioned one still at 0 in a stalled tab is dropped (none seen on the probed sites).
+export function isResidentOpacityZero(el: HTMLElement, computed: CSSStyleDeclaration): boolean {
+  if (computed.opacity !== '0' || el.style.opacity !== '') return false
+  if (computed.position !== 'absolute' && computed.position !== 'fixed') return false
+  const props = computed.transitionProperty.split(',').map(p => p.trim())
+  const durations = computed.transitionDuration.split(',')
+  const transitionsOpacity = props.some((p, i) =>
+    (p === 'opacity' || p === 'all') && parseFloat(durations[i % durations.length]) > 0)
+  const animates = computed.animationName !== 'none' && hasPositiveDuration(computed.animationDuration)
+  return !transitionsOpacity && !animates
+}
 
 /**
  * Marks every hidden descendant of `root` with data-spotboard-hidden="true" ON THE LIVE DOM, so the
@@ -464,7 +488,7 @@ export function markHiddenElements(root: HTMLElement, profile: HiddenProfile): {
 
     const isDisplayNone = computed.display === 'none'
     const isVisibilityHidden = computed.visibility === 'hidden'
-    const isOpacityZero = full && computed.opacity === '0'
+    const isOpacityZero = full ? computed.opacity === '0' : isResidentOpacityZero(el, computed)
 
     // aria-hidden: only EMPTY decorative elements (icon fonts, spacers). Non-empty aria-hidden is
     // hidden from screen readers, NOT from the display — BBC Sport marks all its visible scores so.
