@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Amazon cards now refresh** (#160): Amazon gives each tile a new random ID every time its page loads, so a card captured there could never be found again and showed "Site layout changed". SpotBoard now recognises that pattern (many same-shaped random IDs on one page), skips them, and locks onto the tile by a stable name instead.
+
 ## [1.4.3] - 2026-10-05
 
 ### Added
