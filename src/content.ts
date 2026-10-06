@@ -131,7 +131,10 @@ export function __getExcludedElementsForTest(): HTMLElement[] {
 // tag/class-only matching has a documented over-match failure mode in other tools' element
 // pickers, so a BEM-modifier variant (e.g. "item item--featured") intentionally falls
 // outside the group rather than risk excluding something the user didn't mean to.
-function getSimilarSiblings(element: HTMLElement): HTMLElement[] {
+// #129: the group AND which rule produced it, decided in this one place. The kind is recorded on the
+// ledger entry of a bulk exclusion so computeExclusionPatterns reads it instead of re-deriving it.
+type GroupKind = 'column' | 'siblings' | 'cross-parent' | 'single'
+function getSimilarGroup(element: HTMLElement): { group: HTMLElement[]; kind: GroupKind } {
   // Table-column exclusion (#62): a table cell's real "similar group" is its column, not
   // same-row siblings sharing a class -- on tables that style columns with a shared utility
   // class (e.g. a right-align class used by Temp/Precip/Wind-speed alike), same-row/class
@@ -139,18 +142,18 @@ function getSimilarSiblings(element: HTMLElement): HTMLElement[] {
   // first, ahead of the generic same-parent+class fallback below.
   if (lockedElement) {
     const columnCells = getTableColumnCells(element, lockedElement);
-    if (columnCells && columnCells.length > 1) return columnCells;
+    if (columnCells && columnCells.length > 1) return { group: columnCells, kind: 'column' };
   }
 
   const parent = element.parentElement;
-  if (!parent) return [element];
+  if (!parent) return { group: [element], kind: 'single' };
   const siblings = Array.from(parent.children).filter(
     (el): el is HTMLElement =>
       el instanceof HTMLElement &&
       el.tagName === element.tagName &&
       el.className === element.className
   );
-  if (siblings.length > 1) return siblings
+  if (siblings.length > 1) return { group: siblings, kind: 'siblings' }
 
   // Cross-parent fallback (#87): repeated per-article furniture (byline, date, headline) sits
   // one-per-article in separate parents, so the same-parent group above is a group of 1.
@@ -158,9 +161,13 @@ function getSimilarSiblings(element: HTMLElement): HTMLElement[] {
   // text/regex signals (#63). See getCrossParentGroup for the two signals.
   if (lockedElement) {
     const group = getCrossParentGroup(element, lockedElement)
-    if (group.length > 1) return group
+    if (group.length > 1) return { group, kind: 'cross-parent' }
   }
-  return siblings
+  return { group: siblings, kind: 'single' }
+}
+
+function getSimilarSiblings(element: HTMLElement): HTMLElement[] {
+  return getSimilarGroup(element).group
 }
 
 // Cross-parent matching inside the locked section (#87). Two narrow signals only:
@@ -1534,9 +1541,12 @@ export function sanitizeHTML(element: HTMLElement, excludedElements: HTMLElement
 // structural signature when it came from a Shift+click group); `el` is its current live node, or
 // null while the page is not showing it. Entries are never dropped just because the node left --
 // they are re-applied when matching content re-mounts, so the decision persists.
-export interface LedgerEntry { el: HTMLElement | null; tag: string; text: string; sig: string | null; size?: number }
+// `kind` (#129): which grouping rule produced a Shift+click group, recorded when it was clicked so the pattern
+// step reads it instead of re-deriving it. Set only on bulk (sig) entries.
+export interface LedgerEntry { el: HTMLElement | null; tag: string; text: string; sig: string | null; size?: number; kind?: GroupKind }
 let exclusionLedger: LedgerEntry[] = [];
 let bulkExclusionInProgress = false;
+let bulkGroupKind: GroupKind | null = null;
 
 function classOf(el: Element | null): string {
   return el && typeof el.className === 'string' ? el.className : '';
@@ -1556,6 +1566,7 @@ function recordExclusion(el: HTMLElement) {
     tag: el.tagName,
     text: normalizeSignatureText(el.textContent || ''),
     sig: bulkExclusionInProgress ? similarSignature(el) : null,
+    ...(bulkExclusionInProgress && bulkGroupKind ? { kind: bulkGroupKind } : {}),
     size: el.querySelectorAll('*').length,
   });
 }
@@ -1583,11 +1594,9 @@ function computeExclusionPatterns(root: HTMLElement): { patterns: ExclusionPatte
   for (const entry of exclusionLedger) {
     const el = entry.el;
     if (!entry.sig || !el || seen.has(el) || !excludedElements.includes(el)) continue;
-    // Same provenance as getSimilarSiblings(): a table-column group or a same-parent sibling group was
-    // NOT produced by the cross-parent rule, so it must not be widened into one -- those stay individual.
-    if (((getTableColumnCells(el, root)?.length) ?? 0) > 1) continue;
-    const parent = el.parentElement;
-    if (parent && Array.from(parent.children).filter(s => s.tagName === el.tagName && s.className === el.className).length > 1) continue;
+    // #129: provenance is the kind recorded when the group was clicked (getSimilarGroup). A table-column or
+    // same-parent sibling group was NOT produced by the cross-parent rule, so it must not be widened into one.
+    if (entry.kind !== 'cross-parent') continue;
     const derived = deriveCrossParentPattern(el, root);
     if (!derived) continue;
     const { rule, matches } = derived;
@@ -1651,16 +1660,31 @@ export function __proveExclusionPatternsForTest(root: HTMLElement, patterns: Exc
   return proveExclusionPatterns(root, patterns);
 }
 
+// Test-only: the LIVE ledger array (not a copy), so a test can read the recorded kind or overwrite it to prove it is the thing read (#129).
+export function __getLedgerForTest(): LedgerEntry[] {
+  return exclusionLedger
+}
+
 export function __computeExclusionPatternsForTest(root: HTMLElement) {
   return computeExclusionPatterns(root);
 }
 
-// Test-only: the same flag-wrapped toggle the live Shift+click and preview Shift+click paths use.
-export function __bulkExcludeForTest(group: HTMLElement[]): void {
+// Test-only: the same flag-wrapped toggle the live Shift+click and preview Shift+click paths use. The grouping
+// kind comes from the real getSimilarGroup() on the first member (#129), in the captured region `locked`
+// (default: the page's first element, which is how the fixtures build their root).
+export function __bulkExcludeForTest(group: HTMLElement[], locked: HTMLElement | null = null): void {
+  const prev = lockedElement
+  lockedElement = locked ?? prev ?? (document.body.firstElementChild as HTMLElement | null)
+  try {
+    bulkGroupKind = group.length ? getSimilarGroup(group[0]).kind : null
+  } finally {
+    lockedElement = prev
+  }
   pushExclusionUndo();
   bulkExclusionInProgress = true;
   group.forEach(el => toggleExclusion(el));
   bulkExclusionInProgress = false;
+  bulkGroupKind = null;
 }
 
 function dropFromLedger(el: HTMLElement) {
@@ -1730,7 +1754,7 @@ export function reconcileLedger(ledger: LedgerEntry[], root: HTMLElement): { led
       root.querySelectorAll<HTMLElement>(entry.tag).forEach(n => {
         if (taken.has(n) || similarSignature(n) !== entry.sig) return;
         taken.add(n); revived.push(n); matched = true;
-        next.push({ el: n, tag: entry.tag, text: normalizeSignatureText(n.textContent || ''), sig: entry.sig });
+        next.push({ ...entry, el: n, text: normalizeSignatureText(n.textContent || '') });
       });
       if (matched) return;
     } else if (/\p{L}{3}/u.test(entry.text)) {
@@ -2109,9 +2133,10 @@ function handleClick(event: MouseEvent) {
       // the fresh group must match what was previewed, or content likely shifted between hover
       // and click and bulk exclusion is skipped rather than risking excluding the wrong set.
       const targetMatchesHoverPreview = hitTarget === hoveredExclusionCandidate;
-      const freshGroup = (!alreadyExcluded && event.shiftKey && targetMatchesHoverPreview)
-        ? getSimilarSiblings(hitTarget)
+      const freshInfo = (!alreadyExcluded && event.shiftKey && targetMatchesHoverPreview)
+        ? getSimilarGroup(hitTarget)
         : null;
+      const freshGroup = freshInfo ? freshInfo.group : null;
       const groupPreviewedWithShift = hoveredSimilarGroup.length > 1;
       const groupMatchesPreview = !groupPreviewedWithShift
         || (!!freshGroup && freshGroup.length === hoveredSimilarGroup.length
@@ -2153,10 +2178,12 @@ function handleClick(event: MouseEvent) {
       } else if (willBulkExclude) {
         pushExclusionUndo();
         bulkExclusionInProgress = true;
+        bulkGroupKind = freshInfo!.kind;
         freshGroup!.forEach(el => {
           if (!excludedElements.includes(el)) toggleExclusion(el);
         });
         bulkExclusionInProgress = false;
+        bulkGroupKind = null;
         log('❌ Bulk-excluded', freshGroup!.length, 'similar siblings');
       } else if (!!freshGroup && groupPreviewedWithShift && !groupMatchesPreview) {
         // Fresh group no longer matches what the shift-hover preview showed -- content likely
@@ -3029,8 +3056,10 @@ function installPreviewExclusion(doc: Document, previewMap: Map<string, HTMLElem
       // One undo step for the whole group, mirroring the live-page Shift+click bulk path.
       pushExclusionUndo();
       bulkExclusionInProgress = true;
+      bulkGroupKind = getSimilarGroup(hit.liveEl).kind; // group > 1 only happens with Shift, same grouping as previewGroupFor
       group.forEach(el => { if (excludedElements.includes(el) !== willExclude) toggleExclusion(el); });
       bulkExclusionInProgress = false;
+      bulkGroupKind = null;
     } else {
       toggleExclusion(hit.liveEl);
     }

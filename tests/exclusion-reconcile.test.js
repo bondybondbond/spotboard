@@ -96,3 +96,11 @@ test('spacer padding is inline padding taller than the screen', () => {
   assert.equal(isSpacerPadding(0, 700), false)
   assert.equal(isSpacerPadding(500, 0), false)
 })
+
+test('#129 a re-attached group member keeps the grouping kind it was clicked with', () => {
+  const root = feed('Alice Anderson', 'Bob Brown')
+  const sig = similarSignature(root.querySelector('.follow'))
+  const r = reconcileLedger([{ el: null, tag: 'BUTTON', text: 'follow', sig, kind: 'cross-parent' }], root)
+  assert.equal(r.revived.length, 2)
+  assert.deepEqual(r.ledger.map(e => e.kind), ['cross-parent', 'cross-parent'])
+})

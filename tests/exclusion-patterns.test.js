@@ -15,6 +15,7 @@ const {
   resetExclusions,
   undoLastExclusion,
   __bulkExcludeForTest,
+  __getLedgerForTest,
   __computeExclusionPatternsForTest,
 } = await import('../.test-build/content.js')
 const {
@@ -356,4 +357,55 @@ test('a card never stores more than PATTERN_MAX_RULES rules (the rest stay indiv
   kinds.forEach(k => __bulkExcludeForTest(all(root, 'span.' + k)))
   const { patterns } = __computeExclusionPatternsForTest(root)
   assert.equal(patterns.length, 10)
+})
+
+// ---------- #129: the grouping kind is recorded when the group is clicked, and READ (never re-derived) ----------
+
+test('#129 the ledger records which grouping rule produced each bulk group', () => {
+  reset(); document.body.textContent = ''
+  const row = (i) => cls('tr', null, [cls('td', 'num', [], `${i}`), cls('td', 'other', [], `${i * 2}`)])
+  const table = cls('table', 'data', [cls('tbody', null, [1, 2, 3, 4, 5].map(row))])
+  const list = cls('ul', 'only', Array.from({ length: 4 }, (_, i) => cls('li', 'item', [], `x${i}`)))
+  const stories = Array.from({ length: 4 }, (_, i) => cls('article', 'story', [cls('span', 'credit', [], `c${i}`)]))
+  const lone = cls('p', 'solo', [], 'one off')
+  const root = cls('div', 'wrap', [table, list, ...stories, lone])
+  document.body.appendChild(root)
+  __bulkExcludeForTest(all(root, 'tr td:first-child'))
+  __bulkExcludeForTest(all(root, 'li.item'))
+  __bulkExcludeForTest(all(root, 'span.credit'))
+  toggleExclusion(lone) // a single click: no group, no kind
+  const kindOf = (node) => __getLedgerForTest().find(e => e.el === node)
+  assert.equal(kindOf(root.querySelector('td.num')).kind, 'column')
+  assert.equal(kindOf(root.querySelector('li.item')).kind, 'siblings')
+  assert.equal(kindOf(root.querySelector('span.credit')).kind, 'cross-parent')
+  assert.equal(kindOf(lone).kind, undefined)
+  assert.equal(kindOf(lone).sig, null)
+})
+
+test('#129 computeExclusionPatterns reads the recorded kind, it does not re-derive grouping itself', () => {
+  reset(); const root = page(6)
+  __bulkExcludeForTest(all(root, 'span.credit'))
+  assert.equal(__computeExclusionPatternsForTest(root).patterns.length, 1)       // recorded cross-parent -> pattern
+  __getLedgerForTest().forEach(e => { e.kind = 'siblings' })                     // same DOM, other provenance
+  assert.equal(__computeExclusionPatternsForTest(root).patterns.length, 0)
+  __getLedgerForTest().forEach(e => { e.kind = 'column' })
+  assert.equal(__computeExclusionPatternsForTest(root).patterns.length, 0)
+  __getLedgerForTest().forEach(e => { delete e.kind })                           // unknown provenance fails closed
+  assert.equal(__computeExclusionPatternsForTest(root).patterns.length, 0)
+})
+
+test('#129 an undo restores the kind with the ledger, so the pattern survives Undo of a later click', () => {
+  reset(); const root = page(6)
+  __bulkExcludeForTest(all(root, 'span.credit'))
+  toggleExclusion(root.querySelector('h3.title'))
+  assert.equal(undoLastExclusion(), true)
+  assert.equal(__computeExclusionPatternsForTest(root).patterns.length, 1)
+})
+
+test('#129 source guard: both real bulk-exclude paths (live Shift+click, preview Shift+click) record the grouping kind', () => {
+  const content = fs.readFileSync(new URL('../src/content.ts', import.meta.url), 'utf8')
+  assert.match(content, /bulkGroupKind = freshInfo!\.kind/)                              // live-page Shift+click
+  assert.match(content, /bulkGroupKind = getSimilarGroup\(hit\.liveEl\)\.kind/)          // preview-pane Shift+click
+  assert.match(content, /if \(entry\.kind !== 'cross-parent'\) continue/)                // pattern step reads it, never re-derives
+  assert.doesNotMatch(content, /getTableColumnCells\(el, root\)\?\.length/)              // the removed second copy stays removed
 })

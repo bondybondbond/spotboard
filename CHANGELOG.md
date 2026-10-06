@@ -9,6 +9,10 @@
 
 - **"Retry failed cards" now retries only the failed cards** (#164): after a Refresh All where some cards couldn't refresh, the Retry button used to refresh every card on the board again. It now refreshes just the cards listed in the warning — the ones that already worked are left alone — and still works after the page reloads. A card you deleted or paused in the meantime is skipped, and cards that share a name are told apart. A retry is not counted as a new Refresh All in usage stats.
 
+### Changed
+
+- **Under the hood: "exclude all like this" now remembers what kind of group you clicked** (#129): nothing looks different today. Capture used to work out a second time, from scratch, whether your Shift+click was a table column, a row of same-looking items or a repeated element across the section, so any future change to how groups are found could have quietly turned a column or row group into a whole-section rule. It now records the kind once, at the click, and uses that.
+
 ## [1.4.3] - 2026-10-05
 
 ### Added
