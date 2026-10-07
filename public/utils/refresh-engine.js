@@ -50,6 +50,13 @@ const LARGE_IMG_RE = /data-scale-context="(?:medium|preview)"/gi;
 // too much, and text-only cards must never be judged.
 const CAPTURE_COLLAPSE_RATIO = 0.4;
 const CAPTURE_MIN_SAVED_IMAGES = 5;
+// #152: a card with requiresActiveFocus has already failed unfocused once, so its unfocused (offscreen)
+// capture must clear a stricter bar before it replaces the saved copy; the focused popup keeps 0.4.
+// Measured, cleaned image count vs saved copy, unfocused popup: accepted AND identical to the focused
+// popup = 2.15 (HotUKDeals), 0.85 (Kalshi senate), 0.67 (Peerlist); rejected = 0.30 (Kalshi house).
+// 0.5 sits mid-gap (~0.17 either side). Small sample (4 sites) — a false reject costs ~10s + a popup,
+// a false accept silently degrades a card, hence the asymmetry. Not 0.7: that would reject Peerlist.
+const FLAGGED_PROBE_MIN_RATIO = 0.5;
 const RENDER_DEGRADED_ERROR = 'Page did not fully load';
 
 /**
@@ -60,13 +67,14 @@ const RENDER_DEGRADED_ERROR = 'Page did not fully load';
  * @param {string} candidateHtml - candidate after applySanitizationPipeline (like-for-like with saved)
  * @param {string} savedHtml - the card's current html_cache
  * @param {boolean|null} pageVisible - real (un-spoofed) visibility at capture; null = unknown
+ * @param {number} [minRatio] - collapse bar; flagged cards' unfocused probe passes FLAGGED_PROBE_MIN_RATIO (#152)
  * @returns {{ ok: boolean, ratio: number|null }}
  */
-function assessCaptureQuality(candidateHtml, savedHtml, pageVisible) {
+function assessCaptureQuality(candidateHtml, savedHtml, pageVisible, minRatio = CAPTURE_COLLAPSE_RATIO) {
   const savedImgs = ((savedHtml || '').match(/<img/gi) || []).length;
   if (savedImgs < CAPTURE_MIN_SAVED_IMAGES) return { ok: true, ratio: null };
   const ratio = ((candidateHtml || '').match(/<img/gi) || []).length / savedImgs;
-  return { ok: ratio >= CAPTURE_COLLAPSE_RATIO || pageVisible === true, ratio };
+  return { ok: ratio >= minRatio || pageVisible === true, ratio };
 }
 
 /**
@@ -1111,8 +1119,10 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
  * @param {string} url - The URL to fetch
  * @param {string} selector - CSS selector for component to extract
  * @param {string|null} fingerprint - Optional heading text for multi-match disambiguation
- * @param {boolean} skipToActive - If true, skip background+offscreen and go straight to active popup
- *                                 Set for components with requiresActiveFocus=true in storage (self-learned).
+ * @param {boolean} skipToActive - If true, skip background+offscreen and go straight to active popup.
+ *                                 No longer set from the stored requiresActiveFocus flag (#152): flagged cards
+ *                                 start at offscreen with a stricter quality bar and fall back to the focused
+ *                                 popup (see _tabRefreshForComponent). Only requiresVisibleTab(url) sites skip.
  * @param {boolean} skipToOffscreen - If true, skip the background-tab attempt and start at the
  *                                 offscreen popup. Set for components with requiresFixedCaptureWidth=true
  *                                 in storage. `tryBackgroundWithSpoof` inherits the current window's width
@@ -1171,21 +1181,21 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     }
     return firstFaulting ? { html: firstFaulting.html, activeFocusNeeded: firstFaulting.activeFocusNeeded } : null;
   };
-  // #101: `assess(html, pageVisible)` -> assessCaptureQuality() result. Runs after each tier's own
+  // #101: `assess(html, pageVisible, tier)` -> assessCaptureQuality() result. Runs after each tier's own
   // gates accept; a rejected capture moves on to the next tier, and a rejected focused-popup
   // capture ends as renderDegraded (caller keeps the last good copy).
   const passesQualityGate = (html, meta, tier) => {
     if (!assess) return true;
-    const verdict = assess(html, meta.pageVisible);
+    const verdict = assess(html, meta.pageVisible, tier);
     if (DEBUG) console.log('[SB-REFRESH] capture gate', new URL(url).hostname, 'tier=' + tier, 'visible=' + meta.pageVisible, 'ratio=' + verdict.ratio, verdict.ok ? 'accept' : 'REJECT');
     return verdict.ok;
   };
   try {
     // Check if this site MUST be visible (Page Visibility API blocks background)
-    // skipToActive is set for components with stored requiresActiveFocus=true (self-learned flag)
+    // #152: the stored requiresActiveFocus flag does NOT set skipToActive any more (flagged cards probe offscreen first)
     if (requiresVisibleTab(url) || skipToActive) {
       // Skip background + offscreen attempts - go straight to active tab
-      // activeFocusNeeded stays false: flag is already persisted in storage for this card
+      // activeFocusNeeded stays false: nothing new to learn on this path
       const meta = {};
       const result = await tryActiveTab(url, selector, fingerprint, meta);
       if (result && !passesQualityGate(result, meta, 'active')) {
@@ -1307,9 +1317,29 @@ function _tabRefreshForComponent(component, fingerprint, expectedImgCount, expec
   const layoutOk = Array.isArray(patterns) && patterns.length > 0
     ? html => markPatternExclusions(stripEventHandlers(html), patterns).faults.length === 0
     : null;
+  // #152: requiresActiveFocus no longer forces the focused popup. A flagged card starts at the unfocused
+  // offscreen tier (the background tab renders 0 frames on these sites, REF-38) under a stricter bar with
+  // pageVisible forced false, so an unfocused window can never earn the "genuinely visible" exemption;
+  // a rejected or failed probe falls through to the focused popup exactly as before. The flag is a cost
+  // hint now, never a correctness control, and is never cleared. Only a card whose saved copy gives the gate
+  // something to judge (>= CAPTURE_MIN_SAVED_IMAGES images) may probe: below that assessCaptureQuality accepts
+  // anything, so an unfocused capture would pass unchecked — those cards keep going straight to the focus popup.
+  const flagged = component.requiresActiveFocus === true;
+  const savedImgs = ((component.html_cache || '').match(/<img/gi) || []).length;
+  const probes = flagged && savedImgs >= CAPTURE_MIN_SAVED_IMAGES;
   return tabBasedRefresh(component.url, component.selector, fingerprint, expectedImgCount, expectedLargeImgCount,
-    component.requiresActiveFocus === true, component.requiresFixedCaptureWidth === true,
-    { assess: (html, pageVisible) => assessCaptureQuality(applySanitizationPipeline(html, component), component.html_cache, pageVisible), layoutOk });
+    flagged && !probes, probes || component.requiresFixedCaptureWidth === true,
+    {
+      assess: (html, pageVisible, tier) => {
+        const candidate = applySanitizationPipeline(html, component);
+        // 'layout-match' is a remembered unfocused capture settled after the tiers ran; with the background
+        // tab skipped it can only have come from the offscreen probe, so it gets the same strict bar.
+        return probes && (tier === 'offscreen' || tier === 'layout-match')
+          ? assessCaptureQuality(candidate, component.html_cache, false, FLAGGED_PROBE_MIN_RATIO)
+          : assessCaptureQuality(candidate, component.html_cache, pageVisible);
+      },
+      layoutOk
+    });
 }
 
 function _renderDegradedResult() {
@@ -3134,7 +3164,8 @@ async function refreshAll(allowedIds = null, { isRetry = false } = {}) {
     // Split into two pools, run after each other (focus lane still starts only once the
     // normal pool has fully drained — the barrier itself was not removed by this change):
     // - normalCards: background/offscreen refresh — safe to run concurrently
-    // - focusCards: requiresActiveFocus (focused popup) — MUST run one at a time (issue #33).
+    // - focusCards: requiresActiveFocus (#152: probes the unfocused popup first, falls back to the
+    //   focused popup) — MUST run one at a time (issue #33).
     //   tryActiveTab() creates a real OS-focused chrome.windows.create({focused:true}) popup;
     //   Chrome only ever has one truly OS-focused window, so concurrent focus-tier workers (or
     //   a finishing worker's focus-restore step) can steal focus from a sibling's still-waiting

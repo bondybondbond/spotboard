@@ -9,6 +9,7 @@
 
 - **"Retry failed cards" now retries only the failed cards** (#164): after a Refresh All where some cards couldn't refresh, the Retry button used to refresh every card on the board again. It now refreshes just the cards listed in the warning — the ones that already worked are left alone — and still works after the page reloads. A card you deleted or paused in the meantime is skipped, and cards that share a name are told apart. A retry is not counted as a new Refresh All in usage stats.
 - **Refreshed NPR cards no longer show a few older stories with two pictures** (#138): some older NPR stories carry a square and a wide version of their picture as two different image files, so refresh kept both. Refresh now recognises them as the same story (same link, same text, same picture description) and keeps the one your card was captured with — but only when your saved card clearly favours one of them, so a real gallery of different pictures is never merged.
+- **Refresh opens fewer windows over your work** (#152): once a card had needed the small focused refresh window, SpotBoard used that window on every refresh from then on, even when the site would now load fine without it (one slow load was enough to get a card stuck). Refresh now tries the quiet background window first and only keeps what it gets if the result looks complete, and otherwise falls back to the focused window as before. Cards that genuinely need the focused window still use it. Refresh All can take a little longer because of the extra quiet attempt.
 
 ### Changed
 
