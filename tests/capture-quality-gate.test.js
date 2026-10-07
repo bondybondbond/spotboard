@@ -139,24 +139,64 @@ test('escalation: without assess the pre-#101 behaviour is unchanged', async () 
   assert.equal(r.html, feed(22))
 })
 
-// ---------- #152: a requiresActiveFocus card probes the unfocused popup first, under a stricter bar ----------
+// ---------- #152: a requiresActiveFocus card tries a QUIET attempt first and keeps it only if it matches the saved copy ----------
+// Fixtures are numeric only (images, large images): the repo is public, so no real page content or URLs go in here.
 
 const flaggedBar = vm.runInThisContext('FLAGGED_PROBE_MIN_RATIO')
+const phases = vm.runInThisContext('_refreshPhase') // WeakMap: which lane refreshAll has a flagged card in
+const withUrlGate = vm.runInThisContext('_withUrlGate')
+const urlKey = vm.runInThisContext('_urlKey')
+const spreadByUrl = vm.runInThisContext('_spreadByUrl')
+// n images, the first l of them "large" (data-scale-context medium)
+const pic = (n, l = 0) => `<ul class="deals">${Array.from({ length: n }, (_, i) =>
+  `<li><img src="https://cdn.example.com/p-${i}.jpg" data-scale-context="${i < l ? 'medium' : 'small'}" alt="p${i}">Item ${i} with enough text to count as real content</li>`).join('')}</ul>`
+const strictOk = (cand, saved, visible = false) => g.assessCaptureQuality(pic(...cand), pic(...saved), visible, true).ok
+
+test('assess strict: the bar is 0.85 and sits exactly on the boundary (17 of 20 passes, 16 of 20 does not)', () => {
+  assert.equal(flaggedBar, 0.85)
+  assert.equal(strictOk([17, 0], [20, 0]), true)
+  assert.equal(strictOk([16, 0], [20, 0]), false)
+})
+
+test('assess strict: large images must match too once the saved copy has >= 5 of them (4 is noise)', () => {
+  assert.equal(strictOk([20, 9], [20, 10]), true)
+  assert.equal(strictOk([20, 8], [20, 10]), false)
+  assert.equal(strictOk([20, 0], [20, 4]), true)
+  assert.equal(strictOk([20, 0], [20, 5]), false)
+})
+
+test('assess strict: the page-visibility exemption never applies to the quiet probe (default callers keep it)', () => {
+  assert.equal(g.assessCaptureQuality(pic(10), pic(20), true, true).ok, false)
+  assert.equal(g.assessCaptureQuality(pic(10), pic(20), true).ok, true)
+  assert.equal(g.assessCaptureQuality(pic(10), pic(20), false).ok, true) // 0.5: the default bar still accepts it
+})
+
+test('assess strict: a saved copy under 5 images is never judged', () => {
+  assert.equal(strictOk([0, 0], [4, 0]), true)
+})
+
+test('regression fixtures (numeric tuples from measured quiet probes, [images, large] candidate vs saved)', () => {
+  const degraded = [[[51, 20], [71, 29]], [[46, 18], [71, 29]], [[31, 10], [70, 29]], [[11, 0], [71, 29]], [[2, 0], [16, 0]], [[0, 0], [15, 0]]]
+  for (const [cand, saved] of degraded) assert.equal(strictOk(cand, saved), false, `degraded ${cand} vs ${saved}`)
+  const valid = [[[71, 29], [61, 29]], [[16, 1], [16, 1]], [[16, 1], [15, 0]], [[19, 1], [17, 2]], [[16, 0], [16, 0]], [[70, 29], [71, 29]], [[71, 29], [71, 29]]]
+  for (const [cand, saved] of valid) assert.equal(strictOk(cand, saved), true, `valid ${cand} vs ${saved}`)
+})
+
+test('the old 0.4 bar accepted the degraded 51/20 vs 71/29 capture; the strict comparison rejects it', () => {
+  assert.equal(g.assessCaptureQuality(pic(51, 20), pic(71, 29), false).ok, true)
+  assert.equal(strictOk([51, 20], [71, 29]), false)
+})
+
+test('known residual (documented): repeated near-bar acceptances can thin a card step by step — no stateless guard', () => {
+  const steps = [100, 85, 73, 63] // each step is >= 0.85 of the previous saved copy, so each is accepted and becomes the baseline
+  for (let i = 0; i < steps.length - 1; i++) assert.equal(strictOk([steps[i + 1], 0], [steps[i], 0]), true)
+  assert.equal(strictOk([63, 0], [100, 0]), false) // against the original copy the same capture would have been rejected
+})
+
 const flaggedCard = (extra = {}) => ({ id: 'f1', name: 'Deals', url: 'https://example.com/hot', selector: 'ul.deals', html_cache: feed(24), excludedSelectors: [], positionBased: true, requiresActiveFocus: true, ...extra })
 const probe = (c = flaggedCard()) => g._tabRefreshForComponent(c, null, 24, 24)
 
-test('assess #152: minRatio rejects a hidden 0.45 capture the default 0.4 bar accepts', () => {
-  assert.equal(g.assessCaptureQuality(feed(9), feed(20), false).ok, true)
-  assert.equal(g.assessCaptureQuality(feed(9), feed(20), false, flaggedBar).ok, false)
-  assert.equal(g.assessCaptureQuality(feed(9), feed(20), true, flaggedBar).ok, true) // visible exemption unchanged for callers that pass it
-})
-
-test('assess #152: the flagged bar sits inside the measured gap (0.30 rejected side, 0.67 accepted side)', () => {
-  assert.equal(flaggedBar, 0.5)
-  assert.ok(flaggedBar > 0.297 && flaggedBar < 0.667)
-})
-
-test('flagged: good unfocused capture is accepted, no focused popup, background tab skipped', async () => {
+test('flagged (single-card refresh): a quiet capture that matches the saved copy is accepted — no focused popup, background tab skipped', async () => {
   const calls = stubTiers({ bg: { html: feed(24), visible: true }, off: { html: feed(22), visible: false }, active: { html: feed(24), visible: true } })
   const r = await probe()
   assert.deepEqual(calls, ['off'])
@@ -164,9 +204,12 @@ test('flagged: good unfocused capture is accepted, no focused popup, background 
   assert.equal(r.activeFocusNeeded, false)
 })
 
-test('flagged: unfocused capture between 0.4 and 0.5 falls through to the focused popup (the stricter bar)', async () => {
-  const calls = stubTiers({ off: { html: feed(10), visible: false }, active: { html: feed(24), visible: true } })
-  const r = await probe() // 10/24 = 0.417: the default bar would have accepted it
+test('flagged: 21 of 24 (0.875) is kept, 20 of 24 (0.83) falls through to the focused popup', async () => {
+  let calls = stubTiers({ off: { html: feed(21), visible: false }, active: { html: feed(24), visible: true } })
+  assert.equal((await probe()).html, feed(21))
+  assert.deepEqual(calls, ['off'])
+  calls = stubTiers({ off: { html: feed(20), visible: false }, active: { html: feed(24), visible: true } })
+  const r = await probe()
   assert.deepEqual(calls, ['off', 'active'])
   assert.equal(r.html, feed(24))
   assert.equal(r.activeFocusNeeded, true)
@@ -179,24 +222,32 @@ test('flagged: an unfocused window that happens to read as visible does not earn
   assert.equal(r.html, feed(24))
 })
 
-test('flagged: unfocused probe fails outright -> focused popup, as before', async () => {
+test('flagged: quiet attempt fails outright -> focused popup, as before', async () => {
   const calls = stubTiers({ active: { html: feed(24), visible: true } })
   const r = await probe()
   assert.deepEqual(calls, ['off', 'active'])
   assert.equal(r.html, feed(24))
 })
 
-test('flagged: focused popup keeps the normal bar and visible exemption (a visible redesign is trusted)', async () => {
+test('flagged: the focused popup keeps the normal bar and its visible exemption (a hidden 0.417 there still passes)', async () => {
+  stubTiers({ off: { html: feed(3), visible: false }, active: { html: feed(10), visible: false } })
+  assert.equal((await probe()).html, feed(10))
   stubTiers({ off: { html: feed(3), visible: false }, active: { html: feed(10), visible: true } })
-  const r = await probe()
-  assert.equal(r.html, feed(10))
+  assert.equal((await probe()).html, feed(10))
 })
 
-test('flagged: probe rejected AND popup hidden + collapsed -> renderDegraded, no html (last good copy kept)', async () => {
+test('flagged: quiet attempt rejected AND popup hidden + collapsed -> renderDegraded, no html (last good copy kept)', async () => {
   stubTiers({ off: { html: feed(3), visible: false }, active: { html: feed(2), visible: false } })
   const r = await probe()
   assert.equal(r.html, null)
   assert.equal(r.renderDegraded, true)
+})
+
+test('flagged with a saved copy under 5 images: no quiet attempt (the gate has nothing to judge), straight to the focused popup', async () => {
+  const calls = stubTiers({ off: { html: feed(1), visible: false }, active: { html: feed(3), visible: true } })
+  const r = await probe(flaggedCard({ html_cache: feed(3) }))
+  assert.deepEqual(calls, ['active'])
+  assert.equal(r.html, feed(3))
 })
 
 test('unflagged card: unchanged ladder (background tab first, default 0.4 bar at offscreen)', async () => {
@@ -216,31 +267,37 @@ test('requiresVisibleTab sites still go straight to the focused popup, flagged o
   }
 })
 
-test('flagged: a failed refresh keeps the last good copy', async () => {
-  global.fetch = async () => { throw new Error('offline') }
-  stubTiers({ off: { html: feed(3), visible: false }, active: { html: feed(1), visible: false } })
-  const c = flaggedCard()
-  const r = await g.refreshComponent(c)
-  assert.equal(r.success, false)
-  const { localEntry } = g.applyRefreshResult(c, r)
-  assert.equal(localEntry.html_cache, feed(24))
+test("refreshAll lane 'probe': a good quiet capture is the result, a rejected one comes back probeRejected with NO focused popup", async () => {
+  let calls = stubTiers({ off: { html: feed(22), visible: false }, active: { html: feed(24), visible: true } })
+  const c = flaggedCard(); phases.set(c, 'probe')
+  assert.equal((await probe(c)).html, feed(22))
+  assert.deepEqual(calls, ['off'])
+  calls = stubTiers({ off: { html: feed(10), visible: false }, active: { html: feed(24), visible: true } })
+  const c2 = flaggedCard(); phases.set(c2, 'probe')
+  const r = await probe(c2)
+  assert.deepEqual(calls, ['off'])
+  assert.equal(r.html, null)
+  assert.equal(r.probeRejected, true)
+  assert.equal(r.renderDegraded, undefined)
 })
 
-test('flagged: the strict bar does not leak into the focused popup (hidden 0.417 there still passes the normal bar)', async () => {
-  stubTiers({ off: { html: feed(3), visible: false }, active: { html: feed(10), visible: false } })
-  const r = await probe() // 10/24 = 0.417: accepted at 0.4, would be rejected at 0.5 if the strict bar applied here
-  assert.equal(r.html, feed(10))
+test("refreshAll lane 'probe': a layout the stored rules do not fit is also handed to the focus lane, not returned half-accepted", async () => {
+  const c = flaggedCard({ selector: 'div.board', html_cache: boardP({ imgs: 24, ctx: 'medium' }), exclusionPatterns: [ruleP] }); phases.set(c, 'probe')
+  stubTiers({ off: { html: narrowP, visible: false }, active: { html: narrowP, visible: true } })
+  const r = await probe(c)
+  assert.equal(r.probeRejected, true)
 })
 
-test('flagged with a saved copy under 5 images: no unfocused probe (the gate has nothing to judge), straight to the focused popup', async () => {
-  const calls = stubTiers({ off: { html: feed(1), visible: false }, active: { html: feed(3), visible: true } })
-  const r = await probe(flaggedCard({ html_cache: feed(3) }))
+test("refreshAll lane 'focus': straight to the focused popup, no quiet attempt", async () => {
+  const calls = stubTiers({ off: { html: feed(24), visible: false }, active: { html: feed(24), visible: true } })
+  const c = flaggedCard(); phases.set(c, 'focus')
+  const r = await probe(c)
   assert.deepEqual(calls, ['active'])
-  assert.equal(r.html, feed(3))
+  assert.equal(r.html, feed(24))
 })
 
-// A remembered unfocused capture can be settled under the 'layout-match' tier name (stored-rule layout fits the
-// unfocused render but not the popup's). For a flagged card that capture is the offscreen probe, so it must face the strict bar.
+// A remembered unfocused capture can be settled under the 'layout-match' tier name (stored-rule layout fits the unfocused render
+// but not the popup's). For a flagged card that capture is the quiet attempt, so it must face the strict comparison too.
 const ruleP = { a: 'DIV', c: 'price-row', p: [], t: 'DIV', n: 3 }
 const boardP = ({ rowClass = 'price-row', imgs = 8, ctx = 'small' } = {}) =>
   `<div class="board"><h2>Which party will win</h2><p>Chart and odds text that is long enough to be real content.</p>${
@@ -249,18 +306,52 @@ const boardP = ({ rowClass = 'price-row', imgs = 8, ctx = 'small' } = {}) =>
 const patternCard = () => flaggedCard({ selector: 'div.board', html_cache: boardP({ imgs: 24, ctx: 'medium' }), exclusionPatterns: [ruleP] })
 const narrowP = boardP({ rowClass: 'narrow-row', imgs: 24, ctx: 'medium' })
 
-test("flagged + stored rules: a remembered unfocused capture settled as 'layout-match' at 0.46 is rejected by the strict bar", async () => {
-  const wide = boardP({ imgs: 11 }) // fits the rule, 0 large images -> remembered as layoutMatch; 11/24 = 0.458
-  stubTiers({ off: { html: wide, visible: true }, active: { html: narrowP, visible: true } })
-  const r = await probe(patternCard())
-  assert.notEqual(r.html, wide)
+test("flagged + stored rules: a remembered quiet capture settled as 'layout-match' faces the strict comparison (11 of 24 rejected, 21 of 24 kept)", async () => {
+  // raw large count is 0 (Gate 2 remembers it as a layout match); the strict check judges the CLEANED capture, where the
+  // sanitising step labels the images like the saved copy's
+  const thin = boardP({ imgs: 11 }), full = boardP({ imgs: 21 })
+  stubTiers({ off: { html: thin, visible: true }, active: { html: narrowP, visible: true } })
+  assert.notEqual((await probe(patternCard())).html, thin)
+  stubTiers({ off: { html: full, visible: true }, active: { html: narrowP, visible: true } })
+  assert.equal((await probe(patternCard())).html, full)
 })
 
-test("flagged + stored rules: a remembered unfocused capture settled as 'layout-match' at 0.58 is kept", async () => {
-  const wide = boardP({ imgs: 14 }) // 14/24 = 0.583
-  stubTiers({ off: { html: wide, visible: true }, active: { html: narrowP, visible: true } })
-  const r = await probe(patternCard())
-  assert.equal(r.html, wide)
+test('the same-URL gate: two quiet probes on one URL never overlap; probes on different URLs still do', async () => {
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+  const track = async (url) => { let live = 0, peak = 0; const fn = async () => { live++; peak = Math.max(peak, live); await wait(20); live-- }; await Promise.all([withUrlGate(url, fn), withUrlGate(url, fn), withUrlGate(url, fn)]); return peak }
+  assert.equal(await track('https://same.example/a'), 1)
+  let live = 0, peak = 0
+  const fn = async () => { live++; peak = Math.max(peak, live); await wait(20); live-- }
+  await Promise.all([withUrlGate('https://x.example/1', fn), withUrlGate('https://x.example/2', fn)])
+  assert.equal(peak, 2)
+})
+
+test('the same-URL gate key ignores the fragment and host case, so those cards still take turns', async () => {
+  assert.equal(urlKey('https://Example.com/hot#top'), urlKey('https://example.com/hot'))
+  assert.notEqual(urlKey('https://example.com/hot?a=1'), urlKey('https://example.com/hot?a=2'))
+  assert.equal(urlKey('not a url'), 'not a url')
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+  let live = 0, peak = 0
+  const fn = async () => { live++; peak = Math.max(peak, live); await wait(20); live-- }
+  await Promise.all([withUrlGate(urlKey('https://x.example/a#1'), fn), withUrlGate(urlKey('https://X.example/a#2'), fn)])
+  assert.equal(peak, 1)
+})
+
+test('same-URL cards are spread apart in the pool queue (a waiting sibling holds a slot), order otherwise stable', () => {
+  const cards = [{ id: 1, url: 'https://a.example/p' }, { id: 2, url: 'https://a.example/p#x' }, { id: 3, url: 'https://a.example/p' }, { id: 4, url: 'https://b.example/p' }, { id: 5, url: 'https://c.example/p' }]
+  assert.deepEqual(spreadByUrl(cards).map(c => c.id), [1, 4, 5, 2, 3])
+  assert.deepEqual(spreadByUrl([]).map(c => c.id), [])
+  assert.deepEqual(spreadByUrl([cards[3], cards[4]]).map(c => c.id), [4, 5])
+})
+
+test('a failed refresh keeps the last good copy', async () => {
+  global.fetch = async () => { throw new Error('offline') }
+  stubTiers({ off: { html: feed(3), visible: false }, active: { html: feed(1), visible: false } })
+  const c = flaggedCard()
+  const r = await g.refreshComponent(c)
+  assert.equal(r.success, false)
+  const { localEntry } = g.applyRefreshResult(c, r)
+  assert.equal(localEntry.html_cache, feed(24))
 })
 
 // ---------- refreshComponent end to end (fetch fails -> tab fallback) ----------

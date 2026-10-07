@@ -50,13 +50,17 @@ const LARGE_IMG_RE = /data-scale-context="(?:medium|preview)"/gi;
 // too much, and text-only cards must never be judged.
 const CAPTURE_COLLAPSE_RATIO = 0.4;
 const CAPTURE_MIN_SAVED_IMAGES = 5;
-// #152: a card with requiresActiveFocus has already failed unfocused once, so its unfocused (offscreen)
-// capture must clear a stricter bar before it replaces the saved copy; the focused popup keeps 0.4.
-// Measured, cleaned image count vs saved copy, unfocused popup: accepted AND identical to the focused
-// popup = 2.15 (HotUKDeals), 0.85 (Kalshi senate), 0.67 (Peerlist); rejected = 0.30 (Kalshi house).
-// 0.5 sits mid-gap (~0.17 either side). Small sample (4 sites) — a false reject costs ~10s + a popup,
-// a false accept silently degrades a card, hence the asymmetry. Not 0.7: that would reject Peerlist.
-const FLAGGED_PROBE_MIN_RATIO = 0.5;
+// #152: a card with requiresActiveFocus has already failed unfocused once, so its quiet (unfocused offscreen)
+// capture must be at least as credible as the saved copy before it replaces it: images AND large images
+// >= this fraction of the saved copy's, with no page-visibility exemption. The 0.4 bar above accepted a degraded
+// HotUKDeals (51/20/4356 vs saved 71/29/5194 = images 0.72, large 0.69, text 0.84). Measured on 65 steady-state
+// quiet probes: healthy >= 0.99 images / >= 1.0 large; degraded <= 0.72; 0.85 separated them with no errors, and
+// 8 of 8 valid probes on the owner's real board at real saved-copy ages (2-78h) sat at 1.00-1.16. Real day-to-day
+// drift can reach ~0.70, so some good captures will fall back to a focus window: that costs a window, a false accept
+// silently corrupts a card. Do not lower without a regression fixture showing why (tests/capture-quality-gate).
+const FLAGGED_PROBE_MIN_RATIO = 0.85;
+// The large-image rule only applies when the saved copy has at least this many large images (fewer is noise).
+const FLAGGED_PROBE_MIN_SAVED_LARGE = 5;
 const RENDER_DEGRADED_ERROR = 'Page did not fully load';
 
 /**
@@ -67,14 +71,21 @@ const RENDER_DEGRADED_ERROR = 'Page did not fully load';
  * @param {string} candidateHtml - candidate after applySanitizationPipeline (like-for-like with saved)
  * @param {string} savedHtml - the card's current html_cache
  * @param {boolean|null} pageVisible - real (un-spoofed) visibility at capture; null = unknown
- * @param {number} [minRatio] - collapse bar; flagged cards' unfocused probe passes FLAGGED_PROBE_MIN_RATIO (#152)
- * @returns {{ ok: boolean, ratio: number|null }}
+ * @param {boolean} [strict] - #152: a flagged card's quiet probe must match the saved copy (FLAGGED_PROBE_MIN_RATIO on
+ *   images and, when the saved copy has >= FLAGGED_PROBE_MIN_SAVED_LARGE large images, on large images); pageVisible is
+ *   ignored so an unfocused window can never earn the "genuinely visible" exemption.
+ * @returns {{ ok: boolean, ratio: number|null, largeRatio?: number|null }}
  */
-function assessCaptureQuality(candidateHtml, savedHtml, pageVisible, minRatio = CAPTURE_COLLAPSE_RATIO) {
+function assessCaptureQuality(candidateHtml, savedHtml, pageVisible, strict = false) {
   const savedImgs = ((savedHtml || '').match(/<img/gi) || []).length;
   if (savedImgs < CAPTURE_MIN_SAVED_IMAGES) return { ok: true, ratio: null };
   const ratio = ((candidateHtml || '').match(/<img/gi) || []).length / savedImgs;
-  return { ok: ratio >= minRatio || pageVisible === true, ratio };
+  if (!strict) return { ok: ratio >= CAPTURE_COLLAPSE_RATIO || pageVisible === true, ratio };
+  const savedLarge = ((savedHtml || '').match(LARGE_IMG_RE) || []).length;
+  const largeRatio = savedLarge >= FLAGGED_PROBE_MIN_SAVED_LARGE
+    ? ((candidateHtml || '').match(LARGE_IMG_RE) || []).length / savedLarge
+    : null;
+  return { ok: ratio >= FLAGGED_PROBE_MIN_RATIO && (largeRatio === null || largeRatio >= FLAGGED_PROBE_MIN_RATIO), ratio, largeRatio };
 }
 
 /**
@@ -1150,7 +1161,7 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
  *
  * Used in: refreshComponent() when direct fetch fails or for known problematic sites
  */
-async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0, skipToActive = false, skipToOffscreen = false, { assess = null, layoutOk = null } = {}) {
+async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0, skipToActive = false, skipToOffscreen = false, { assess = null, layoutOk = null, probeOnly = false } = {}) {
   // Per-call local flag — parallel-refresh safe (no shared module-level state)
   let activeFocusNeeded = false;
   // #132: `layoutOk(html)` is true when the card's stored "exclude all like this" rules still
@@ -1187,7 +1198,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
   const passesQualityGate = (html, meta, tier) => {
     if (!assess) return true;
     const verdict = assess(html, meta.pageVisible, tier);
-    if (DEBUG) console.log('[SB-REFRESH] capture gate', new URL(url).hostname, 'tier=' + tier, 'visible=' + meta.pageVisible, 'ratio=' + verdict.ratio, verdict.ok ? 'accept' : 'REJECT');
+    if (DEBUG) console.log('[SB-REFRESH] capture gate', new URL(url).hostname, 'tier=' + tier, 'visible=' + meta.pageVisible, 'ratio=' + verdict.ratio, 'largeRatio=' + verdict.largeRatio, verdict.ok ? 'accept' : 'REJECT');
     return verdict.ok;
   };
   try {
@@ -1281,6 +1292,10 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
       }
     }
 
+    // #152 probeOnly: refreshAll runs a flagged card's quiet attempt in the concurrent pool and re-queues it for the
+    // serial focus lane if this returns probeRejected. Anything the unfocused tier did not cleanly accept (rejected,
+    // wrong layout, timed out) means "try the focused popup" — never return a half-accepted candidate from here.
+    if (probeOnly) return { html: null, activeFocusNeeded: false, probeRejected: true };
     // ATTEMPT 3: Focused active popup (last resort — site requires compositor focus frame to render)
     // Set activeFocusNeeded BEFORE calling so it is captured in the return value on success.
     activeFocusNeeded = true;
@@ -1310,36 +1325,99 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
  * is cleaned through the same pipeline as a stored refresh so its image count is like-for-like
  * with the saved copy. Every refreshComponent / drift-guard tab path goes through here.
  */
-function _tabRefreshForComponent(component, fingerprint, expectedImgCount, expectedLargeImgCount) {
+async function _tabRefreshForComponent(component, fingerprint, expectedImgCount, expectedLargeImgCount) {
   // #132: only cards with stored "exclude all like this" rules get a layout-compatibility check, run on
   // the same input and with the same function the pipeline's pattern guard uses (never stricter than it).
   const patterns = component.exclusionPatterns;
   const layoutOk = Array.isArray(patterns) && patterns.length > 0
     ? html => markPatternExclusions(stripEventHandlers(html), patterns).faults.length === 0
     : null;
-  // #152: requiresActiveFocus no longer forces the focused popup. A flagged card starts at the unfocused
-  // offscreen tier (the background tab renders 0 frames on these sites, REF-38) under a stricter bar with
-  // pageVisible forced false, so an unfocused window can never earn the "genuinely visible" exemption;
-  // a rejected or failed probe falls through to the focused popup exactly as before. The flag is a cost
-  // hint now, never a correctness control, and is never cleared. Only a card whose saved copy gives the gate
-  // something to judge (>= CAPTURE_MIN_SAVED_IMAGES images) may probe: below that assessCaptureQuality accepts
-  // anything, so an unfocused capture would pass unchecked — those cards keep going straight to the focus popup.
+  // #152: requiresActiveFocus no longer forces the focused popup. A flagged card that can probe starts at the
+  // quiet (unfocused offscreen) tier — the background tab renders 0 frames on these sites, REF-38 — under the strict
+  // saved-copy comparison; a rejected or failed probe falls through to the focused popup. The flag is a cost
+  // hint now, never a correctness control, and is never cleared.
+  //  - refreshAll marks a flagged card 'probe' (quiet attempt only, concurrent pool; same-URL cards take turns) and,
+  //    if that is rejected, 'focus' (straight to the focused popup, serial lane). No mark (single-card refresh,
+  //    re-capture) = probe, then focus inline, in one call.
   const flagged = component.requiresActiveFocus === true;
-  const savedImgs = ((component.html_cache || '').match(/<img/gi) || []).length;
-  const probes = flagged && savedImgs >= CAPTURE_MIN_SAVED_IMAGES;
-  return tabBasedRefresh(component.url, component.selector, fingerprint, expectedImgCount, expectedLargeImgCount,
+  const phase = _refreshPhase.get(component);
+  const probes = _canQuietProbe(component) && phase !== 'focus';
+  const probeOnly = probes && phase === 'probe';
+  const run = () => tabBasedRefresh(component.url, component.selector, fingerprint, expectedImgCount, expectedLargeImgCount,
     flagged && !probes, probes || component.requiresFixedCaptureWidth === true,
     {
       assess: (html, pageVisible, tier) => {
         const candidate = applySanitizationPipeline(html, component);
         // 'layout-match' is a remembered unfocused capture settled after the tiers ran; with the background
-        // tab skipped it can only have come from the offscreen probe, so it gets the same strict bar.
+        // tab skipped it can only have come from the offscreen probe, so it gets the same strict comparison.
         return probes && (tier === 'offscreen' || tier === 'layout-match')
-          ? assessCaptureQuality(candidate, component.html_cache, false, FLAGGED_PROBE_MIN_RATIO)
+          ? assessCaptureQuality(candidate, component.html_cache, false, true)
           : assessCaptureQuality(candidate, component.html_cache, pageVisible);
       },
-      layoutOk
+      layoutOk,
+      probeOnly
     });
+  if (!probeOnly) return run();
+  const result = await _withUrlGate(_urlKey(component.url), run);
+  // The one place that knows what the quiet attempt actually did. refreshAll reads this instead of inferring it from the
+  // refresh result: refreshComponent's drift-guard fallback can turn a rejected probe (a null tab result) into a SUCCESS made
+  // of direct-fetch content, which must not be committed in place of the focused attempt (found by the cold review).
+  _probeOutcome.set(component, result && result.html ? 'accepted' : 'rejected');
+  return result;
+}
+
+// #152: which lane refreshAll has a flagged card in: 'probe' = quiet attempt only (concurrent pool), 'focus' = straight to
+// the focused popup (serial lane). WeakMaps, not properties on the component: nothing here may ever reach storage.
+const _refreshPhase = new WeakMap();
+const _probeOutcome = new WeakMap(); // 'accepted' | 'rejected' — what the quiet attempt did
+
+// Same page for the purposes of "one window at a time": the fragment never reaches the server and the host is case-insensitive.
+function _urlKey(url) {
+  try { const u = new URL(url); u.hash = ''; return u.href; } catch (_) { return String(url); }
+}
+
+// Order cards so those on the same page are not adjacent: a card waiting for its same-URL sibling holds a pool slot, so
+// round-robin over the URL groups keeps the other slots busy with other pages.
+function _spreadByUrl(cards) {
+  const groups = new Map();
+  for (const c of cards) {
+    const key = _urlKey(c.url);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  }
+  const lists = [...groups.values()];
+  const out = [];
+  for (let i = 0; out.length < cards.length; i++) {
+    for (const list of lists) if (i < list.length) out.push(list[i]);
+  }
+  return out;
+}
+
+// A flagged card may probe quietly only when its saved copy gives the gate something to compare against: below
+// CAPTURE_MIN_SAVED_IMAGES images assessCaptureQuality accepts anything, so an unfocused capture would pass unchecked.
+// Single source for both the lane split in refreshAll and the routing above.
+function _canQuietProbe(component) {
+  return component.requiresActiveFocus === true && !requiresVisibleTab(component.url) &&
+    ((component.html_cache || '').match(/<img/gi) || []).length >= CAPTURE_MIN_SAVED_IMAGES;
+}
+
+// Two cards on the same URL (different selectors/exclusions) probing at the same moment: one of the two quiet windows
+// rendered blank in 3 of 3 real-board runs (the gate caught it, at the price of a focus window). The second card
+// waits for the first; other URLs keep filling the pool. Scoped to the quiet probe only.
+const _urlGate = new Map();
+async function _withUrlGate(url, fn) {
+  const prev = _urlGate.get(url) || Promise.resolve();
+  let release;
+  const mine = new Promise(resolve => { release = resolve; });
+  const tail = prev.then(() => mine);
+  _urlGate.set(url, tail);
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (_urlGate.get(url) === tail) _urlGate.delete(url);
+  }
 }
 
 function _renderDegradedResult() {
@@ -3164,8 +3242,8 @@ async function refreshAll(allowedIds = null, { isRetry = false } = {}) {
     // Split into two pools, run after each other (focus lane still starts only once the
     // normal pool has fully drained — the barrier itself was not removed by this change):
     // - normalCards: background/offscreen refresh — safe to run concurrently
-    // - focusCards: requiresActiveFocus (#152: probes the unfocused popup first, falls back to the
-    //   focused popup) — MUST run one at a time (issue #33).
+    // - focusCards: requiresActiveFocus cards that cannot probe quietly, plus (#152) the flagged cards whose
+    //   quiet attempt in the normal pool was rejected — MUST run one at a time (issue #33).
     //   tryActiveTab() creates a real OS-focused chrome.windows.create({focused:true}) popup;
     //   Chrome only ever has one truly OS-focused window, so concurrent focus-tier workers (or
     //   a finishing worker's focus-restore step) can steal focus from a sibling's still-waiting
@@ -3174,7 +3252,16 @@ async function refreshAll(allowedIds = null, { isRetry = false } = {}) {
     //   runs, ~36% faster than serial); #33 is a real-world regression of that finding under
     //   conditions #11's test didn't cover, so that speed gain is reverted in favor of
     //   correctness for this small (few-card), already-visible-flash tier.
-    const focusCards = activeComponents.filter(c => c.requiresActiveFocus || requiresVisibleTab(c.url));
+    //   #152: a flagged card whose saved copy gives the gate something to compare against first runs its QUIET
+    //   attempt in the normal pool (cap 3, 45 s -> ~30 s measured vs 5 serial focus windows); rejected cards are
+    //   re-queued for the serial focus lane below. Pool size stays 3: 5 gave degraded captures (one silently
+    //   accepted), and concurrent focused windows lose or degrade cards (#33 still holds on current Chrome).
+    const needsFocusCards = activeComponents.filter(c => c.requiresActiveFocus || requiresVisibleTab(c.url));
+    const quietProbeCards = needsFocusCards.filter(_canQuietProbe);
+    const focusCards = needsFocusCards.filter(c => !quietProbeCards.includes(c));
+    quietProbeCards.forEach(c => _refreshPhase.set(c, 'probe'));
+    const focusRetry = []; // quiet attempt rejected -> focused popup, in the serial lane
+    let quietAccepted = 0;
     const normalCards = activeComponents
       .filter(c => !c.requiresActiveFocus && !requiresVisibleTab(c.url))
       .sort((a, b) => {
@@ -3182,10 +3269,11 @@ async function refreshAll(allowedIds = null, { isRetry = false } = {}) {
         const aTab = willNeedActiveTab(a.url) ? 1 : 0;
         const bTab = willNeedActiveTab(b.url) ? 1 : 0;
         return aTab - bTab;
-      });
+      })
+      .concat(_spreadByUrl(quietProbeCards));
 
     if (DEBUG) console.log('[SB-PARALLEL] refreshAll start:', activeComponents.length, 'cards at', new Date().toISOString());
-    if (DEBUG) console.log('[SB-PARALLEL] pools: normal=' + normalCards.length + ' (limit=3) focus=' + focusCards.length + ' (limit=1)');
+    if (DEBUG) console.log('[SB-PARALLEL] pools: normal=' + normalCards.length + ' (limit=3, incl. ' + quietProbeCards.length + ' quiet probes) focus=' + focusCards.length + ' (limit=1)');
 
     // Single card toast message for parallel mode
     toastManager.updateProgress('Refreshing ' + activeComponents.length + ' card' + (activeComponents.length !== 1 ? 's' : '') + '…', false);
@@ -3197,6 +3285,20 @@ async function refreshAll(allowedIds = null, { isRetry = false } = {}) {
       const t0 = Date.now();
 
       const refreshResult = await refreshComponent(comp);
+      if (_refreshPhase.get(comp) === 'probe') {
+        // Quiet attempt not cleanly accepted (rejected, blank, timed out, or any failure): nothing is recorded or shown yet — the
+        // card keeps its last good copy and gets its focused popup in the serial lane. A rejected probe is re-queued even when
+        // the rest of refreshComponent reports "success" (its drift-guard fallback can build one from direct-fetch content).
+        if (_probeOutcome.get(comp) === 'rejected' || !refreshResult.success) {
+          if (DEBUG) console.log('[SB-PARALLEL] quiet probe rejected -> focus lane:', displayName);
+          _refreshPhase.set(comp, 'focus');
+          _probeOutcome.delete(comp);
+          focusRetry.push(comp);
+          return;
+        }
+        // Counted only when the content really came from an accepted quiet capture (a direct fetch that worked is not one).
+        if (_probeOutcome.get(comp) === 'accepted') quietAccepted++;
+      }
       results.push(refreshResult);
       componentRefreshMap.set(comp.id, refreshResult);
 
@@ -3213,10 +3315,15 @@ async function refreshAll(allowedIds = null, { isRetry = false } = {}) {
     }
 
     // Run normal cards concurrently (up to 3 at once)
-    await runWithConcurrency(normalCards, processCard, 3);
-    // Run focus-required cards after the normal pool drains — ONE AT A TIME (issue #33: real
-    // OS focus is a single-capacity resource, not a pool to size — see comment at focusCards above).
-    await runWithConcurrency(focusCards, processCard, 1);
+    try {
+      await runWithConcurrency(normalCards, processCard, 3);
+      // Run focus-required cards after the normal pool drains — ONE AT A TIME (issue #33: real
+      // OS focus is a single-capacity resource, not a pool to size — see comment at focusCards above).
+      await runWithConcurrency(focusCards.concat(focusRetry), processCard, 1);
+    } finally {
+      // The lane marks were only for this run: never leave one on an in-memory card (a later single-card refresh is inline).
+      quietProbeCards.forEach(c => { _refreshPhase.delete(c); _probeOutcome.delete(c); });
+    }
 
     if (DEBUG) console.log('[SB-PARALLEL] refreshAll complete elapsed=' + (Date.now() - refreshStartTime) + 'ms');
     
@@ -3252,7 +3359,10 @@ async function refreshAll(allowedIds = null, { isRetry = false } = {}) {
           success_count: successCount,
           fail_count: failCount,
           duration_ms: Date.now() - refreshStartTime,
-          domains: _domains
+          domains: _domains,
+          // #152: counts only (no content, no URLs) — how often the quiet attempt avoided a focus window
+          quiet_accepted: quietAccepted,
+          quiet_to_focus: focusRetry.length
         });
       }
     } catch (e) {
