@@ -761,6 +761,52 @@ function getOpeningText(el: Element): string {
   return t.length >= 10 ? t : '';
 }
 
+// Three-path link resolution (all required for Chorus CMS variants):
+// ↓ querySelector: link inside candidate (card-level, e.g. The Verge)
+// ↑ closest: candidate inside an <a> (SBNation img-in-link structure)
+// ↑↑ parent walk: link is a sibling in a shared card ancestor (Vox img-sibling structure)
+function linkHref(el: Element, walkUp = true): string {
+  const desc = (el.querySelector('a[href]') as HTMLAnchorElement | null)?.href;
+  if (desc) return desc;
+  const anc = (el.closest('a[href]') as HTMLAnchorElement | null)?.href;
+  if (anc) return anc;
+  // Walk up max 3 levels: stops at image-container → card → grid
+  let p = el.parentElement;
+  for (let i = 0; walkUp && i < 3 && p; i++, p = p.parentElement) {
+    const sibLink = (p.querySelector('a[href]') as HTMLAnchorElement | null)?.href;
+    if (sibLink) return sibLink;
+  }
+  return '';
+}
+
+/** #138: how many times more often one twin's distinguishing features must occur in the saved card than
+ *  the other's before a different-file pair is collapsed. The saved card is the last REFRESH result, not
+ *  the capture: it already holds the minority variant (NPR square-only stories) and, while the bug lived,
+ *  the doubled pairs themselves, so "exactly one variant" never holds. Measured 7 Oct on the owner's two
+ *  saved NPR cards: the twin scores come out ~7:1; a toss-up pair scores ~1:1. Any value 1-7 collapses the
+ *  3 doubled pairs on that data, 8+ collapses none; 3 sits between the toss-up and the measured ratio. */
+const SAVED_TWIN_DOMINANCE = 3;
+/** #138: ...and the winner must score at least this much in absolute terms. Without it a ratio against 0 always
+ *  passes, so ONE state class in the saved card (`.is-active` on a gallery's first slide, score 1) would
+ *  license a collapse. Scores add ~2 per NPR story (two distinguishing features), the owner's cards score
+ *  90-104; 6 = a layout pattern repeated across at least three stories, not a lone state class. */
+const SAVED_TWIN_MIN_EVIDENCE = 6;
+
+/** #138: crop-variant twins whose image FILES differ (NPR's legacy `_sq-` / `_wide-` pairs), which the
+ *  same-image check in isResponsiveDuplicate never sees. Same link, same non-empty text and alt, but a
+ *  different class set (the variant marker, e.g. `--square` / `--wide`). A gallery has per-image
+ *  alt/captions and identical classes, so it does not qualify. The caller must also have saved-card
+ *  evidence (savedTwinScores) before collapsing. */
+function isVariantTwin(a: Element, b: Element): boolean {
+  const imgA = getLeadImageUrl(a);
+  const imgB = getLeadImageUrl(b);
+  if (!imgA || !imgB || imgA === imgB) return false;
+  const text = (el: Element) => (el.textContent || '').replace(/\s+/g, ' ').trim();
+  const alt = (el: Element) => (el.querySelector('img') as HTMLImageElement | null)?.alt || '';
+  const classes = (el: Element) => Array.from(el.classList).sort().join(' ');
+  return !!text(a) && text(a) === text(b) && !!alt(a) && alt(a) === alt(b) && classes(a) !== classes(b);
+}
+
 /** Check whether two sibling elements are responsive-layout duplicates of the same article.
  *  Returns a confidence-tagged result rather than a boolean so callers can tier their response.
  *
@@ -777,23 +823,6 @@ function isResponsiveDuplicate(
   const imgB = getLeadImageUrl(b);
   if (!imgA || imgA !== imgB) return NO_MATCH;
 
-  // Three-path link resolution (all required for Chorus CMS variants):
-  // ↓ querySelector: link inside candidate (card-level, e.g. The Verge)
-  // ↑ closest: candidate inside an <a> (SBNation img-in-link structure)
-  // ↑↑ parent walk: link is a sibling in a shared card ancestor (Vox img-sibling structure)
-  const linkHref = (el: Element): string => {
-    const desc = (el.querySelector('a[href]') as HTMLAnchorElement | null)?.href;
-    if (desc) return desc;
-    const anc = (el.closest('a[href]') as HTMLAnchorElement | null)?.href;
-    if (anc) return anc;
-    // Walk up max 3 levels: stops at image-container → card → grid
-    let p = el.parentElement;
-    for (let i = 0; i < 3 && p; i++, p = p.parentElement) {
-      const sibLink = (p.querySelector('a[href]') as HTMLAnchorElement | null)?.href;
-      if (sibLink) return sibLink;
-    }
-    return '';
-  };
   const linkA = linkHref(a);
   const linkB = linkHref(b);
 
@@ -947,7 +976,13 @@ function variantFeatureCounts(root: Element): Map<string, number> {
  *  the saved card. `second` wins only on a strictly higher score, otherwise `first` (the
  *  pre-#131 behaviour, also the answer when there is no saved card or no distinguishing feature). */
 function preferSavedTwin(first: Element, second: Element, savedCounts: Map<string, number> | null): Element {
-  if (!savedCounts) return first;
+  const [scoreA, scoreB] = savedTwinScores(first, second, savedCounts);
+  return scoreB > scoreA ? second : first;
+}
+
+/** [first, second] scores: how often each twin's distinguishing features occur in the saved card. */
+function savedTwinScores(first: Element, second: Element, savedCounts: Map<string, number> | null): [number, number] {
+  if (!savedCounts) return [0, 0];
   const a = variantFeatureCounts(first);
   const b = variantFeatureCounts(second);
   let scoreA = 0;
@@ -960,7 +995,7 @@ function preferSavedTwin(first: Element, second: Element, savedCounts: Map<strin
     if (inA && !inB) scoreA += savedCounts.get(key) || 0;
     else if (inB && !inA) scoreB += savedCounts.get(key) || 0;
   });
-  return scoreB > scoreA ? second : first;
+  return [scoreA, scoreB];
 }
 
 /** @param savedHtml The card's last stored HTML (refresh only). Used solely to pick which responsive
@@ -1190,6 +1225,11 @@ export function cleanupDuplicates(html: string, savedHtml?: string): string {
     if (children.length < 2) return;
 
     const seenByImg = new Map<string, Element>();
+    // Keep `second` (it takes `first`'s place) or `first`; exclusion marks follow the survivor.
+    const collapseTwin = (first: Element, second: Element, keepSecond: boolean) => {
+      if (keepSecond) { transferExclusionMarks(first, second); first.replaceWith(second); }
+      else { transferExclusionMarks(second, first); second.remove(); }
+    };
 
     children.forEach(child => {
       const imgUrl = getLeadImageUrl(child);
@@ -1200,21 +1240,30 @@ export function cleanupDuplicates(html: string, savedHtml?: string): string {
         const result = isResponsiveDuplicate(first, child);
         if (result.match) {
           if (result.confidence === 'high') {
-            if (preferSavedTwin(first, child, getSavedCounts()) === child) {
-              // The later twin matches the saved card: it takes the first twin's place.
-              transferExclusionMarks(first, child);
-              first.replaceWith(child);
-              seenByImg.set(imgUrl, child);
-            } else {
-              transferExclusionMarks(child, first);
-              child.remove();
-            }
+            // The later twin matches the saved card: it takes the first twin's place.
+            const keepChild = preferSavedTwin(first, child, getSavedCounts()) === child;
+            collapseTwin(first, child, keepChild);
+            if (keepChild) seenByImg.set(imgUrl, child);
           }
         }
       } else {
         seenByImg.set(imgUrl, child);
       }
     });
+
+    // #138: crop-variant twins with DIFFERENT image files. Compared only inside a same-link bucket, and
+    // only collapsed when the saved card clearly favours one variant (no evidence / a toss-up -> untouched).
+    const byLink = new Map<string, Element[]>();
+    Array.from(parent.children).forEach(child => {
+      const href = getLeadImageUrl(child) && linkHref(child, false); // the twin's OWN link: a sibling-walk link would bucket unrelated images together
+      if (href) (byLink.get(href) || byLink.set(href, []).get(href)!).push(child);
+    });
+    byLink.forEach(group => group.forEach((first, i) => group.slice(i + 1).forEach(second => {
+      if (first.parentElement !== parent || second.parentElement !== parent || !isVariantTwin(first, second)) return;
+      const [scoreA, scoreB] = savedTwinScores(first, second, getSavedCounts());
+      const hi = Math.max(scoreA, scoreB);
+      if (hi >= SAVED_TWIN_MIN_EVIDENCE && hi >= SAVED_TWIN_DOMINANCE * Math.min(scoreA, scoreB)) collapseTwin(first, second, scoreB > scoreA);
+    })));
   });
 
   // 🎯 STRIP UI CHROME BUTTONS: Remove icon-only buttons with no visible text
