@@ -11,6 +11,7 @@
 
 ### Changed
 
+- **The "couldn't be refreshed" warning now says when retrying won't help** (#168): cards that failed because the site layout changed, the card came back empty, or excluded content came back can't be fixed by pressing Retry. The warning now lists those separately under "Re-capture needed" and points you to the card's **Re-capture** button. Retry only re-runs the cards a retry can actually fix, and if none are left the Retry button is hidden.
 - **Under the hood: "exclude all like this" now remembers what kind of group you clicked** (#129): nothing looks different today. Capture used to work out a second time, from scratch, whether your Shift+click was a table column, a row of same-looking items or a repeated element across the section, so any future change to how groups are found could have quietly turned a column or row group into a whole-section rule. It now records the kind once, at the click, and uses that.
 
 ## [1.4.3] - 2026-10-05

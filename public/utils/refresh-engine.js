@@ -316,14 +316,34 @@ function showRefreshFailureToast(failedComponents, successCount = null) {
   // Never stack two failure toasts (reload race, double retry)
   document.querySelectorAll('.refresh-toast--warning[data-persistent="true"]').forEach(t => t.remove());
 
-  const n = failedComponents.length;
-  const failureList = failedComponents.map(f =>
+  const n = failedComponents.length
+  // #168: retrying can't fix a card whose selector/exclusions no longer fit — only Re-capture does.
+  // shouldOfferRecapture is the single classifier (it also drives the per-card Re-capture button).
+  const needsRecapture = failedComponents.filter(f =>
+    shouldOfferRecapture({ lastOutcome: 'failed', lastErrorCode: f.errorCode }))
+  const retryable = failedComponents.filter(f => !needsRecapture.includes(f))
+  const listItems = (list) => list.map(f =>
     `<li><strong>${f.name}</strong> — ${getErrorLabel(f.errorCode)}</li>`
-  ).join('');
+  ).join('')
+  const listHtml = (list) =>
+    `<ul style="margin: 4px 0 8px 0; padding-left: 20px; list-style: disc;">${listItems(list)}</ul>`
 
   const title = (successCount && successCount > 0)
     ? `${successCount} card${successCount !== 1 ? 's' : ''} refreshed · ${n} couldn't be refreshed`
     : `${n} card${n !== 1 ? 's' : ''} couldn't be refreshed`;
+
+  const failureSections = (needsRecapture.length === 0
+    ? `<strong>Failed (${n}):</strong>${listHtml(failedComponents)}`
+    : (retryable.length > 0 ? `<strong>Failed (${retryable.length}):</strong>${listHtml(retryable)}` : '') +
+      `<strong>Re-capture needed — retrying won't fix ${needsRecapture.length === 1 ? 'this' : 'these'}:</strong>` +
+      listHtml(needsRecapture) +
+      `<div class="toast-recapture-hint">Use Re-capture on the card.</div>`)
+
+  const retryButton = retryable.length > 0
+    ? `<button class="toast-retry-btn" data-action="retry-failed">
+          Retry failed card${retryable.length !== 1 ? 's' : ''}
+        </button>`
+    : ''
 
   const failureToast = document.createElement('div');
   failureToast.className = 'refresh-toast refresh-toast--warning';
@@ -333,14 +353,9 @@ function showRefreshFailureToast(failedComponents, successCount = null) {
       <div class="refresh-toast__text">
         <div class="refresh-toast__title">${title}</div>
         <div class="toast-failure-list">
-          <strong>Failed (${n}):</strong>
-          <ul style="margin: 4px 0 8px 0; padding-left: 20px; list-style: disc;">
-            ${failureList}
-          </ul>
+          ${failureSections}
         </div>
-        <button class="toast-retry-btn" data-action="retry-failed">
-          Retry failed card${n !== 1 ? 's' : ''}
-        </button>
+        ${retryButton}
       </div>
       <button class="refresh-toast__close" aria-label="Close">✕</button>
     </div>
@@ -367,14 +382,15 @@ function showRefreshFailureToast(failedComponents, successCount = null) {
     dismiss();
   });
 
-  failureToast.querySelector('.toast-retry-btn').addEventListener('click', () => {
+  const retryBtn = failureToast.querySelector('.toast-retry-btn')
+  if (retryBtn) retryBtn.addEventListener('click', () => {
     // A refresh is already running (button disabled): keep the banner so Retry stays available
     const refreshAllBtn = document.getElementById('refresh-all-btn');
     if (refreshAllBtn && refreshAllBtn.disabled) return;
     clearTimeout(dismissTimer);
     dismiss();
     if (typeof retryFailedComponents === 'function') {
-      retryFailedComponents(failedComponents);
+      retryFailedComponents(retryable);
     }
   });
 }

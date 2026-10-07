@@ -185,3 +185,64 @@ test('banner Retry click while a refresh is running keeps the banner and does no
   assert.deepEqual(refreshedIds, [])
   assert.ok(document.querySelector('.refresh-toast--warning'), 'banner still on screen')
 })
+
+// ---- #168: the banner says when Retry won't help and points at Re-capture ----
+
+const FAIL_ERRORS = {
+  network: 'Network error: timeout',
+  layout: 'Selector not found on page',
+  excluded: 'Excluded content came back',
+  pattern: 'Exclusion pattern no longer matches'
+}
+async function runWithErrors(map) {
+  failing = new Set(Object.keys(map))
+  g.refreshComponent = async (comp) => {
+    refreshedIds.push(comp.id)
+    return map[comp.id] ? { success: false, error: map[comp.id] } : okResult
+  }
+  await g.refreshAll()
+  document.getElementById('refresh-all-btn').disabled = false
+  return session.pendingRefreshFailureToast
+}
+const toastText = () => document.querySelector('.refresh-toast--warning').textContent
+
+test('#168 negative: only retry-fixable failures -> banner unchanged (no Re-capture group, Retry button)', async () => {
+  seedBoard()
+  const stash = await runWithErrors({ b: FAIL_ERRORS.network, d: FAIL_ERRORS.network })
+  g.showRefreshFailureToast(stash.failed, stash.successCount)
+  assert.ok(!toastText().includes('Re-capture'))
+  assert.match(toastText(), /Failed \(2\):/)
+  assert.ok(document.querySelector('.toast-retry-btn'))
+})
+
+test('#168 mixed: Re-capture group lists its cards; Retry retries ONLY the retry-fixable ones', async () => {
+  seedBoard()
+  const stash = await runWithErrors({ b: FAIL_ERRORS.network, d: FAIL_ERRORS.layout, e: FAIL_ERRORS.excluded })
+  g.showRefreshFailureToast(stash.failed, stash.successCount)
+  const t = toastText()
+  assert.match(t, /Failed \(1\):/)
+  assert.match(t, /Re-capture needed/)
+  assert.ok(t.includes('Delta') && t.includes('Echo') && t.includes('Same'))
+  assert.equal(document.querySelectorAll('.toast-failure-list ul')[1].querySelectorAll('li').length, 2)
+  assert.equal(document.querySelector('.toast-retry-btn').textContent.trim(), 'Retry failed card') // 1 retryable, not 3
+  refreshedIds = []
+  g.refreshComponent = async (comp) => { refreshedIds.push(comp.id); return okResult }
+  document.querySelector('.toast-retry-btn').click()
+  await new Promise(r => nativeSetTimeout(r, 50))
+  assert.deepEqual(refreshedIds, ['b']) // d (layout) and e (excluded) are not re-run
+})
+
+test('#168 every failure needs Re-capture: no Retry button at all', async () => {
+  seedBoard()
+  const stash = await runWithErrors({ d: FAIL_ERRORS.layout, e: FAIL_ERRORS.pattern })
+  g.showRefreshFailureToast(stash.failed, stash.successCount)
+  assert.equal(document.querySelector('.toast-retry-btn'), null)
+  assert.match(toastText(), /Re-capture needed/)
+  assert.ok(!/Failed \(/.test(toastText()))
+})
+
+test('#168 entries with an unknown / missing code stay retryable', async () => {
+  g.showRefreshFailureToast([{ id: 'x', name: 'Mystery', errorCode: 'unknown' }, { id: 'y', name: 'Old' }])
+  assert.ok(!toastText().includes('Re-capture'))
+  assert.ok(document.querySelector('.toast-retry-btn'))
+})
