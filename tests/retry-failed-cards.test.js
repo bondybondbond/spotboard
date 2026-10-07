@@ -223,6 +223,7 @@ test('#168 mixed: Re-capture group lists its cards; Retry retries ONLY the retry
   assert.match(t, /Failed \(1\):/)
   assert.match(t, /Re-capture needed/)
   assert.ok(t.includes('Delta') && t.includes('Echo') && t.includes('Same'))
+  assert.ok(t.includes('Excluded content came back') && !t.includes('re-capture this card')) // no repeated advice inside the group
   assert.equal(document.querySelectorAll('.toast-failure-list ul')[1].querySelectorAll('li').length, 2)
   assert.equal(document.querySelector('.toast-retry-btn').textContent.trim(), 'Retry failed card') // 1 retryable, not 3
   refreshedIds = []

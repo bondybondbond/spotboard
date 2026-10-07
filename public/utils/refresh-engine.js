@@ -322,11 +322,14 @@ function showRefreshFailureToast(failedComponents, successCount = null) {
   const needsRecapture = failedComponents.filter(f =>
     shouldOfferRecapture({ lastOutcome: 'failed', lastErrorCode: f.errorCode }))
   const retryable = failedComponents.filter(f => !needsRecapture.includes(f))
-  const listItems = (list) => list.map(f =>
-    `<li><strong>${f.name}</strong> — ${getErrorLabel(f.errorCode)}</li>`
-  ).join('')
-  const listHtml = (list) =>
-    `<ul style="margin: 4px 0 8px 0; padding-left: 20px; list-style: disc;">${listItems(list)}</ul>`
+  // Inside the Re-capture group the heading + hint already say it, so drop the label's own
+  // "— re-capture this card" tail (the per-card banner keeps the full label).
+  const listItems = (list, trimRecapture = false) => list.map(f => {
+    const label = getErrorLabel(f.errorCode)
+    return `<li><strong>${f.name}</strong> — ${trimRecapture ? label.replace(/ — re-capture this card$/, '') : label}</li>`
+  }).join('')
+  const listHtml = (list, trimRecapture = false) =>
+    `<ul style="margin: 4px 0 8px 0; padding-left: 20px; list-style: disc;">${listItems(list, trimRecapture)}</ul>`
 
   const title = (successCount && successCount > 0)
     ? `${successCount} card${successCount !== 1 ? 's' : ''} refreshed · ${n} couldn't be refreshed`
@@ -336,7 +339,7 @@ function showRefreshFailureToast(failedComponents, successCount = null) {
     ? `<strong>Failed (${n}):</strong>${listHtml(failedComponents)}`
     : (retryable.length > 0 ? `<strong>Failed (${retryable.length}):</strong>${listHtml(retryable)}` : '') +
       `<strong>Re-capture needed — retrying won't fix ${needsRecapture.length === 1 ? 'this' : 'these'}:</strong>` +
-      listHtml(needsRecapture) +
+      listHtml(needsRecapture, true) +
       `<div class="toast-recapture-hint">Use Re-capture on the card.</div>`)
 
   const retryButton = retryable.length > 0
