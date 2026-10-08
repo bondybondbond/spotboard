@@ -149,6 +149,30 @@ function _queryHeadingCandidates(root) {
 }
 
 /**
+ * #181: direct-fetch choice among several elements matching a card's selector, by heading fingerprint.
+ * Pass 1: a heading-like element whose text equals the fingerprint. Pass 2 (fingerprint is not a heading,
+ * e.g. a card name): every candidate whose text contains it -- one -> take it; several -> take the LARGEST,
+ * not the first (a scoreline carousel that merely mentions "Australia tour of South Africa" sits before the
+ * real news column on Cricbuzz and used to win). Same pass-2 rule as the three tab-tier copies inside
+ * tabBasedRefresh (they run inside executeScript and cannot share this function): change all four together.
+ * @returns {Element|null} null = fingerprint resolved nothing; the caller falls through to its later steps
+ */
+function _pickByHeadingFingerprint(matches, fingerprint) {
+  const norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
+  const fp = norm(fingerprint);
+  for (const candidate of matches) {
+    for (const h of candidate.querySelectorAll(
+      'h1,h2,h3,h4,caption,[class*="heading"],[class*="title"],[class*="header"]'
+    )) {
+      if (norm(h.textContent || '') === fp) return candidate;
+    }
+  }
+  const containing = Array.from(matches).filter(c => norm(c.textContent || '').includes(fp));
+  if (containing.length <= 1) return containing[0] || null;
+  return containing.reduce((a, b) => a.outerHTML.length >= b.outerHTML.length ? a : b);
+}
+
+/**
  * Error classification helper - converts raw error strings into friendly user-facing labels
  * Returns enum error code ('skeleton', 'network', 'layout_changed', 'unknown')
  */
@@ -1707,7 +1731,7 @@ async function tryBackgroundWithSpoof(url, selector, fingerprint = null, meta = 
                 if (_norm(h.textContent || '') === _fpNorm) { element = el; break _outer1; }
               }
             }
-            // Pass 2: textContent.includes — collect all, prefer largest (main content beats sidebars)
+            // Pass 2: textContent.includes — collect all, prefer largest (main content beats sidebars). Keep in step with _pickByHeadingFingerprint (#181)
             if (!element) {
               const _p2 = [];
               for (const el of allMatches) {
@@ -1988,7 +2012,7 @@ async function tryOffscreenWindow(url, selector, fingerprint = null, meta = {}) 
               if (_norm(h.textContent || '') === _fpNorm) { element = el; break _outer1; }
             }
           }
-          // Pass 2: textContent.includes — collect all, prefer largest (main content beats sidebars)
+          // Pass 2: textContent.includes — collect all, prefer largest (main content beats sidebars). Keep in step with _pickByHeadingFingerprint (#181)
           if (!element) {
             const _p2 = [];
             for (const el of allMatches) {
@@ -2221,7 +2245,7 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
               if (_norm(h.textContent || '') === _fpNorm) { element = el; break _outer1; }
             }
           }
-          // Pass 2: textContent.includes — collect all, prefer largest (main content beats sidebars)
+          // Pass 2: textContent.includes — collect all, prefer largest (main content beats sidebars). Keep in step with _pickByHeadingFingerprint (#181)
           if (!element) {
             const _p2 = [];
             for (const el of allMatches) {
@@ -2657,25 +2681,7 @@ async function refreshComponent(component) {
           //    On sites with hidden SEO headings (e.g. cricbuzz), the fingerprint may be
           //    the card name (e.g. "T20 WORLD CUP, 2026") rather than a heading element.
           if (component.headingFingerprint) {
-            const norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
-            const fp = norm(component.headingFingerprint);
-            // First pass: exact match in heading-like elements
-            outer: for (const candidate of matches) {
-              for (const h of candidate.querySelectorAll(
-                'h1,h2,h3,h4,caption,[class*="heading"],[class*="title"],[class*="header"]'
-              )) {
-                if (norm(h.textContent || '') === fp) { element = candidate; break outer; }
-              }
-            }
-            // Second pass: check full text content of each candidate (for non-heading fingerprints)
-            if (!element) {
-              for (const candidate of matches) {
-                if (norm(candidate.textContent || '').includes(fp)) {
-                  element = candidate;
-                  break;
-                }
-              }
-            }
+            element = _pickByHeadingFingerprint(matches, component.headingFingerprint);
           }
 
           // 2. Position-based captures: fall back to first match if fingerprint didn't resolve
