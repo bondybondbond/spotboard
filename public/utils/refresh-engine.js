@@ -746,9 +746,11 @@ function _finalizeSuccess(sanitizedHtml, component, extras = {}) {
  */
 function _tagSentimentHtml(html) {
   if (!html || typeof tagSentimentData !== 'function') return html
-  const container = document.createElement('div')
+  // #171: a <template> parse, not a <div> one -- a region rooted at <tbody>/<tr>/<td>/... loses every table tag
+  // in a div, which turns stored "exclude all like this" rules into zero (or a few) matches downstream.
+  const container = document.createElement('template')
   container.innerHTML = html
-  tagSentimentData(container)
+  tagSentimentData(container.content)
   return container.innerHTML
 }
 
@@ -3097,13 +3099,8 @@ async function refreshComponent(component) {
 
     // 💚❤️ SENTIMENT TAGGING (Phase 2: Direct-Fetch Path)
     // Tag finance deltas in the extracted HTML before sanitization
-    const tempContainer = document.createElement('div');
-    tempContainer.innerHTML = extractedHtml;
-
-    tagSentimentData(tempContainer);
-
-    // Get the sentiment-tagged HTML
-    extractedHtml = tempContainer.innerHTML;
+    // (_tagSentimentHtml parses as a <template>, so a <tbody>/<tr>/<td>-rooted region keeps its table tags, #171)
+    extractedHtml = _tagSentimentHtml(extractedHtml);
 
     // Apply cleanup to extracted HTML
     const sanitizedHtml = applySanitizationPipeline(extractedHtml, component);
