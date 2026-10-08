@@ -521,21 +521,6 @@
       fill: currentColor;   /* glyphs follow --iconbtn-ink; template SVGs use fill="currentColor" (#22) */
     }
 
-    /* ===== PAUSE BUTTON ===== */
-    .pause-btn svg {
-      width: 18px;
-      height: 18px;
-    }
-    .pause-btn.active-state {
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
-      background: var(--iconbtn-hover-bg);
-      border-color: var(--iconbtn-border-hover);
-    }
-    .pause-btn.active-state:hover {
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.25);
-      background: var(--iconbtn-hover-bg);
-    }
-
     /* ===== CARD OPTIONS MENU (⋯) — replaces the old clock button (#103) ===== */
     .card-menu-wrap {
       position: relative;
@@ -627,6 +612,34 @@
       padding: 6px 4px 0;
     }
     .card-menu-hint[hidden] { display: none; }
+    /* #148: Pause / Delete moved here from the card header. Row look = .sb-board-menu items. */
+    .card-menu-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .card-menu-action {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      padding: 7px 4px;
+      border-radius: 6px;
+      text-align: left;
+      color: var(--text-primary);
+      width: 100%;
+    }
+    .card-menu-action:hover { background: var(--surface-inset); }
+    .card-menu-action:focus-visible {
+      outline: 2px solid var(--accent-strong);
+      outline-offset: -2px;
+    }
+    .card-menu-delete { color: var(--danger); }
+    .card-menu-delete:hover { background: var(--danger-tint); }
     button.card-menu-meta {
       display: block;
       width: 100%;
@@ -679,16 +692,6 @@
     @keyframes spinRefresh {
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
-    }
-
-    /* ===== DELETE BUTTON ===== */
-    .delete-btn svg {
-      width: 18px;
-      height: 18px;
-    }
-    .delete-btn:hover {
-      background: rgba(220,53,69,0.08);
-      border-color: rgba(220,53,69,0.3);
     }
 
     /* ===== ERROR STATE STYLES ===== */

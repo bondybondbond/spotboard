@@ -1656,7 +1656,7 @@ function renderDashboardTour() {
   // GitHub #21: an obvious, immediate exit from any step (visible ✕ + Esc).
   // DATA-SAFETY INVARIANT (LEARNINGS UI-12 / GitHub #16): this only removes the
   // overlay DOM and sets a boolean flag — it never touches componentsData and
-  // never clicks .delete-btn. Nothing in onboarding/tour may delete user content.
+  // never clicks a card's Delete action. Nothing in onboarding/tour may delete user content.
   function exitTour(reason) {
     document.removeEventListener('keydown', onKeydown);
     document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
@@ -1729,7 +1729,7 @@ function renderDashboardTour() {
   }
 
   function buildStep2() {
-    // Move pulse highlight from refresh to delete buttons
+    // Move pulse highlight from refresh to the ⋯ menu buttons (Delete lives in that menu since #148)
     document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
     tourCard.textContent = '';
     tourCard.dataset.step = '2';
@@ -1740,31 +1740,29 @@ function renderDashboardTour() {
     tourCard.appendChild(title);
     const body = document.createElement('p');
     body.className = 'dashboard-tour-body';
-    // Inline delete SVG between text nodes (createElementNS, no innerHTML)
-    body.appendChild(document.createTextNode('Simply delete the card by pressing the '));
-    const deleteWrapper = document.createElement('span');
-    deleteWrapper.className = 'icon-circle-wrapper';
-    const deleteSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    deleteSvg.setAttribute('width', '16');
-    deleteSvg.setAttribute('height', '16');
-    deleteSvg.setAttribute('viewBox', '0 0 24 24');
-    deleteSvg.setAttribute('fill', 'none');
-    const dPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    dPath.setAttribute('d', 'M7 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2h4a1 1 0 1 1 0 2h-1.069l-.867 12.142A2 2 0 0 1 17.069 22H6.93a2 2 0 0 1-1.995-1.858L4.07 8H3a1 1 0 0 1 0-2h4V4zm2 2h6V4H9v2zM6.074 8l.857 12H17.07l.857-12H6.074zM10 10a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1z');
-    dPath.setAttribute('fill', '#f5f5f7');
-    deleteSvg.appendChild(dPath);
-    deleteWrapper.appendChild(deleteSvg);
-    body.appendChild(deleteWrapper);
-    body.appendChild(document.createTextNode(' button.'));
-    body.appendChild(document.createElement('br'));
-    body.appendChild(document.createTextNode('You can remove any card later with this button.'));
+    // Inline ⋯ SVG between text nodes (createElementNS, no innerHTML)
+    body.appendChild(document.createTextNode('Press the '));
+    const menuWrapper = document.createElement('span');
+    menuWrapper.className = 'icon-circle-wrapper';
+    const menuSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    menuSvg.setAttribute('width', '16');
+    menuSvg.setAttribute('height', '16');
+    menuSvg.setAttribute('viewBox', '0 0 15 15');
+    menuSvg.setAttribute('fill', 'none');
+    const mPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    mPath.setAttribute('d', 'M3.625 7.5C3.625 8.12132 3.12132 8.625 2.5 8.625C1.87868 8.625 1.375 8.12132 1.375 7.5C1.375 6.87868 1.87868 6.375 2.5 6.375C3.12132 6.375 3.625 6.87868 3.625 7.5ZM8.625 7.5C8.625 8.12132 8.12132 8.625 7.5 8.625C6.87868 8.625 6.375 8.12132 6.375 7.5C6.375 6.87868 6.87868 6.375 7.5 6.375C8.12132 6.375 8.625 6.87868 8.625 7.5ZM13.625 7.5C13.625 8.12132 13.1213 8.625 12.5 8.625C11.8787 8.625 11.375 8.12132 11.375 7.5C11.375 6.87868 11.8787 6.375 12.5 6.375C13.1213 6.375 13.625 6.87868 13.625 7.5Z');
+    mPath.setAttribute('fill', '#f5f5f7');
+    menuSvg.appendChild(mPath);
+    menuWrapper.appendChild(menuSvg);
+    body.appendChild(menuWrapper);
+    body.appendChild(document.createTextNode(' button on a card to delete it or pause its refresh.'));
     tourCard.appendChild(body);
     const skipBtn = document.createElement('button');
     skipBtn.className = 'dashboard-tour-btn';
     skipBtn.textContent = 'Continue →';
     skipBtn.addEventListener('click', () => {
       // DATA-SAFETY INVARIANT (dev plan 16 / GitHub #16): this step is instructional only.
-      // It must never click .delete-btn or delete a card. Deletion happens solely from a
+      // It must never click the card menu's Delete row or delete a card. Deletion happens solely from a
       // real user click that passes confirm().
       document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
       document.removeEventListener('keydown', onKeydown); // #21: tour is ending — drop the Esc listener
@@ -1774,7 +1772,7 @@ function renderDashboardTour() {
       });
     });
     tourCard.appendChild(skipBtn);
-    document.querySelectorAll('.delete-btn').forEach(el => el.classList.add('tour-highlight-btn'));
+    document.querySelectorAll('.card-menu-btn').forEach(el => el.classList.add('tour-highlight-btn'));
   }
 
   function buildStep0() {
@@ -2453,14 +2451,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             ${component.isPrePopulated ? '<span class="template-badge">Template</span>' : ''}
           </div>
           <div class="card-header-actions">
-            <button class="pause-btn iconBtn${component.refreshPaused ? ' active-state' : ''}" title="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}" aria-label="${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}">
-              <svg width="16" height="16" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M6.04995 2.74998C6.04995 2.44623 5.80371 2.19998 5.49995 2.19998C5.19619 2.19998 4.94995 2.44623 4.94995 2.74998V12.25C4.94995 12.5537 5.19619 12.8 5.49995 12.8C5.80371 12.8 6.04995 12.5537 6.04995 12.25V2.74998ZM10.05 2.74998C10.05 2.44623 9.80371 2.19998 9.49995 2.19998C9.19619 2.19998 8.94995 2.44623 8.94995 2.74998V12.25C8.94995 12.5537 9.19619 12.8 9.49995 12.8C9.80371 12.8 10.05 12.5537 10.05 12.25V2.74998Z" fill="currentColor"/></svg>
-            </button>
             <button class="refresh-single-btn iconBtn" type="button" title="Refresh this card" aria-label="Refresh this card">
               <svg width="18" height="18" viewBox="0 0 1920 1920" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M960 0v213.333c411.627 0 746.667 334.934 746.667 746.667S1371.627 1706.667 960 1706.667 213.333 1371.733 213.333 960c0-197.013 78.4-382.507 213.334-520.747v254.08H640V106.667H53.333V320h191.04C88.64 494.08 0 720.96 0 960c0 529.28 430.613 960 960 960s960-430.72 960-960S1489.387 0 960 0" fill-rule="evenodd"/></svg>
-            </button>
-            <button class="delete-btn iconBtn" title="Delete card" aria-label="Delete card">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2h4a1 1 0 1 1 0 2h-1.069l-.867 12.142A2 2 0 0 1 17.069 22H6.93a2 2 0 0 1-1.995-1.858L4.07 8H3a1 1 0 0 1 0-2h4V4zm2 2h6V4H9v2zM6.074 8l.857 12H17.07l.857-12H6.074zM10 10a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1z" fill="currentColor"/></svg>
             </button>
             <div class="card-menu-wrap">
               <button class="card-menu-btn iconBtn" type="button" title="Card options" aria-label="Card options" aria-controls="card-menu-${component.id}" aria-expanded="false">
@@ -2472,6 +2464,10 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                   ${['off', 'bullets', 'numbered'].map(f => `<button type="button" role="radio" data-format="${f}" tabindex="${normalisedListFormat(component) === f ? 0 : -1}" aria-checked="${normalisedListFormat(component) === f}">${f[0].toUpperCase() + f.slice(1)}</button>`).join('')}
                 </div>
                 <div class="card-menu-hint" hidden>No list found in this card</div>
+                <div class="card-menu-actions">
+                  <button type="button" class="card-menu-action card-menu-pause">${component.refreshPaused ? 'Resume refresh' : 'Pause refresh'}</button>
+                  <button type="button" class="card-menu-action card-menu-delete">Delete card</button>
+                </div>
                 <div class="card-menu-url" hidden>URL: <a target="_blank" rel="noopener noreferrer"></a></div>
                 <button type="button" class="card-menu-meta card-menu-info${component.lastOutcome === 'failed' ? ' failed' : ''}">${cardStatusText(component, relativeTime)} ›</button>
               </div>
@@ -2523,20 +2519,15 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       }
       
       // Pause/Resume functionality
-      const pauseBtn = card.querySelector('.pause-btn');
+      // #148: lives in the card's ⋯ menu; the plum header tint is the on-card paused cue
+      const pauseBtn = card.querySelector('.card-menu-pause');
       pauseBtn.addEventListener('click', async () => {
         // Toggle pause state
         component.refreshPaused = !component.refreshPaused;
-        
-        // Update button UI: toggle pressed-down visual state (no icon swap)
-        if (component.refreshPaused) {
-          pauseBtn.classList.add('active-state');
-        } else {
-          pauseBtn.classList.remove('active-state');
-        }
-        pauseBtn.setAttribute('aria-label', component.refreshPaused ? 'Resume refresh' : 'Pause refresh');
-        pauseBtn.title = component.refreshPaused ? 'Resume refresh' : 'Pause refresh';
-        
+
+        pauseBtn.textContent = component.refreshPaused ? 'Resume refresh' : 'Pause refresh';
+        closeAllCardMenus();
+
         // Update card opacity
         if (component.refreshPaused) {
           card.classList.add('paused');
@@ -2544,6 +2535,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           card.classList.remove('paused');
         }
         applyViewControls(); // issue #76: live pause toggle must respect an active active/paused filter
+        card.querySelector('.card-menu-btn').focus(); // after applyViewControls: a re-sort moves the card in the DOM and drops focus
 
         // Save to sync storage
         chrome.storage.sync.get(`comp-${component.id}`, (result) => {
@@ -2711,12 +2703,14 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       wireRecaptureButtons(card, component); // #52
 
       // Delete functionality
-      const deleteBtn = card.querySelector('.delete-btn');
+      const deleteBtn = card.querySelector('.card-menu-delete');
       deleteBtn.addEventListener('click', () => {
         // DATA-SAFETY INVARIANT (dev plan 16 / GitHub #16): deletion may only originate
         // from a real user delete action and must pass confirm(). No programmatic caller
         // (tour, onboarding, load, refresh, migration) may reach this branch.
+        closeAllCardMenus();
         const shouldDelete = confirm(`Delete "${component.customLabel || component.name}"? This cannot be undone.`);
+        if (!shouldDelete) card.querySelector('.card-menu-btn').focus();
         if (shouldDelete) {
           // GA4: Track component deletion
           const cardAgeDays = Math.floor((Date.now() - new Date(component.created_at || component.last_refresh || Date.now()).getTime()) / (1000 * 60 * 60 * 24));

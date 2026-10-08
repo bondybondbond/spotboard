@@ -18,28 +18,13 @@
 - **Used in**: Top bar "Refresh All" button
 - **Location in repo**: Inline SVG in `public/dashboard.html`
 
-### Pause Icon
-
-- **Source**: Radix UI Icons (https://github.com/radix-ui/icons)
-- **License**: MIT
-- **MIT License Text**: https://opensource.org/licenses/MIT
-- **Used in**: Card top bar "Pause" button
-- **Location in repo**: Inline SVG in `public/dashboard.js`
-
 ### Card Options (Dots Horizontal) Icon
 
 - **Source**: Radix UI Icons (https://github.com/radix-ui/icons)
 - **License**: MIT
 - **MIT License Text**: https://opensource.org/licenses/MIT
-- **Used in**: Card top bar "⋯" card options menu button
-- **Location in repo**: Inline SVG in `public/dashboard.js`
-
-### Bin / Delete Icon
-
-- **Source**: Mono Icons by mono-company (https://github.com/mono-company/mono-icons)
-- **License**: Public Domain (PD)
-- **Used in**: Card top bar "Delete" button
-- **Location in repo**: Inline SVG in `public/dashboard.js`
+- **Used in**: Card top bar "⋯" card options menu button; dashboard tour step 2 (#148)
+- **Location in repo**: Inline SVGs in `public/dashboard.js` (card template, `renderDashboardTour()`)
 
 ### Weather Icons (Sunny, Cloudy, Rainy)
 
