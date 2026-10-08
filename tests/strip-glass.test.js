@@ -1,7 +1,7 @@
-// Coverage for #175: the capture/refine/exclusion strips are a glass capsule (logo + 1-2-3 trail)
-// over a helper bar. Pins the copy, which step is current per screen, the legibility maths (tint
+// Coverage for #175: the capture/refine/exclusion strips are a solid capsule (logo + 1-2-3 trail)
+// over a helper bar. Pins the copy, which step is current per screen, the legibility maths (fill
 // composited over the worst-case black and white pages), and that the #108 fade now applies per
-// piece with a small margin. The real blur, both-theme screenshots and fixed-header behaviour are
+// piece with a small margin. The real rendering, both-theme screenshots and fixed-header behaviour are
 // exercised in the real-run E2E.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -53,15 +53,24 @@ test('trail names are Choose / Adjust / Exclude, in that order', () => {
   assert.deepEqual([...STRIP_STEP_NAMES], ['Choose', 'Adjust', 'Exclude'])
 })
 
-test('glassCss: normal state blurs and tints; faded state is transparent with only an outline', () => {
+test('glassCss: normal state is a solid fill with a 2px rim; faded state is transparent with only an outline', () => {
   const on = glassCss('lime', 'capsule', false)
-  assert.match(on, /backdrop-filter: blur\(14px\)/)
-  assert.match(on, /background: rgba\(163,230,53,0\.88\)/)
+  assert.match(on, /background: rgba\(163,230,53,1\)/)
+  assert.match(on, /border: 2px solid #4d7c0f/)
   const off = glassCss('lime', 'capsule', true)
   assert.match(off, /background: transparent/)
-  assert.match(off, /backdrop-filter: none/)
+  assert.match(off, /border: 2px solid transparent/)
   assert.match(off, /box-shadow: 0 0 0 1px/)
-  assert.match(glassCss('purple', 'help', false), /rgba\(107,70,193,0\.93\)/)
+  assert.match(glassCss('purple', 'help', false), /rgba\(107,70,193,1\)/)
+})
+
+test('trail steps are bold, current and dimmed alike', () => {
+  document.body.replaceChildren()
+  __showExclusionBannerForTest()
+  const steps = [...document.querySelectorAll('#spotboard-exclusion-banner [data-sb-step]')]
+  assert.equal(steps.length, 3)
+  steps.forEach(s => assert.match(s.getAttribute('style'), /font-weight: 700/))
+  document.body.replaceChildren()
 })
 
 test('exclusion helper leads with Confirm Spot and marks excluding optional', () => {

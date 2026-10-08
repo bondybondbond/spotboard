@@ -2364,14 +2364,15 @@ const stripHighlight = (text: string) => {
   return h;
 };
 
-// #175: the top strip is two glass pieces -- a capsule (logo + the 1-2-3 trail, current step filled)
-// over a helper bar saying what to do next. Capture is lime for steps 1-2 and purple for step 3
-// (Exclude, where Confirm Spot lives). The tint stays near-opaque so text keeps its contrast over
-// ANY page behind the blur (tests/strip-glass.test.js composites it over black and white).
+// #175: the top strip is two pieces -- a capsule (logo + the 1-2-3 trail, current step filled) over a
+// helper bar saying what to do next. Capture is lime for steps 1-2 and purple for step 3 (Exclude,
+// where Confirm Spot lives). Owner-picked "variant C": fully opaque fill with a 2px darker rim so it
+// reads like a solid button and pops on any page (tests/strip-glass.test.js composites the fill over
+// black and white and checks contrast). Only the faded state (#108) is see-through.
 type StripTheme = 'lime' | 'purple'
 export const STRIP_THEMES = {
-  lime: { rgb: [163, 230, 53], alpha: 0.88, text: '#000000', dim: 0.75, activeBg: '#1c1c1e', activeText: '#ffffff', hl: '#000000' },
-  purple: { rgb: [107, 70, 193], alpha: 0.93, text: '#ffffff', dim: 0.9, activeBg: '#ffffff', activeText: '#6b46c1', hl: '#fef08a' },
+  lime: { rgb: [163, 230, 53], alpha: 1, edge: '#4d7c0f', text: '#000000', dim: 0.78, activeBg: '#1c1c1e', activeText: '#ffffff', hl: '#000000' },
+  purple: { rgb: [107, 70, 193], alpha: 1, edge: '#3b2478', text: '#ffffff', dim: 0.9, activeBg: '#ffffff', activeText: '#6b46c1', hl: '#fef08a' },
 } as const
 export const STRIP_STEP_NAMES = ['Choose', 'Adjust', 'Exclude'] as const
 const STRIP_FADE_MARGIN_PX = 6
@@ -2380,16 +2381,14 @@ const STRIP_FADE_MARGIN_PX = 6
 export function glassCss(theme: StripTheme, kind: 'capsule' | 'help', faded: boolean): string {
   const t = STRIP_THEMES[theme]
   const fill = faded ? 'transparent' : `rgba(${t.rgb.join(',')},${t.alpha})`
-  const blur = faded ? 'none' : 'blur(14px) saturate(1.4)'
   const edge = faded
     ? '0 0 0 1px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.75)'
-    : '0 2px 10px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.5)'
+    : '0 3px 10px rgba(0,0,0,0.3)'
   return `
     background: ${fill} !important; color: ${t.text} !important;
-    -webkit-backdrop-filter: ${blur} !important; backdrop-filter: ${blur} !important;
-    border: 1px solid ${faded ? 'transparent' : 'rgba(255,255,255,0.45)'} !important; box-shadow: ${edge} !important;
+    border: 2px solid ${faded ? 'transparent' : t.edge} !important; box-shadow: ${edge} !important;
     border-radius: ${kind === 'capsule' ? '999px' : '14px'} !important;
-    padding: ${kind === 'capsule' ? '4px 8px' : '6px 14px'} !important;
+    padding: ${kind === 'capsule' ? '3px 7px' : '5px 13px'} !important;
     box-sizing: border-box !important; max-width: min(96vw, 900px) !important; width: auto !important; height: auto !important;
     display: ${kind === 'capsule' ? 'inline-flex' : 'block'} !important; align-items: center !important;
     text-align: center !important; font-family: ${OVERLAY_FONT} !important; font-size: 13px !important;
@@ -2449,8 +2448,8 @@ function createStatusStrip(id: string, step: 1 | 2 | 3, instructions: (Node | st
     const active = i + 1 === step
     if (active) stepEl.setAttribute('aria-current', 'step')
     stepEl.style.cssText = active
-      ? `background: ${t.activeBg} !important; color: ${t.activeText} !important; font-weight: 500 !important; border-radius: 999px !important; padding: 3px 11px !important; white-space: nowrap !important;`
-      : `opacity: ${t.dim} !important; border-radius: 999px !important; padding: 3px 11px !important; white-space: nowrap !important;`
+      ? `background: ${t.activeBg} !important; color: ${t.activeText} !important; font-weight: 700 !important; border-radius: 999px !important; padding: 3px 11px !important; white-space: nowrap !important;`
+      : `opacity: ${t.dim} !important; font-weight: 700 !important; border-radius: 999px !important; padding: 3px 11px !important; white-space: nowrap !important;`
     capsuleContent.append(stepEl)
   })
   capsule.append(capsuleContent)
