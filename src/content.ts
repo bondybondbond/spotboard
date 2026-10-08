@@ -308,7 +308,9 @@ export function __generateSelectorForTest(element: HTMLElement): string {
 }
 
 // Generate a specific CSS selector for an element
-function generateSelector(element: HTMLElement): string {
+// `forExclusion` keeps the pre-#177 table-cell handling for the exclusion callers, whose routing for a
+// directly-excluded cell (id / base / column step) was tuned on that behaviour (#62/#67/#74).
+function generateSelector(element: HTMLElement, forExclusion = false): string {
   log('🎯 Starting selector generation for:', element.tagName, element.className);
   
   // Priority 1: ID (only if NOT auto-generated)
@@ -338,7 +340,11 @@ function generateSelector(element: HTMLElement): string {
   log(`⚠️ Selector "${baseSelector}" matches ${matches.length} elements, adding context...`);
   
   // 🆕 TABLE CELL DETECTION: Prepend column selector to make it unique
-  const cellElement = element.closest('td, th') as HTMLTableCellElement | null;
+  // Only for an element INSIDE a cell. closest() includes the element itself, so a captured
+  // <td>/<th> used to be treated as its own surrounding cell and got `td:nth-child(N) td` -- a td
+  // inside a td, which can never match it (#177, Hacker News). A captured cell falls through to
+  // the nth-of-type / ancestor-path steps below, which are built to resolve to the element.
+  const cellElement = (!forExclusion && element.matches('td, th') ? null : element.closest('td, th')) as HTMLTableCellElement | null;
   if (cellElement) {
     const columnIndex = cellElement.cellIndex; // 0-based
     if (columnIndex !== undefined && columnIndex >= 0) {
@@ -388,7 +394,12 @@ function generateSelector(element: HTMLElement): string {
   }
   
   // Still not unique - build path from unique ancestor
-  const pathSelector = buildPathFromUniqueAncestor(element, baseSelector);
+  let pathSelector = buildPathFromUniqueAncestor(element, baseSelector);
+  if (!pathSelector && !forExclusion && element.matches('td, th')) {
+    // A captured cell in a repeated table: the path above never pins the cell's own column, so
+    // `tr > td` stays ambiguous. Pin it (the row is pinned by the ancestor nth-of-type step) (#177).
+    pathSelector = buildPathFromUniqueAncestor(element, `${baseSelector}:nth-child(${(element as HTMLTableCellElement).cellIndex + 1})`);
+  }
   if (pathSelector) {
     log('🎯 Generated unique selector with ancestor path:', pathSelector);
     return pathSelector;
@@ -461,7 +472,7 @@ function generateExclusionSelector(el: HTMLElement, root: HTMLElement): string {
     }
   }
 
-  const candidate = generateSelector(el);
+  const candidate = generateSelector(el, true);
 
   try {
     if (root.querySelectorAll(candidate).length === 1) {
@@ -1834,7 +1845,7 @@ export function toggleExclusion(element: HTMLElement) {
     log('✅ Element un-excluded:', element.tagName, element.className);
   } else {
     // Check if this element would create a too-generic selector
-    const tempSelector = generateSelector(element);
+    const tempSelector = generateSelector(element, true);
     const isBareTag = /^[a-z]+$/i.test(tempSelector.trim());
     
     if (isBareTag) {
