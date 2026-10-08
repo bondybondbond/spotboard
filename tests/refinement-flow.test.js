@@ -158,7 +158,8 @@ test('top strip names Grow only while Grow is available, and follows Grow/Shrink
   assert.match(stripText(), /Click another element to re-select/)
   assert.match(stripText(), /Enter to continue/)
   assert.match(stripText(), /Esc to cancel/)
-  assert.match(stripText(), /^CAPTURE MODE · Step 2 of 2 - /)
+  // #175 (declared text change): the old "CAPTURE MODE · Step 2 of 2 - " prefix is now the trail, "2 Adjust" current
+  assert.equal(document.querySelector('#spotboard-refine-banner [aria-current="step"]').textContent, '2 Adjust')
   shrinkRefinement()
   assert.match(stripText(), /Grow to include more/)
   reset()

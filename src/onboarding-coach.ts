@@ -76,12 +76,12 @@ function injectOnboardingCoach() {
     '#sb-card-step1{top:auto;bottom:120px;right:20px;}',
     '.pos-left{top:50%;left:20px;right:auto;bottom:auto;transform:translateY(-50%);}',
     // #31: Step 2 is a big centred prompt — the dashed green hover frame is the interaction, this just says "go".
-    '.pos-center{top:64px;left:50%;right:auto;bottom:auto;transform:translateX(-50%);',
+    '.pos-center{top:96px;left:50%;right:auto;bottom:auto;transform:translateX(-50%);',
     'width:440px;max-width:calc(100vw - 40px);text-align:center;padding:22px 26px;}',
     '.pos-center .coach-title{font-size:18px;}',
     '.pos-center .coach-body{font-size:15px;color:#e6e6ea;margin-bottom:0;}',
     // #31: Step 3 sits next to the (top-right) confirmation modal, never on the opposite side.
-    '.pos-confirm{top:20px;right:372px;}',
+    '.pos-confirm{top:96px;right:372px;}',
     '@media (max-width:820px){.pos-confirm{top:auto;right:20px;bottom:20px;}}',
     '.coach-step-pill{display:inline-block;background:#6d28d9;color:#fff;font-size:11px;font-weight:600;',
     'padding:2px 10px;border-radius:20px;margin-bottom:10px;letter-spacing:.02em;}',
@@ -165,14 +165,14 @@ function injectOnboardingCoach() {
     return card;
   }
 
-  shadow.appendChild(_makeCard('sb-card-step1', 'Step 1 of 3', 'Start capturing',
+  shadow.appendChild(_makeCard('sb-card-step1', 'Start', 'Start capturing',
     'Click the SpotBoard icon in your toolbar, then choose Save a Spot. SpotBoard saves the section you choose to your board.',
     '\uD83D\uDCA1 Don\u2019t see it? Click the \uD83E\uDDE9 puzzle piece, then pin SpotBoard.'));
-  const card2 = _makeCard('sb-card-step2', 'Step 2 of 3', 'Click any section to track it',
+  const card2 = _makeCard('sb-card-step2', 'Steps 1-2 · Choose and Adjust', 'Click any section to track it',
     'A dashed green frame follows your cursor \u2014 click the block you want to save, then press Continue.');
   card2.classList.add('pos-center');
   shadow.appendChild(card2);
-  const card3 = _makeCard('sb-card-step3', 'Step 3 of 3', 'Confirm your capture',
+  const card3 = _makeCard('sb-card-step3', 'Step 3 · Exclude (optional)', 'Confirm your capture',
     'A green frame marks your selection. Press Confirm Spot in the panel on the right to save it.');
   card3.classList.add('pos-confirm');
   shadow.appendChild(card3);

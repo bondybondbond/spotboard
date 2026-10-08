@@ -2332,7 +2332,7 @@ function removeRefineBar() {
   document.getElementById('spotboard-refine-bar')?.remove();
   document.getElementById('spotboard-refine-banner')?.remove();
   _refineShadow = null;
-  document.getElementById('spotboard-capture-banner')?.style.removeProperty('display');
+  document.getElementById('spotboard-capture-banner')?.style.setProperty('display', 'flex', 'important');
 }
 
 // Capture mode is lime, exclusion mode is purple. The refinement stage mirrors exclusion mode's
@@ -2355,35 +2355,116 @@ const stripKbd = (text: string) => {
   k.style.cssText = 'padding: 2px 6px; background: rgba(0,0,0,0.15); border-radius: 3px; font-family: monospace; font-size: 12px;';
   return k;
 };
+// Emphasis on the purple (Exclude) strip: pale yellow, not the old amber -- amber was ~3.3:1 once the
+// glass is composited over a white page (#175).
+const stripHighlight = (text: string) => {
+  const h = document.createElement('strong');
+  h.style.cssText = `font-weight: 700; color: ${STRIP_THEMES.purple.hl};`;
+  h.textContent = text;
+  return h;
+};
 
-// Shared shell for the lime top strip. Capture mode is ONE mode in two steps -- 1: click what you
-// want, 2: adjust it (Grow/Shrink) and continue -- so both steps use the same strip, centred like
-// the purple exclusion strip, differing only in the step number and instructions. Passive
-// (pointer-events none) and marked data-spotboard-ignore so it is never itself captured.
-function createCaptureStrip(id: string, step: 1 | 2, instructions: (Node | string)[]): HTMLElement {
-  const strip = document.createElement('div');
-  strip.id = id;
-  strip.setAttribute('data-spotboard-ignore', 'true');
+// #175: the top strip is two glass pieces -- a capsule (logo + the 1-2-3 trail, current step filled)
+// over a helper bar saying what to do next. Capture is lime for steps 1-2 and purple for step 3
+// (Exclude, where Confirm Spot lives). The tint stays near-opaque so text keeps its contrast over
+// ANY page behind the blur (tests/strip-glass.test.js composites it over black and white).
+type StripTheme = 'lime' | 'purple'
+export const STRIP_THEMES = {
+  lime: { rgb: [163, 230, 53], alpha: 0.88, text: '#000000', dim: 0.75, activeBg: '#1c1c1e', activeText: '#ffffff', hl: '#000000' },
+  purple: { rgb: [107, 70, 193], alpha: 0.93, text: '#ffffff', dim: 0.9, activeBg: '#ffffff', activeText: '#6b46c1', hl: '#fef08a' },
+} as const
+export const STRIP_STEP_NAMES = ['Choose', 'Adjust', 'Exclude'] as const
+const STRIP_FADE_MARGIN_PX = 6
+
+// Pure so the legibility maths and the faded state can be tested without a browser.
+export function glassCss(theme: StripTheme, kind: 'capsule' | 'help', faded: boolean): string {
+  const t = STRIP_THEMES[theme]
+  const fill = faded ? 'transparent' : `rgba(${t.rgb.join(',')},${t.alpha})`
+  const blur = faded ? 'none' : 'blur(14px) saturate(1.4)'
+  const edge = faded
+    ? '0 0 0 1px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.75)'
+    : '0 2px 10px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.5)'
+  return `
+    background: ${fill} !important; color: ${t.text} !important;
+    -webkit-backdrop-filter: ${blur} !important; backdrop-filter: ${blur} !important;
+    border: 1px solid ${faded ? 'transparent' : 'rgba(255,255,255,0.45)'} !important; box-shadow: ${edge} !important;
+    border-radius: ${kind === 'capsule' ? '999px' : '14px'} !important;
+    padding: ${kind === 'capsule' ? '4px 8px' : '6px 14px'} !important;
+    box-sizing: border-box !important; max-width: min(96vw, 900px) !important; width: auto !important; height: auto !important;
+    display: ${kind === 'capsule' ? 'inline-flex' : 'block'} !important; align-items: center !important;
+    text-align: center !important; font-family: ${OVERLAY_FONT} !important; font-size: 13px !important;
+    font-weight: 400 !important; line-height: 1.4 !important; text-transform: none !important; letter-spacing: normal !important;
+    transition: background 0.12s, box-shadow 0.12s !important; pointer-events: none !important;
+  `
+}
+
+function applyGlass(piece: HTMLElement, faded: boolean) {
+  piece.style.cssText = glassCss(piece.dataset.sbTheme as StripTheme, piece.dataset.sbGlass as 'capsule' | 'help', faded)
+  piece.dataset.sbFaded = faded ? '1' : ''
+  // Contents go with the fill; only the outline stays (the #108 "get out of the way" behaviour).
+  piece.firstElementChild?.setAttribute('style', `opacity: ${faded ? 0 : 1} !important; transition: opacity 0.12s !important;${piece.dataset.sbGlass === 'capsule' ? ' display: inline-flex !important; align-items: center !important; gap: 4px !important;' : ''}`)
+}
+
+// Shared shell for the capture/refine/exclusion strips. Passive (pointer-events none) and marked
+// data-spotboard-ignore so it is never itself captured. The three ids (and MODE_BANNER_IDS) are
+// kept: a strip is rebuilt per screen, not edited, so each carries its own step.
+function createStatusStrip(id: string, step: 1 | 2 | 3, instructions: (Node | string)[]): HTMLElement {
+  const theme: StripTheme = step === 3 ? 'purple' : 'lime'
+  const t = STRIP_THEMES[theme]
+  const strip = document.createElement('div')
+  strip.id = id
+  strip.setAttribute('data-spotboard-ignore', 'true')
   strip.style.cssText = `
     position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important;
-    background: ${CAPTURE_LIME} !important; color: #000000 !important; padding: 10px 20px !important;
-    display: flex !important; align-items: center !important; justify-content: center !important;
-    text-align: center !important; white-space: nowrap !important; font-family: ${OVERLAY_FONT} !important;
-    font-size: 14px !important; font-weight: 400 !important; z-index: 2147483646 !important;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important; pointer-events: none !important;
-  `;
-  const logo = document.createElement('img');
-  logo.src = chrome.runtime.getURL('icon-16.png');
-  // Logo is a flex sibling of the text (not inline inside it) so host CSS like `img { display: block }` can't stack it above the text.
-  logo.style.cssText = 'width: 20px !important; height: 20px !important; max-width: none !important; flex: none !important; margin: 0 8px 0 0 !important; pointer-events: none;';
-  const text = document.createElement('span');
-  text.style.pointerEvents = 'none';
-  const instructionSpan = document.createElement('span');
-  instructionSpan.setAttribute('data-sb-strip-instructions', '');
-  instructionSpan.append(...instructions);
-  text.append(stripBold('CAPTURE MODE'), ` \u00b7 Step ${step} of 2 - `, instructionSpan);
-  strip.append(logo, text);
-  return strip;
+    display: flex !important; flex-direction: column !important; align-items: center !important; gap: 6px !important;
+    padding: 8px 14px !important; box-sizing: border-box !important; background: none !important;
+    z-index: 2147483646 !important; pointer-events: none !important;
+  `
+  const makePiece = (kind: 'capsule' | 'help') => {
+    const piece = document.createElement('div')
+    piece.setAttribute('data-sb-glass', kind)
+    piece.dataset.sbTheme = theme
+    return piece
+  }
+
+  const capsule = makePiece('capsule')
+  const capsuleContent = document.createElement('span')
+  const logo = document.createElement('img')
+  logo.src = chrome.runtime.getURL('icon-48.png')
+  // Logo is a flex sibling of the trail (not inline inside it) so host CSS like `img { display: block }` can't stack it above the text.
+  logo.style.cssText = 'width: 20px !important; height: 20px !important; max-width: none !important; flex: none !important; margin: 0 4px 0 6px !important; border-radius: 4px !important; pointer-events: none;'
+  const divider = document.createElement('span')
+  divider.style.cssText = 'width: 1px !important; height: 16px !important; background: currentColor !important; opacity: 0.3 !important; margin: 0 4px 0 2px !important; flex: none !important;'
+  capsuleContent.append(logo, divider)
+  STRIP_STEP_NAMES.forEach((name, i) => {
+    if (i > 0) {
+      const arrow = document.createElement('span')
+      arrow.textContent = '\u203a'
+      arrow.style.cssText = 'opacity: 0.5 !important;'
+      capsuleContent.append(arrow)
+    }
+    const stepEl = document.createElement('span')
+    stepEl.setAttribute('data-sb-step', String(i + 1))
+    stepEl.textContent = `${i + 1} ${name}`
+    const active = i + 1 === step
+    if (active) stepEl.setAttribute('aria-current', 'step')
+    stepEl.style.cssText = active
+      ? `background: ${t.activeBg} !important; color: ${t.activeText} !important; font-weight: 500 !important; border-radius: 999px !important; padding: 3px 11px !important; white-space: nowrap !important;`
+      : `opacity: ${t.dim} !important; border-radius: 999px !important; padding: 3px 11px !important; white-space: nowrap !important;`
+    capsuleContent.append(stepEl)
+  })
+  capsule.append(capsuleContent)
+
+  const help = makePiece('help')
+  const instructionSpan = document.createElement('span')
+  instructionSpan.setAttribute('data-sb-strip-instructions', '')
+  instructionSpan.append(...instructions)
+  help.append(instructionSpan)
+
+  strip.append(capsule, help)
+  applyGlass(capsule, false)
+  applyGlass(help, false)
+  return strip
 }
 
 function showRefineBar() {
@@ -2394,7 +2475,7 @@ function showRefineBar() {
   window.addEventListener('resize', updateRefineBar);
 
   // Assumes Grow is available; updateRefineBar (called straight after) re-renders it if not.
-  document.body.appendChild(createCaptureStrip('spotboard-refine-banner', 2, stripPartsToNodes(refineStripParts(true, !getIsOnboardingMode()))));
+  document.body.appendChild(createStatusStrip('spotboard-refine-banner', 2, stripPartsToNodes(refineStripParts(true, !getIsOnboardingMode()))));
 
   const panel = document.createElement('div');
   panel.style.cssText = `
@@ -2457,7 +2538,7 @@ export function refineHintText(canGrow: boolean, canShrink: boolean): string {
 
 // #127: the top strip follows the same rule as the hint -- never tell the user to Grow when Grow is
 // disabled. Pure data so it can be unit-tested; stripPartsToNodes turns it into DOM.
-type StripPart = { kind: 'bold' | 'kbd' | 'text'; text: string }
+type StripPart = { kind: 'bold' | 'kbd' | 'hl' | 'text'; text: string }
 export function refineStripParts(canGrow: boolean, canCancel = true): StripPart[] {
   const parts: StripPart[] = canGrow
     ? [
@@ -2474,7 +2555,7 @@ export function refineStripParts(canGrow: boolean, canCancel = true): StripPart[
 }
 
 function stripPartsToNodes(parts: StripPart[]): (Node | string)[] {
-  return parts.map(p => p.kind === 'bold' ? stripBold(p.text) : p.kind === 'kbd' ? stripKbd(p.text) : p.text)
+  return parts.map(p => p.kind === 'bold' ? stripBold(p.text) : p.kind === 'kbd' ? stripKbd(p.text) : p.kind === 'hl' ? stripHighlight(p.text) : p.text)
 }
 
 function updateRefineBar() {
@@ -4058,16 +4139,16 @@ function showCaptureBanner() {
   if (document.getElementById('spotboard-capture-banner')) return;
   const instructions: (Node | string)[] = recaptureCtx
     ? [
-        stripBold('click'), ' on the section to re-capture for ',
+        stripBold('Click'), ' on the section to re-capture for ',
         stripBold(`\u201c${recaptureCtx.label.length > 40 ? recaptureCtx.label.slice(0, 40) + '\u2026' : recaptureCtx.label}\u201d`),
         ' \u00b7 ', stripKbd('Esc'), ' to cancel'
       ]
     : [
-        stripBold('hover'), ' to preview, ', stripBold('click'), ' on any content you want to add to your board',
+        stripBold('Hover'), ' to preview, ', stripBold('click'), ' on any content you want to add',
         // Esc is ignored while the onboarding coach is up (handleKeydown), so don't promise it (#151)
         ...(getIsOnboardingMode() ? [] : [' \u00b7 ', stripKbd('Esc'), ' to cancel'])
       ];
-  document.body.appendChild(createCaptureStrip('spotboard-capture-banner', 1, instructions));
+  document.body.appendChild(createStatusStrip('spotboard-capture-banner', 1, instructions));
 }
 
 // #156: auto-started capture (picker, Re-capture) waits here instead of arming straight away, so
@@ -4162,6 +4243,7 @@ export const __showPausedCaptureForTest = (recapture?: { cardId: string; session
   recaptureCtx = recapture || null;
   showPausedCapture();
 };
+export const __showExclusionBannerForTest = () => showExclusionBanner();
 export const __getCaptureStateForTest = () => ({ isCapturing, paused: isCapturePaused(), recaptureCtx });
 
 // 🎯 #60: shown for the whole exclusion-mode step (from when the overlay first opens) —
@@ -4174,36 +4256,16 @@ export const __getCaptureStateForTest = () => ({ isCapturing, paused: isCaptureP
 // [data-spotboard-ignore] before touching excludedElements).
 function showExclusionBanner() {
   document.getElementById('spotboard-exclusion-banner')?.remove();
+  document.body.appendChild(createStatusStrip('spotboard-exclusion-banner', 3, stripPartsToNodes(exclusionStripParts())));
+}
 
-  const banner = document.createElement('div');
-  banner.id = 'spotboard-exclusion-banner';
-  banner.setAttribute('data-spotboard-ignore', 'true');
-  banner.style.cssText = `
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    background: #6b46c1 !important;
-    color: #ffffff !important;
-    padding: 10px 20px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    text-align: center !important;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
-    font-size: 14px !important;
-    font-weight: 400 !important;
-    z-index: 2147483646 !important;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-    pointer-events: none !important;
-  `;
-
-  const hl = 'color: #fbbf24 !important; font-weight: 700 !important;';
-  banner.innerHTML = `
-    <span style="pointer-events: none;">❎ <strong style="font-weight: 700 !important;">EXCLUSION MODE</strong> - <span style="${hl}">click</span> an element to exclude or restore an area, <span style="${hl}">[Shift] + click</span> to exclude or restore entire similar area</span>
-  `;
-
-  document.body.appendChild(banner);
+// #175: screen 3 is where Confirm Spot lives, so the helper leads with it; excluding is the optional part.
+export function exclusionStripParts(): StripPart[] {
+  return [
+    { kind: 'text', text: 'Press ' }, { kind: 'bold', text: 'Confirm Spot' }, { kind: 'text', text: ' to save · optional: ' },
+    { kind: 'hl', text: 'click' }, { kind: 'text', text: ' an element to exclude it, ' },
+    { kind: 'hl', text: '[Shift] + click' }, { kind: 'text', text: ' for similar areas' }
+  ]
 }
 
 // Lightweight, non-blocking, self-dismissing hint shown while capture mode stays active
@@ -4231,32 +4293,31 @@ function showCaptureHint(message: string) {
   setTimeout(() => hint.remove(), 4000);
 }
 
-// #108: the mode banners are click-through but still paint over the top ~45px of the page.
-// Rather than shifting the page (breaks fixed/sticky site headers, hit-testing, and risks a
-// leftover offset), fade the banners out while the pointer is over their strip and restore them
-// as soon as it leaves. Nothing on the host page is touched.
+// #108: the mode strips are click-through but still paint over the top of the page. Rather than
+// shifting the page (breaks fixed/sticky site headers, hit-testing, and risks a leftover offset),
+// fade a strip piece to a faint outline while the pointer is over it and restore it as soon as it
+// leaves. #175: per piece (capsule / helper bar) with a small margin, so the gaps beside them stay
+// untouched. Nothing on the host page is changed.
 const MODE_BANNER_IDS = ['spotboard-capture-banner', 'spotboard-refine-banner', 'spotboard-exclusion-banner'];
 
-function setModeBannersHidden(hidden: boolean) {
-  MODE_BANNER_IDS.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.style.setProperty('transition', 'opacity 0.12s', 'important');
-    el.style.setProperty('opacity', hidden ? '0' : '1', 'important');
-  });
+function stripGlassPieces(): HTMLElement[] {
+  return MODE_BANNER_IDS.flatMap(id => Array.from(document.getElementById(id)?.querySelectorAll<HTMLElement>('[data-sb-glass]') ?? []));
 }
 
 function dodgeModeBanners(event: MouseEvent) {
-  let bottom = 0;
-  MODE_BANNER_IDS.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
+  stripGlassPieces().forEach(piece => {
+    const r = piece.getBoundingClientRect();
+    // A strip hidden with display:none (the capture strip while Grow/Continue is up) reports an empty rect at (0,0):
+    // never treat it as "under the pointer", or it would come back faded.
+    const hidden = r.width === 0 && r.height === 0;
+    const over = !hidden && event.clientX >= r.left - STRIP_FADE_MARGIN_PX && event.clientX <= r.right + STRIP_FADE_MARGIN_PX
+      && event.clientY >= r.top - STRIP_FADE_MARGIN_PX && event.clientY <= r.bottom + STRIP_FADE_MARGIN_PX;
+    if ((piece.dataset.sbFaded === '1') !== over) applyGlass(piece, over);
   });
-  if (bottom > 0) setModeBannersHidden(event.clientY <= bottom + 6);
 }
 
 function restoreModeBanners(event: MouseEvent) {
-  if (!event.relatedTarget) setModeBannersHidden(false); // pointer left the page
+  if (!event.relatedTarget) stripGlassPieces().forEach(piece => applyGlass(piece, false)); // pointer left the page
 }
 
 function toggleCapture(forceState?: boolean) {
