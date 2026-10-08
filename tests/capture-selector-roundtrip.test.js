@@ -134,13 +134,14 @@ test('wrapper: dead primary on a td in a repeated id-less table is rescued by th
   assert.ok(selectorFindsElement(sel, td), `"${sel}" does not find the td`)
 })
 
-test('wrapper: an element whose only possible selector is invalid CSS returns null instead of throwing', () => {
-  // Tailwind's `2xl:flex`: a class starting with a digit is not a valid CSS identifier as escaped today,
-  // so generateSelector itself throws a SyntaxError (a silent capture failure before #178).
+test('wrapper: a digit-leading class (Tailwind `2xl:flex`) now captures instead of returning null (#179)', () => {
+  // Before #179 the class escape left `.2xl\:flex` invalid, generateSelector threw, and #178 turned that into null.
+  // Declared test edit (invariant 6): the requirement changed from "refuse cleanly" to "capture".
   document.body.innerHTML = '<div class="2xl:flex">x</div><div class="2xl:flex">y</div>'
   const el = document.querySelector('div')
-  assert.throws(() => __generateSelectorForTest(el))
-  assert.equal(__generateCaptureSelectorForTest(el), null)
+  const sel = __generateCaptureSelectorForTest(el)
+  assert.notEqual(sel, null)
+  assert.ok(selectorFindsElement(sel, el), `"${sel}" does not find the div`)
 })
 
 test('wrapper: a data-testid containing quotes (invalid attribute selector) returns null instead of throwing', () => {

@@ -673,33 +673,11 @@ function buildPositionalPath(el: HTMLElement, root: HTMLElement): string {
   return parts.join(' > ');
 }
 
-// Helper: Escape special characters in CSS class names (for Tailwind etc.)
+// Helper: Escape a class name for use in a selector (Tailwind `xl:mt-0`, `w-3/12`, `2xl:flex`, ...).
+// CSS.escape, not a hand-kept character list: the old list missed a leading digit, quotes, | { } ; (#179).
+// Output is byte-identical to the old list for every class it handled.
 function escapeCSSClass(className: string): string {
-  // Escape special characters that are invalid in CSS selectors
-  // Common in Tailwind: : / [ ] ( ) @ ! # $ % ^ & * + = , . < > ? ~ 
-  return className
-    .replace(/:/g, '\\:')   // xl:mt-0 -> xl\:mt-0
-    .replace(/\//g, '\\/')  // w-3/12 -> w-3\/12
-    .replace(/\[/g, '\\[')  // [&_svg] -> \[&_svg\]
-    .replace(/\]/g, '\\]')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)')
-    .replace(/\./g, '\\.')  // Important: escape dots in class names
-    .replace(/#/g, '\\#')
-    .replace(/!/g, '\\!')
-    .replace(/@/g, '\\@')
-    .replace(/\$/g, '\\$')
-    .replace(/%/g, '\\%')
-    .replace(/\^/g, '\\^')
-    .replace(/&/g, '\\&')
-    .replace(/\*/g, '\\*')
-    .replace(/\+/g, '\\+')
-    .replace(/=/g, '\\=')
-    .replace(/,/g, '\\,')
-    .replace(/</g, '\\<')
-    .replace(/>/g, '\\>')
-    .replace(/\?/g, '\\?')
-    .replace(/~/g, '\\~');
+  return CSS.escape(className);
 }
 
 // Helper: Build base selector (tag + classes + data attrs)

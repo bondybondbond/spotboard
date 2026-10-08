@@ -5,6 +5,27 @@
 // keep the stub inline, don't pull in a dependency for surface we don't exercise).
 import { JSDOM } from 'jsdom'
 
+// CSSOM "serialize an identifier" (what CSS.escape does in Chrome).
+export function cssEscape(value) {
+  const s = String(value)
+  let out = ''
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if (c === 0) { out += '�'; continue }
+    const isDigit = c >= 0x30 && c <= 0x39
+    if ((c >= 0x1 && c <= 0x1f) || c === 0x7f || (i === 0 && isDigit) || (i === 1 && isDigit && s.charCodeAt(0) === 0x2d)) {
+      out += '\\' + c.toString(16) + ' '
+    } else if (i === 0 && s.length === 1 && c === 0x2d) {
+      out += '\\' + s[i]
+    } else if (c >= 0x80 || c === 0x2d || c === 0x5f || isDigit || (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a)) {
+      out += s[i]
+    } else {
+      out += '\\' + s[i]
+    }
+  }
+  return out
+}
+
 export function installDomEnv(html = '<!doctype html><html><body></body></html>') {
   const dom = new JSDOM(html, { url: 'https://example.com/' })
   const { window } = dom
@@ -20,8 +41,9 @@ export function installDomEnv(html = '<!doctype html><html><body></body></html>'
   global.getComputedStyle = window.getComputedStyle.bind(window)
   global.sessionStorage = window.sessionStorage
   global.location = window.location
-  // jsdom has no CSS.escape (real Chrome always does); content.ts uses it for id selectors (#126).
-  global.CSS = window.CSS ?? { escape: s => String(s).replace(/([^\w-])/g, '\\$1') }
+  // jsdom has no CSS.escape (real Chrome always does); content.ts uses it for id and class selectors (#126, #179).
+  // The CSSOM algorithm, so a leading digit / lone hyphen get the same hex escape Chrome gives them.
+  global.CSS = window.CSS ?? { escape: cssEscape }
 
   global.chrome = {
     runtime: {
