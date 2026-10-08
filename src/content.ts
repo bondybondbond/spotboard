@@ -426,6 +426,57 @@ function generateSelector(element: HTMLElement, forExclusion = false): string {
   return baseSelector;
 }
 
+// #178: does `sel` find `el` in the document `el` lives in? Matching more than one element is fine
+// (refresh tie-breaks by heading fingerprint / position) -- only "does not include el" is a dead
+// selector (#126 spaced id, #177 `td:nth-child(N) td`). An element a document-level query cannot
+// reach at all (inside a shadow root) is not judged: those captures are unchanged from before.
+export function selectorFindsElement(sel: string, el: Element): boolean {
+  if (el.getRootNode() !== el.ownerDocument) return true;
+  try {
+    return Array.from(el.ownerDocument.querySelectorAll(sel)).includes(el);
+  } catch {
+    return false; // invalid selector
+  }
+}
+
+// First candidate that finds `el`, or null. Candidates are lazy so the normal path (the first one
+// works) costs a single querySelectorAll. A candidate that throws or yields nothing is skipped.
+function pickResolvingSelector(el: Element, candidates: Array<() => string | null>): string | null {
+  for (const candidate of candidates) {
+    let sel: string | null = null;
+    try { sel = candidate(); } catch { /* skip */ }
+    if (sel && selectorFindsElement(sel, el)) return sel;
+    if (sel) log('⚠️ Selector candidate does not find the captured element, trying next:', sel);
+  }
+  return null;
+}
+
+export function __pickResolvingSelectorForTest(el: Element, candidates: Array<() => string | null>): string | null {
+  return pickResolvingSelector(el, candidates);
+}
+
+// The card selector saved at capture (#178). generateSelector's answer when it finds the element
+// (all but the rare dead case). Rungs 2-3 repeat the tail of generateSelector on purpose: they are
+// the way out when an EARLIER generateSelector step returned something dead, so don't remove them as
+// redundant. No positional rung -- a body-rooted :nth-child path would turn "can't find it" into
+// "looks fine today". null = no candidate finds the element: the caller stops the capture.
+function generateCaptureSelector(element: HTMLElement, primary: (el: HTMLElement) => string = generateSelector): string | null {
+  const base = buildBaseSelector(element);
+  return pickResolvingSelector(element, [
+    () => primary(element),
+    () => buildPathFromUniqueAncestor(element, base),
+    () => element.matches('td, th')
+      ? buildPathFromUniqueAncestor(element, `${base}:nth-child(${(element as HTMLTableCellElement).cellIndex + 1})`)
+      : null,
+  ]);
+}
+
+// `primary` lets a test stand in for a generateSelector that returned something dead (the #126/#177
+// shapes are fixed at source, so the fallback rungs would otherwise never run in a test).
+export function __generateCaptureSelectorForTest(element: HTMLElement, primary?: (el: HTMLElement) => string): string | null {
+  return generateCaptureSelector(element, primary);
+}
+
 /**
  * Generate a selector for an EXCLUDED element -- distinct from generateSelector's job of
  * finding the card container. generateSelector's documented last resort is "return the base
@@ -2807,7 +2858,19 @@ function proceedToPreviewer(captureTarget: HTMLElement, clickTarget: HTMLElement
     log('📝 Name fallback:', name);
   }
   
-  const selector = generateSelector(captureTarget);
+  const selector = generateCaptureSelector(captureTarget);
+  if (selector === null) {
+    // #178: nothing we can write down would find this element again -- stop before the user spends
+    // time in the modal on a card that could never refresh. Same recovery as an empty re-capture.
+    console.warn('⚠️ No selector found the captured element -- capture stopped:', captureTarget.tagName, captureTarget.className);
+    captureTarget.style.outline = '';
+    captureTarget.style.cursor = '';
+    lockedElement = null;
+    resetExclusions();
+    toggleCapture(true);
+    showCaptureHint('Couldn’t lock onto that section — pick a slightly bigger or different one. Your board is unchanged.');
+    return;
+  }
   log('🎯 Final selector:', selector);
 
   // 🎯 BATCH 2: Pre-extract heading for position-based detection
