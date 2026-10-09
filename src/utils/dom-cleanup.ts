@@ -998,6 +998,9 @@ function savedTwinScores(first: Element, second: Element, savedCounts: Map<strin
   return [scoreA, scoreB];
 }
 
+// #172: a string of ONLY private-use characters (icon-font glyphs); U+F8FF (Apple logo) deliberately not included.
+const PRIVATE_USE_GLYPHS_ONLY_RE = /^[\uE000-\uF8FE\u{F0000}-\u{FFFFD}\u{100000}-\u{10FFFD}\s]+$/u;
+
 /** @param savedHtml The card's last stored HTML (refresh only). Used solely to pick which responsive
  *  twin survives (#131); omitted, the first twin always wins, as before. */
 export function cleanupDuplicates(html: string, savedHtml?: string): string {
@@ -1148,6 +1151,23 @@ export function cleanupDuplicates(html: string, savedHtml?: string): string {
     const matches = temp.querySelectorAll(selector);
     removedCount += matches.length;
     matches.forEach(el => el.remove());
+  });
+
+  // #172: icon fonts that draw an icon from a private-use CHARACTER (Yahoo Fantasy: <span class="F-icon">+</span>
+  // in the site's own web font). The font isn't loaded here, so the character renders as an empty box. A leaf
+  // element whose only text is such characters is decoration -> remove it. Same idea as the Material Icons strip
+  // above, but class-free. U+F8FF is excluded (the Apple logo is a real character, not an icon-font glyph).
+  // Known limits: a glyph mixed with other text in the same element is left alone; a div-based icon column
+  // (not a table cell) whose only content was the glyph is removed by the empty-wrapper pass below, so its siblings shift.
+  temp.querySelectorAll('*').forEach(el => {
+    if (el.children.length > 0 || el instanceof SVGElement) return;
+    const text = el.textContent || '';
+    if (text.trim() && PRIVATE_USE_GLYPHS_ONLY_RE.test(text)) {
+      removedCount++;
+      // A dedicated icon column: empty the cell, don't delete it, or every later cell in the row shifts left.
+      if (el.tagName === 'TD' || el.tagName === 'TH') el.textContent = '';
+      else el.remove();
+    }
   });
 
   // Generic "mobile-*" duplicate classes (e.g. "mobile-content", "card__mobile-title").
