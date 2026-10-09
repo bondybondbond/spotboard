@@ -950,6 +950,60 @@ function hideHoverHint() {
   _hoverHintShadow = null;
 }
 
+// #170: the green "selected" frame was only an `outline` on the page element, which any ancestor with
+// overflow:auto/hidden clips (Yahoo Fantasy's transactions table sits flush in one: only the top edge
+// showed). This draws the same 5px green frame as a fixed overlay so it can't be clipped, and keeps it
+// up through step 3 (exclusion). Derived from state each tick instead of set/cleared at every
+// lockedElement/refineState transition, so no teardown path can leave it stale.
+const REGION_FRAME_BORDER = '5px solid #00ff00';
+let _regionFrame: HTMLElement | null = null;
+let _regionFrameTimer: number | null = null;
+
+function syncRegionFrame() {
+  const target = refineState ? refineState.chain[refineState.index] : lockedElement;
+  if (!isCapturing || !target || !target.isConnected) {
+    document.getElementById('spotboard-region-frame')?.remove();
+    _regionFrame = null;
+    return;
+  }
+  if (!_regionFrame || !_regionFrame.isConnected) {
+    document.getElementById('spotboard-region-frame')?.remove();
+    const { host, shadow } = createOverlayShadowHost('spotboard-region-frame');
+    // One below the status strip (2147483646) and the modal: a region at the very top of the viewport must not paint over the strip.
+    host.style.setProperty('z-index', '2147483645', 'important');
+    _regionFrame = document.createElement('div');
+    _regionFrame.style.cssText = 'position: fixed !important; box-sizing: border-box !important; ' +
+      `border: ${REGION_FRAME_BORDER} !important; pointer-events: none !important; background: none !important;`;
+    shadow.append(_regionFrame);
+  }
+  const rect = target.getBoundingClientRect();
+  const hidden = rect.width === 0 && rect.height === 0;
+  // Same footprint as the outline it backs up: 5px outside the element's box.
+  _regionFrame.style.setProperty('display', hidden ? 'none' : 'block', 'important');
+  _regionFrame.style.setProperty('top', `${rect.top - 5}px`, 'important');
+  _regionFrame.style.setProperty('left', `${rect.left - 5}px`, 'important');
+  _regionFrame.style.setProperty('width', `${rect.width + 10}px`, 'important');
+  _regionFrame.style.setProperty('height', `${rect.height + 10}px`, 'important');
+}
+
+function startRegionFrame() {
+  syncRegionFrame();
+  window.addEventListener('scroll', syncRegionFrame, true);
+  window.addEventListener('resize', syncRegionFrame);
+  if (_regionFrameTimer === null) _regionFrameTimer = window.setInterval(syncRegionFrame, 250);
+}
+
+function stopRegionFrame() {
+  window.removeEventListener('scroll', syncRegionFrame, true);
+  window.removeEventListener('resize', syncRegionFrame);
+  if (_regionFrameTimer !== null) { window.clearInterval(_regionFrameTimer); _regionFrameTimer = null; }
+  syncRegionFrame(); // isCapturing is already false here, so this removes the frame
+}
+
+// Test seam (#170): the frame's live element, since its shadow root is closed.
+export const __getRegionFrameForTest = () => { syncRegionFrame(); return _regionFrame; };
+export const __toggleCaptureForTest = (on: boolean) => toggleCapture(on);
+
 // Once a card is locked, real hit-testing keeps resolving every point inside a content-less
 // "stretched link" overlay to that SAME overlay element (see resolveExclusionHitTarget) --  and
 // because the topmost hit target never actually changes as the mouse moves around inside it,
@@ -2301,6 +2355,7 @@ export function startRefinement(root: HTMLElement, clickTarget: HTMLElement, wid
     path: [describeForPath(root)]
   };
   root.style.setProperty('outline', REFINE_OUTLINE, 'important');
+  syncRegionFrame();
   showRefineBar();
   updateRefineBar();
 }
@@ -2313,6 +2368,7 @@ function setRefineIndex(index: number) {
   const root = state.chain[index];
   root.style.setProperty('outline', REFINE_OUTLINE, 'important');
   state.path.push(describeForPath(root));
+  syncRegionFrame();
   updateRefineBar();
 }
 
@@ -2354,6 +2410,7 @@ export function endRefinement(outcome: 'cancel' | 'detached') {
   state.chain[state.index].style.removeProperty('outline');
   removeRefineBar();
   refineState = null;
+  syncRegionFrame();
 }
 
 // Test seam (mirrors __getActiveExclusionChainForTest): inspect refinement state without exporting the let.
@@ -4385,6 +4442,7 @@ function toggleCapture(forceState?: boolean) {
     document.addEventListener('mousedown', handleMouseDown, true);
     document.addEventListener('click', handleClick, true);
     document.addEventListener('keydown', handleKeydown, true);
+    startRegionFrame();
     
     // 🎯 Show persistent lime banner at top
     showCaptureBanner();
@@ -4412,6 +4470,7 @@ function toggleCapture(forceState?: boolean) {
     document.removeEventListener('keydown', handleKeydown, true);
 
     hideHoverHint();
+    stopRegionFrame();
     // #42: capture ended (Esc / popup toggle) while still refining -- report and tear down the bar.
     endRefinement('cancel');
 
