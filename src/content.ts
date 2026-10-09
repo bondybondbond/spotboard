@@ -2964,7 +2964,7 @@ function getPreviewCSS(): string {
       position: static !important;
     }
 
-    /* 5-tier image scaling */
+    /* 5-tier image scaling -- keep in sync with dashboard.html (tests/preview-image-tiers-parity.test.js, #180) */
     img[data-scale-context="icon"] {
       max-width: 25px !important; max-height: 25px !important;
       object-fit: contain; display: inline-block; vertical-align: middle;
@@ -2982,7 +2982,7 @@ function getPreviewCSS(): string {
       object-fit: contain; display: inline-block; vertical-align: middle;
     }
     img[data-scale-context="preview"] {
-      max-width: 150px !important; max-height: 150px !important;
+      max-width: 280px !important; max-height: 200px !important;
       object-fit: contain; display: inline-block; vertical-align: middle;
     }
     img:not([data-scale-context]) {
