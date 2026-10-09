@@ -28,6 +28,8 @@
 - **Under the hood: "exclude all like this" now remembers what kind of group you clicked** (#129): nothing looks different today. Capture used to work out a second time, from scratch, whether your Shift+click was a table column, a row of same-looking items or a repeated element across the section, so any future change to how groups are found could have quietly turned a column or row group into a whole-section rule. It now records the kind once, at the click, and uses that.
 - **Each card now shows just Refresh and the ⋯ menu** (#148): the Pause and Delete buttons that sat beside Refresh on every card have moved into the card's ⋯ menu, so the board is calmer to scan and the one button you press at each check-in stands out. Open ⋯ and choose **Pause refresh** (it becomes **Resume refresh** on a paused card, which still shows its pink header) or **Delete card**, which still asks you to confirm and still says it can't be undone. The short tour that follows your first capture now points you to ⋯ instead of the old trash button.
 
+- **The dashboard's top bar is simpler: theme and help moved into the ☰ menu** (#149): the light/dark switch and the round (i) help button no longer sit next to Refresh All. Open the ☰ menu (now simply called "Menu") for **Help & tutorial**, **Switch to dark/light theme**, then **Export board** and **Import board**. Everything works exactly as before, in both themes, and your theme choice is still remembered. On a board you've emptied, the tip at the bottom now says to open the ☰ menu and choose Help & tutorial, so help stays easy to find.
+
 ## [1.4.3] - 2026-10-05
 
 ### Added

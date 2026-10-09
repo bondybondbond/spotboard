@@ -1630,15 +1630,28 @@ function renderSubsequentEmptyState(container) {
 
   const footer = document.createElement('p');
   footer.className = 'subsequent-empty-footer';
-  footer.appendChild(document.createTextNode('Need help? Click the '));
-  const infoImg = document.createElement('img');
-  infoImg.src = 'info-icon.svg';
-  infoImg.width = 16;
-  infoImg.height = 16;
-  infoImg.alt = 'info';
-  infoImg.style.cssText = 'vertical-align:middle; margin:0 2px;';
-  footer.appendChild(infoImg);
-  footer.appendChild(document.createTextNode(' button in the top bar anytime.'));
+  footer.appendChild(document.createTextNode('Need help? Open the '));
+  // #149: help lives in the ☰ menu now. Inline hamburger glyph (createElementNS, no innerHTML).
+  const menuSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  menuSvg.setAttribute('width', '16');
+  menuSvg.setAttribute('height', '16');
+  menuSvg.setAttribute('viewBox', '0 0 24 24');
+  menuSvg.setAttribute('fill', 'none');
+  menuSvg.setAttribute('stroke', 'currentColor');
+  menuSvg.setAttribute('stroke-width', '2');
+  menuSvg.setAttribute('stroke-linecap', 'round');
+  menuSvg.setAttribute('aria-hidden', 'true');
+  menuSvg.style.cssText = 'vertical-align:middle; margin:0 2px;';
+  [6, 12, 18].forEach(y => {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', '3');
+    line.setAttribute('y1', String(y));
+    line.setAttribute('x2', '21');
+    line.setAttribute('y2', String(y));
+    menuSvg.appendChild(line);
+  });
+  footer.appendChild(menuSvg);
+  footer.appendChild(document.createTextNode(' menu in the top bar and choose Help & tutorial.'));
   wrap.appendChild(footer);
 
   container.textContent = '';
@@ -3394,6 +3407,7 @@ function initThemeToggle() {
   const syncLabel = () => {
     const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
     btn.setAttribute('aria-label', `Switch to ${next} theme`);
+    btn.textContent = `Switch to ${next} theme`;
   };
 
   syncLabel();
@@ -3523,7 +3537,7 @@ if (boardNameElement) {
 }
 
 // ===== WELCOME MODAL LOGIC =====
-// #welcome-modal is now the info modal only (opened via (?) button).
+// #welcome-modal is now the info modal only (opened via the ☰ menu Help & tutorial row).
 // #31: the separate first-run "Welcome to SpotBoard!" modal was removed — it only gated the
 // empty state and its "Let's go →" just reloaded to the same screen. The empty-state
 // heading + "Try it on Wikipedia →" CTA now carries the welcome.
@@ -3542,7 +3556,7 @@ if (gotItBtn) {
   });
 }
 
-// (?) Info button - open welcome/info modal
+// Help & tutorial menu row - open welcome/info modal
 if (infoBtn) {
   infoBtn.addEventListener('click', () => {
     welcomeModal.style.display = 'flex';

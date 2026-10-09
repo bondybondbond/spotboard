@@ -2002,39 +2002,7 @@
       background: #f0f1f3 !important;
     }
 
-    /* ===== THEME TOGGLE (header, next to Refresh All) — issue #22 ===== */
-    #theme-toggle-btn {
-      width: 34px;
-      height: 34px;
-      padding: 4px;
-      background: none;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      color: #fff;                 /* sits on the gradient header in both themes */
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      transition: background 0.2s ease;
-    }
-    #theme-toggle-btn:hover { background: rgba(255,255,255,0.16); }
-    #theme-toggle-btn:focus-visible {
-      outline: 2px solid rgba(255,255,255,0.9);
-      outline-offset: 2px;
-    }
-    #theme-toggle-btn svg { width: 18px; height: 18px; display: block; }
-    /* show the icon for the mode you'll switch TO. Light = show moon. */
-    #theme-toggle-btn .sb-icon-sun  { display: none; }
-    #theme-toggle-btn .sb-icon-moon { display: block; }
-    :root[data-theme="dark"] #theme-toggle-btn .sb-icon-sun  { display: block; }
-    :root[data-theme="dark"] #theme-toggle-btn .sb-icon-moon { display: none; }
-    @media (prefers-color-scheme: dark) {
-      :root:not([data-theme]) #theme-toggle-btn .sb-icon-sun  { display: block; }
-      :root:not([data-theme]) #theme-toggle-btn .sb-icon-moon { display: none; }
-    }
-
-    /* ===== ADVANCED MENU (header, hamburger) — issue #59 export/import ===== */
+    /* ===== HEADER MENU (hamburger) — #59 export/import; #149 added Help + theme toggle (#22) ===== */
     #advanced-menu-wrap { position: relative; flex-shrink: 0; }
     #advanced-menu-btn {
       width: 34px;
@@ -2044,7 +2012,7 @@
       border: none;
       border-radius: 8px;
       cursor: pointer;
-      color: rgba(255,255,255,0.75);
+      color: #fff;                 /* #149: it is the only route to Help now — full white, as the old theme button was */
       display: flex;
       align-items: center;
       justify-content: center;
@@ -2079,6 +2047,8 @@
       color: var(--text-primary);
     }
     #advanced-menu-dropdown button:hover { background: var(--surface-inset); }
+    #advanced-menu-dropdown button:focus-visible { outline: 2px solid var(--link-chrome); outline-offset: -2px; }
+    #advanced-menu-dropdown .sb-menu-divider { height: 1px; margin: 4px 0; background: var(--border-subtle); }
 
     /* #22: NOT tokenised — .practice-pill only ever renders inside the light-only
        welcome modal, so it keeps its literal light palette in both themes. */
@@ -2637,20 +2607,18 @@
       </h1>
       <div style="display: flex; gap: 10px; align-items: center;">
         <div id="advanced-menu-wrap">
-          <button id="advanced-menu-btn" type="button" aria-label="Advanced options" title="Advanced options">
+          <button id="advanced-menu-btn" type="button" aria-label="Menu" title="Menu">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
           <div id="advanced-menu-dropdown">
+            <button id="info-btn" type="button">Help &amp; tutorial</button>
+            <button id="theme-toggle-btn" type="button" aria-label="Switch to dark theme">Switch to dark theme</button>
+            <div class="sb-menu-divider" role="separator"></div>
             <button id="export-board-btn" type="button">Export board</button>
             <button id="import-board-btn" type="button">Import board</button>
           </div>
           <input id="import-board-file" type="file" accept="application/json" style="display:none;" />
         </div>
-        <button id="theme-toggle-btn" type="button" aria-label="Switch to dark theme" title="Switch theme">
-          <svg class="sb-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-          <svg class="sb-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-        </button>
-        <button id="info-btn" style="padding: 4px 8px; background: none; border: none; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #667eea; line-height: 1;" title="Show tutorial"><img src="info-icon.svg" width="33" height="33" alt="info" style="display:block;"></button>
         <button id="refresh-all-btn" style="padding: 8px 16px; background: white; color: #1B2344; border: 1px solid rgba(27,35,68,0.15); border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 6px; transition: all 0.2s ease;">
           <svg width="18" height="18" viewBox="0 0 1200 1200" fill="#2BB5AD" xmlns="http://www.w3.org/2000/svg"><path d="M600,0C308.74,0,66.009,207.555,11.499,482.812h166.553 C229.37,297.756,398.603,161.719,600,161.719c121.069,0,230.474,49.195,309.668,128.613l-192.48,192.48h304.762H1200V0 l-175.781,175.781C915.653,67.181,765.698,0,600,0z M0,717.188V1200l175.781-175.781C284.346,1132.819,434.302,1200,600,1200 c291.26,0,533.991-207.555,588.501-482.812h-166.553C970.631,902.243,801.396,1038.281,600,1038.281 c-121.069,0-230.474-49.195-309.668-128.613l192.48-192.48H0z"/></svg>
           Refresh All
