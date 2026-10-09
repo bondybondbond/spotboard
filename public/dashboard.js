@@ -2765,6 +2765,11 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           // Remove card from DOM
           card.remove();
 
+          // #154: the "Capture a site" count depends on the card count, so re-derive it here
+          // (0 cards → the empty state below replaces them; filterCardsToBoard hides them off the All tab)
+          grid.querySelectorAll('.ghost-card').forEach(g => g.remove());
+          if (components.length > 0) renderGhostCards(grid, components);
+
           // Update board tab counts and per-board empty state
           filterCardsToBoard(activeBoard);
           loadBoards().then(boards => renderTabTray(boards, allComponents));
