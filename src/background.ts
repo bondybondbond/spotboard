@@ -121,10 +121,16 @@ async function sendGA4Event(eventName: string, customParams: Record<string, unkn
       }]
     };
 
-    // Set user_id: 'owner' for dev builds (analytics exclusion), or local install UUID for real users
+    // Internal = owner flag OR an unpacked build (no update_url), checked per send so it never
+    // depends on the stored flag having been written first. Internal events carry user_id 'owner'
+    // (BigQuery filter) and traffic_type 'internal' (GA4's built-in internal-traffic data filter).
+    const isInternal = isOwnerCached || !chrome.runtime.getManifest().update_url;
     const localData = await chrome.storage.local.get('user_id');
     const localUserId = localData['user_id'] as string | undefined;
-    payload.user_id = isOwnerCached ? 'owner' : localUserId;
+    payload.user_id = isInternal ? 'owner' : localUserId;
+    if (isInternal) {
+      (payload.events as Array<{ params: Record<string, unknown> }>)[0].params.traffic_type = 'internal';
+    }
 
     // GA4 MP: forward the UA string so GA4 can populate Browser / OS / Device / Platform.
     // UA string only — never full URLs, page titles, or captured content (issue #24).
