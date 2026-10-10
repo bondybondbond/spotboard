@@ -144,9 +144,13 @@ test('wrapper: a digit-leading class (Tailwind `2xl:flex`) now captures instead 
   assert.ok(selectorFindsElement(sel, el), `"${sel}" does not find the div`)
 })
 
-test('wrapper: a data-testid containing quotes (invalid attribute selector) returns null instead of throwing', () => {
+test('wrapper: a data-testid containing quotes now captures instead of returning null (#182)', () => {
+  // Before #182 the unescaped `"` made the attribute selector invalid, generateSelector threw, and #178 turned that into null.
+  // Declared test edit (invariant 6): the requirement changed from "refuse cleanly" to "capture".
+  // The clean-refusal behaviour itself stays covered by the `pick:` tests above.
   document.body.innerHTML = '<div data-testid=\'say "hi" now\'>x</div>'
   const el = document.querySelector('div')
-  assert.throws(() => __generateSelectorForTest(el))
-  assert.equal(__generateCaptureSelectorForTest(el), null)
+  const sel = __generateCaptureSelectorForTest(el)
+  assert.notEqual(sel, null)
+  assert.ok(selectorFindsElement(sel, el), `"${sel}" does not find the div`)
 })

@@ -680,6 +680,14 @@ function escapeCSSClass(className: string): string {
   return CSS.escape(className);
 }
 
+// Helper: Escape a value for a double-quoted attribute selector `[attr="..."]` (#182). Only `\` and `"`:
+// a bare `"` ends the string early (selector throws, capture refused) and a bare `\` starts an escape
+// (`\s` quietly means "s", so the selector matches nothing). Deliberately NOT CSS.escape -- that is for
+// identifiers and rewrites spaces/punctuation that already work inside quotes (`a b` -> `a\ b`).
+function escapeAttrValue(value: string): string {
+  return value.replace(/[\\"]/g, '\\$&');
+}
+
 // Helper: Build base selector (tag + classes + data attrs)
 function buildBaseSelector(element: HTMLElement): string {
   let selector = element.tagName.toLowerCase();
@@ -714,7 +722,7 @@ function buildBaseSelector(element: HTMLElement): string {
   for (const attr of usefulAttrs) {
     if (element.hasAttribute(attr)) {
       const value = element.getAttribute(attr);
-      selector += `[${attr}="${value}"]`;
+      selector += `[${attr}="${escapeAttrValue(value ?? '')}"]`;
       break; // One data attr is usually enough
     }
   }
@@ -741,7 +749,7 @@ function buildPathFromUniqueAncestor(element: HTMLElement, baseSelector: string)
     const usefulAttrs = ['data-testid', 'data-component', 'data-section', 'data-module', 'data-type'];
     for (const attr of usefulAttrs) {
       if (current.hasAttribute(attr)) {
-        const ancestorSelector = `${current.tagName.toLowerCase()}[${attr}="${current.getAttribute(attr)}"]`;
+        const ancestorSelector = `${current.tagName.toLowerCase()}[${attr}="${escapeAttrValue(current.getAttribute(attr) ?? '')}"]`;
         pathParts.unshift(ancestorSelector);
         const fullPath = pathParts.join(' > ');
         if (document.querySelectorAll(fullPath).length === 1) {
