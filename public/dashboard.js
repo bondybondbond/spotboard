@@ -1660,156 +1660,147 @@ function renderSubsequentEmptyState(container) {
 
 // ===== DASHBOARD TOUR (post-onboarding) =====
 
-function renderDashboardTour() {
-  if (document.getElementById('sb-dashboard-tour')) return;
-  const tourCard = document.createElement('div');
-  tourCard.id = 'sb-dashboard-tour';
-  tourCard.className = 'dashboard-tour-card';
+// #183: ONE short callout pointing at the first card's Refresh button. It teaches the one thing a new
+// user must know: a card is a saved copy and only changes when they press Refresh. It used to be a
+// 3-screen tour that rendered (and burned its "shown" flag) in the BACKGROUND dashboard tab while the
+// user was still capturing, then "Go to SpotBoard" reloaded the tab and wiped it — most new users never saw it.
+// The gate: render only when the tab is actually visible, and write dashboardTourShown at that moment.
+function showDashboardTourWhenVisible() {
+  const start = () => {
+    // Re-read: another dashboard tab may already have shown it.
+    chrome.storage.local.get(['dashboardTourShown'], ({ dashboardTourShown }) => {
+      if (dashboardTourShown) return
+      // "start == shown" (dev plan 16 / GitHub #16): persist as the tour appears so a mid-tour reload
+      // cannot re-arm it on a board of real cards. Data safety outranks tour completion.
+      chrome.storage.local.set({ dashboardTourShown: true })
+      renderDashboardTour()
+    })
+  }
+  if (document.visibilityState === 'visible') {
+    start()
+    return
+  }
+  const onVisible = () => {
+    if (document.visibilityState !== 'visible') return
+    // "Go to SpotBoard" (background.ts focusDashboard) stashes pendingHighlightCard, activates this tab, THEN
+    // reloads it. Rendering in that gap would burn the flag and be wiped by the reload (seen in the real run),
+    // so a fresh handoff means "a reload is coming — let the reloaded page show it". Same 60s window the
+    // render uses to consume the handoff.
+    chrome.storage.session.get('pendingHighlightCard', ({ pendingHighlightCard }) => {
+      if (pendingHighlightCard && Date.now() - (pendingHighlightCard.ts || 0) < 60000) return
+      document.removeEventListener('visibilitychange', onVisible)
+      start()
+    })
+  }
+  document.addEventListener('visibilitychange', onVisible)
+}
 
-  // GitHub #21: an obvious, immediate exit from any step (visible ✕ + Esc).
+function renderDashboardTour() {
+  if (document.getElementById('sb-dashboard-tour')) return
+  const findAnchor = () => [...document.querySelectorAll('.refresh-single-btn')].find(b => b.getBoundingClientRect().width > 0) || null
+  let anchor = findAnchor()
+  // Out of view (e.g. a long board): bring the button on screen before pointing at it.
+  if (anchor) {
+    const r = anchor.getBoundingClientRect()
+    if (r.top < 0 || r.bottom + 260 > window.innerHeight) anchor.scrollIntoView({ block: 'center' }) // 260 = room for the callout below the button
+  }
+
+  const tourCard = document.createElement('div')
+  tourCard.id = 'sb-dashboard-tour'
+  tourCard.className = 'dashboard-tour-card'
+  tourCard.dataset.step = '1'
+
+  // Keeps the callout glued to the button through scroll / resize / a board re-render.
+  let placeQueued = false
+  function placeTour() {
+    placeQueued = false
+    // A board-tab switch hides the card (display:none, still connected, zero-size rect): re-find the next visible one.
+    if (!anchor || !anchor.isConnected || anchor.getBoundingClientRect().width === 0) anchor = findAnchor()
+    tourCard.classList.toggle('dashboard-tour-card--anchored', !!anchor)
+    if (!anchor) { tourCard.style.left = tourCard.style.top = ''; return }
+    const r = anchor.getBoundingClientRect()
+    const w = tourCard.offsetWidth
+    const left = Math.max(12, Math.min(r.right - w, window.innerWidth - w - 12))
+    tourCard.style.left = left + 'px'
+    // Never let "Got it" fall below a short window: clamp (it may then overlap the button, but stays reachable).
+    tourCard.style.top = Math.max(12, Math.min(r.bottom + 14, window.innerHeight - tourCard.offsetHeight - 12)) + 'px'
+    const arrowLeft = Math.max(16, Math.min(r.left + r.width / 2 - left - 7, w - 30))
+    tourCard.style.setProperty('--tour-arrow-left', arrowLeft + 'px')
+  }
+  function queuePlace() {
+    if (placeQueued) return
+    placeQueued = true
+    requestAnimationFrame(placeTour)
+  }
+
+  // GitHub #21: an obvious, immediate exit (visible ✕ + Esc + Got it).
   // DATA-SAFETY INVARIANT (LEARNINGS UI-12 / GitHub #16): this only removes the
   // overlay DOM and sets a boolean flag — it never touches componentsData and
   // never clicks a card's Delete action. Nothing in onboarding/tour may delete user content.
   function exitTour(reason) {
-    document.removeEventListener('keydown', onKeydown);
-    document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
-    const step = tourCard.dataset.step;
-    tourCard.remove();
-    // "start == shown" is already written at render time (#16); re-write defensively
-    // so the legacy hasExistingCards path also stays covered. No location.reload() —
-    // the board is already rendered underneath.
-    chrome.storage.local.set({ dashboardTourShown: true });
+    document.removeEventListener('keydown', onKeydown)
+    window.removeEventListener('resize', queuePlace)
+    window.removeEventListener('scroll', queuePlace, true)
+    document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'))
+    tourCard.remove()
+    // "start == shown" is already written when the tour appears (#16); re-write defensively.
+    // No location.reload() — the board is already rendered underneath.
+    chrome.storage.local.set({ dashboardTourShown: true })
     if (window.GA4 && window.GA4.sendEvent) {
-      window.GA4.sendEvent('dashboard_tour_dismissed', { step, reason });
+      window.GA4.sendEvent('dashboard_tour_dismissed', { step: '1', reason })
     }
   }
 
   function onKeydown(e) {
-    if (e.key === 'Escape') exitTour('esc');
+    if (e.key === 'Escape') exitTour('esc')
   }
 
-  // Present on every step. The card is rebuilt per step (tourCard.textContent = ''),
-  // so each buildStepN() re-adds this.
-  function appendCloseButton() {
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'dashboard-tour-close';
-    closeBtn.setAttribute('aria-label', 'Close tour');
-    closeBtn.textContent = '✕';
-    closeBtn.addEventListener('click', () => exitTour('close'));
-    tourCard.appendChild(closeBtn);
-  }
+  const arrow = document.createElement('span')
+  arrow.className = 'dashboard-tour-arrow'
+  tourCard.appendChild(arrow)
+  const closeBtn = document.createElement('button')
+  closeBtn.type = 'button'
+  closeBtn.className = 'dashboard-tour-close'
+  closeBtn.setAttribute('aria-label', 'Close tour')
+  closeBtn.textContent = '✕'
+  closeBtn.addEventListener('click', () => exitTour('close'))
+  tourCard.appendChild(closeBtn)
+  const title = document.createElement('p')
+  title.className = 'dashboard-tour-title'
+  title.textContent = 'Press this to update a card'
+  tourCard.appendChild(title)
+  const body = document.createElement('p')
+  body.className = 'dashboard-tour-body'
+  // Inline refresh SVG between text nodes (createElementNS, no innerHTML)
+  body.appendChild(document.createTextNode('Cards are saved copies and do not update by themselves. Press '))
+  const refreshWrapper = document.createElement('span')
+  refreshWrapper.className = 'icon-circle-wrapper'
+  const refreshSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  refreshSvg.setAttribute('width', '18')
+  refreshSvg.setAttribute('height', '18')
+  refreshSvg.setAttribute('viewBox', '0 0 1920 1920')
+  refreshSvg.setAttribute('fill', '#f5f5f7')
+  const rPath = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  rPath.setAttribute('d', 'M960 0v213.333c411.627 0 746.667 334.934 746.667 746.667S1371.627 1706.667 960 1706.667 213.333 1371.733 213.333 960c0-197.013 78.4-382.507 213.334-520.747v254.08H640V106.667H53.333V320h191.04C88.64 494.08 0 720.96 0 960c0 529.28 430.613 960 960 960s960-430.72 960-960S1489.387 0 960 0')
+  rPath.setAttribute('fill-rule', 'evenodd')
+  refreshSvg.appendChild(rPath)
+  refreshWrapper.appendChild(refreshSvg)
+  body.appendChild(refreshWrapper)
+  body.appendChild(document.createTextNode(' here for this card, or Refresh All at the top for every card. Links inside a card open the original page.'))
+  tourCard.appendChild(body)
+  const btn = document.createElement('button')
+  btn.className = 'dashboard-tour-btn'
+  btn.textContent = 'Got it'
+  btn.addEventListener('click', () => exitTour('got_it'))
+  tourCard.appendChild(btn)
 
-  function buildStep1() {
-    tourCard.textContent = '';
-    tourCard.dataset.step = '1';
-    appendCloseButton();
-    const title = document.createElement('p');
-    title.className = 'dashboard-tour-title';
-    title.textContent = '💡 Refreshing your spots';
-    tourCard.appendChild(title);
-    const body = document.createElement('p');
-    body.className = 'dashboard-tour-body';
-    // Inline refresh SVG between text nodes (createElementNS, no innerHTML)
-    body.appendChild(document.createTextNode('Press '));
-    const refreshWrapper = document.createElement('span');
-    refreshWrapper.className = 'icon-circle-wrapper';
-    const refreshSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    refreshSvg.setAttribute('width', '18');
-    refreshSvg.setAttribute('height', '18');
-    refreshSvg.setAttribute('viewBox', '0 0 1920 1920');
-    refreshSvg.setAttribute('fill', '#f5f5f7');
-    const rPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    rPath.setAttribute('d', 'M960 0v213.333c411.627 0 746.667 334.934 746.667 746.667S1371.627 1706.667 960 1706.667 213.333 1371.733 213.333 960c0-197.013 78.4-382.507 213.334-520.747v254.08H640V106.667H53.333V320h191.04C88.64 494.08 0 720.96 0 960c0 529.28 430.613 960 960 960s960-430.72 960-960S1489.387 0 960 0');
-    rPath.setAttribute('fill-rule', 'evenodd');
-    refreshSvg.appendChild(rPath);
-    refreshWrapper.appendChild(refreshSvg);
-    body.appendChild(refreshWrapper);
-    body.appendChild(document.createTextNode(' on any card to refresh just that one, or use '));
-    const refreshAllSpan = document.createElement('span');
-    refreshAllSpan.className = 'icon-circle-wrapper';
-    refreshAllSpan.insertAdjacentHTML('beforeend', '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 1200 1200" fill="#2BB5AD"><path d="M600,0C308.74,0,66.009,207.555,11.499,482.812h166.553C229.37,297.756,398.603,161.719,600,161.719c121.069,0,230.474,49.195,309.668,128.613l-192.48,192.48h304.762H1200V0l-175.781,175.781C915.653,67.181,765.698,0,600,0z M0,717.188V1200l175.781-175.781C284.346,1132.819,434.302,1200,600,1200c291.26,0,533.991-207.555,588.501-482.812h-166.553C970.631,902.243,801.396,1038.281,600,1038.281c-121.069,0-230.474-49.195-309.668-128.613l192.48-192.48H0z"/></svg>');
-    body.appendChild(refreshAllSpan);
-    body.appendChild(document.createTextNode('Refresh All in the top bar to update everything at once.'));
-    tourCard.appendChild(body);
-    const btn = document.createElement('button');
-    btn.className = 'dashboard-tour-btn';
-    btn.textContent = 'Got it →';
-    btn.addEventListener('click', () => buildStep2());
-    tourCard.appendChild(btn);
-    // Pulse highlight on refresh buttons
-    document.querySelectorAll('.refresh-single-btn, #refresh-all-btn').forEach(el => el.classList.add('tour-highlight-btn'));
-  }
-
-  function buildStep2() {
-    // Move pulse highlight from refresh to the ⋯ menu buttons (Delete lives in that menu since #148)
-    document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
-    tourCard.textContent = '';
-    tourCard.dataset.step = '2';
-    appendCloseButton();
-    const title = document.createElement('p');
-    title.className = 'dashboard-tour-title';
-    title.textContent = 'Changed your mind?';
-    tourCard.appendChild(title);
-    const body = document.createElement('p');
-    body.className = 'dashboard-tour-body';
-    // Inline ⋯ SVG between text nodes (createElementNS, no innerHTML)
-    body.appendChild(document.createTextNode('Press the '));
-    const menuWrapper = document.createElement('span');
-    menuWrapper.className = 'icon-circle-wrapper';
-    const menuSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    menuSvg.setAttribute('width', '16');
-    menuSvg.setAttribute('height', '16');
-    menuSvg.setAttribute('viewBox', '0 0 15 15');
-    menuSvg.setAttribute('fill', 'none');
-    const mPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    mPath.setAttribute('d', 'M3.625 7.5C3.625 8.12132 3.12132 8.625 2.5 8.625C1.87868 8.625 1.375 8.12132 1.375 7.5C1.375 6.87868 1.87868 6.375 2.5 6.375C3.12132 6.375 3.625 6.87868 3.625 7.5ZM8.625 7.5C8.625 8.12132 8.12132 8.625 7.5 8.625C6.87868 8.625 6.375 8.12132 6.375 7.5C6.375 6.87868 6.87868 6.375 7.5 6.375C8.12132 6.375 8.625 6.87868 8.625 7.5ZM13.625 7.5C13.625 8.12132 13.1213 8.625 12.5 8.625C11.8787 8.625 11.375 8.12132 11.375 7.5C11.375 6.87868 11.8787 6.375 12.5 6.375C13.1213 6.375 13.625 6.87868 13.625 7.5Z');
-    mPath.setAttribute('fill', '#f5f5f7');
-    menuSvg.appendChild(mPath);
-    menuWrapper.appendChild(menuSvg);
-    body.appendChild(menuWrapper);
-    body.appendChild(document.createTextNode(' button on a card to delete it or pause its refresh.'));
-    tourCard.appendChild(body);
-    const skipBtn = document.createElement('button');
-    skipBtn.className = 'dashboard-tour-btn';
-    skipBtn.textContent = 'Continue →';
-    skipBtn.addEventListener('click', () => {
-      // DATA-SAFETY INVARIANT (dev plan 16 / GitHub #16): this step is instructional only.
-      // It must never click the card menu's Delete row or delete a card. Deletion happens solely from a
-      // real user click that passes confirm().
-      document.querySelectorAll('.tour-highlight-btn').forEach(el => el.classList.remove('tour-highlight-btn'));
-      document.removeEventListener('keydown', onKeydown); // #21: tour is ending — drop the Esc listener
-      const cont = document.getElementById('components-container');
-      chrome.storage.local.set({ dashboardTourShown: true }, () => {
-        showDashboardTourCompletion(cont);
-      });
-    });
-    tourCard.appendChild(skipBtn);
-    document.querySelectorAll('.card-menu-btn').forEach(el => el.classList.add('tour-highlight-btn'));
-  }
-
-  function buildStep0() {
-    tourCard.textContent = '';
-    tourCard.dataset.step = '0';
-    appendCloseButton();
-    const title = document.createElement('p');
-    title.className = 'dashboard-tour-title';
-    title.textContent = 'Here’s your board';
-    tourCard.appendChild(title);
-    const body = document.createElement('p');
-    body.className = 'dashboard-tour-body';
-    body.textContent = 'Two quick things you’ll use a lot:';
-    tourCard.appendChild(body);
-    const btn = document.createElement('button');
-    btn.className = 'dashboard-tour-btn';
-    btn.textContent = 'Got it →';
-    btn.addEventListener('click', () => buildStep1());
-    tourCard.appendChild(btn);
-  }
-
-  buildStep0();
-  document.body.appendChild(tourCard);
-  document.addEventListener('keydown', onKeydown); // GitHub #21: Esc exits from any step
+  document.querySelectorAll('.refresh-single-btn, #refresh-all-btn').forEach(el => el.classList.add('tour-highlight-btn'))
+  document.body.appendChild(tourCard)
+  placeTour()
+  window.addEventListener('resize', queuePlace)
+  window.addEventListener('scroll', queuePlace, true)
+  document.addEventListener('keydown', onKeydown) // GitHub #21: Esc exits
+  if (window.GA4 && window.GA4.sendEvent) window.GA4.sendEvent('dashboard_tour_started', {})
 }
 
 // ===== POST-FIRST-CAPTURE NUDGE: Ghost cards + site picker modal =====
@@ -3100,12 +3091,8 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
         return;
       }
       if (onboardingCompleted && !dashboardTourShown && components.length > 0) {
-        // "start == shown" (dev plan 16 / GitHub #16): persist immediately so a mid-tour
-        // reload — manual extension reload, or the storage.onChanged reload path when
-        // hasExistingCards is falsy — cannot re-arm the tour on a board of real cards.
-        // Data safety outranks tour completion.
-        chrome.storage.local.set({ dashboardTourShown: true });
-        renderDashboardTour();
+        // #183: shown (and flagged) only once this tab is actually visible.
+        showDashboardTourWhenVisible();
       }
     });
 

@@ -1575,6 +1575,31 @@
       box-shadow: 0 8px 32px rgba(0,0,0,.35), 0 0 0 2px #fff;
       font-family: inherit;
     }
+    /* #183: the tour is one callout pointing at the first card's Refresh button. Position (left/top,
+       --tour-arrow-left) is set from JS; without an anchor it falls back to the centred card above. */
+    .dashboard-tour-card--anchored {
+      transform: none;
+      right: auto;
+      box-sizing: border-box;
+      width: 360px;
+      min-width: 0;
+      max-width: calc(100vw - 24px);
+    }
+    .dashboard-tour-arrow { display: none; }
+    .dashboard-tour-card--anchored .dashboard-tour-arrow {
+      display: block;
+      position: absolute;
+      top: -8px;
+      left: var(--tour-arrow-left, 24px);
+      width: 14px;
+      height: 14px;
+      background: #1c1c1e;
+      transform: rotate(45deg);
+      box-shadow: -2px -2px 0 #fff;
+    }
+    .dashboard-tour-card--anchored .dashboard-tour-title { font-size: 16px; padding-right: 24px; }
+    .dashboard-tour-card--anchored .dashboard-tour-body { font-size: 15px; }
+    .dashboard-tour-card--anchored .dashboard-tour-btn { padding: 8px 18px; font-size: 15px; }
     /* GitHub #21: always-present exit control on the tour card */
     .dashboard-tour-close {
       position: absolute;
