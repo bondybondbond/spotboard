@@ -18,7 +18,7 @@ function sliceFunction(name) {
 }
 
 // One "page load" of the dashboard against a shared storage object (storage survives reloads, the page does not).
-function loadPage(store, { visible, cards = 1, session = {}, size = null }) {
+function loadPage(store, { visible, cards = 1, session = {}, size = null, deferGet = false }) {
   const dom = new JSDOM('<body><button id="refresh-all-btn"></button></body>', { pretendToBeVisual: true })
   const { document, window } = dom.window
   let state = visible ? 'visible' : 'hidden'
@@ -40,14 +40,16 @@ function loadPage(store, { visible, cards = 1, session = {}, size = null }) {
     window.innerHeight = size.h
     Object.defineProperty(window.HTMLElement.prototype, 'offsetWidth', { get: () => size.cardW })
     Object.defineProperty(window.HTMLElement.prototype, 'offsetHeight', { get: () => size.cardH })
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollHeight', { get: () => size.cardH })
   }
   const writes = []
+  const queued = []
   const events = []
   window.GA4 = { sendEvent: (name, params) => events.push({ name, params }) }
   const chrome = {
     storage: {
       local: {
-        get(keys, cb) { cb(Object.fromEntries(keys.map(k => [k, store[k]]))) },
+        get(keys, cb) { const run = () => cb(Object.fromEntries(keys.map(k => [k, store[k]]))); if (deferGet) queued.push(run); else run() },
         set(obj) { writes.push(obj); Object.assign(store, obj) },
       },
       session: { get(key, cb) { cb({ [key]: session[key] }) } },
@@ -65,7 +67,7 @@ function loadPage(store, { visible, cards = 1, session = {}, size = null }) {
     state = v ? 'visible' : 'hidden'
     document.dispatchEvent(new window.Event('visibilitychange'))
   }
-  return { sandbox, document, window, writes, events, show, setVisible, rects, rectCalls, scrolls }
+  return { sandbox, document, window, writes, events, show, setVisible, rects, rectCalls, scrolls, flush: () => queued.splice(0).forEach(f => f()) }
 }
 
 test('hidden tab: nothing rendered, nothing written, no started event', () => {
@@ -86,11 +88,12 @@ test('hidden tab that becomes visible: shows once, flag written then, listener r
   assert.ok(page.show(), 'tour appears when the tab becomes visible')
   assert.equal(store.dashboardTourShown, true)
   assert.deepEqual(page.events.map(e => e.name), ['dashboard_tour_started'])
-  // hide + show again: the single-shot listener is gone, no second render / second started event
+  // hide + show again with the flag cleared: only a LEFTOVER listener could render it a second time
   page.show().remove()
+  delete store.dashboardTourShown
   page.setVisible(false)
   page.setVisible(true)
-  assert.equal(page.show(), null)
+  assert.equal(page.show(), null, 'the single-shot visibilitychange listener was removed')
   assert.equal(page.events.length, 1)
 })
 
@@ -199,6 +202,8 @@ test('narrow + short window: the callout is clamped inside the viewport (Got it 
   assert.equal(page.scrolls.n, 1, 'asked to bring the button into view first (no room for the callout below it)')
   assert.equal(card.style.left, '12px') // button at x 300-326 would push a 336px card off the left; kept at the 12px gutter
   assert.equal(card.style.top, '12px') // 146+14 = 160 would put a 220px card past a 200px window; clamped to the top gutter
+  assert.equal(card.style.maxHeight, '176px') // window 200 - 24: the card can never be taller than the window ...
+  assert.equal(card.style.overflowY, 'auto') // ... and scrolls inside instead, so Got it is always reachable
   const arrow = parseFloat(card.style.getPropertyValue('--tour-arrow-left'))
   assert.ok(arrow >= 16 && arrow <= 336 - 30, 'arrow stays inside the card')
 })
@@ -228,4 +233,33 @@ test('after dismissal nothing listens any more: no placement on scroll/resize, a
   page.document.dispatchEvent(new page.window.KeyboardEvent('keydown', { key: 'Escape' }))
   assert.equal(page.rectCalls.n, callsAfterExit, 'resize/scroll listeners were removed')
   assert.equal(page.events.filter(e => e.name === 'dashboard_tour_dismissed').length, 1, 'keydown listener was removed')
+})
+
+test('horizontal upper clamp: a button near the right edge does not push the callout past the window', () => {
+  const page = loadPage({}, { visible: true, size: { w: 800, h: 700, cardW: 336, cardH: 220 } })
+  page.rects[0] = { left: 764, right: 790, top: 120, bottom: 146, width: 26, height: 26 }
+  page.sandbox.showDashboardTourWhenVisible()
+  assert.equal(page.show().style.left, '452px') // 800 - 336 - 12, not the button-aligned 454
+  assert.equal(page.show().style.overflowY, '') // fits: no inner scroll
+})
+
+test('the tab flips back to hidden while the flag is being read -> nothing rendered or written, shows on the next visible', () => {
+  const store = {}
+  const page = loadPage(store, { visible: true, deferGet: true })
+  page.sandbox.showDashboardTourWhenVisible()
+  page.setVisible(false)
+  page.flush()
+  assert.equal(page.show(), null)
+  assert.deepEqual(page.writes, [])
+  page.setVisible(true)
+  page.flush()
+  assert.ok(page.show())
+  assert.equal(store.dashboardTourShown, true)
+})
+
+test('CSS guard: the anchored callout stays inside the window (border-box, viewport-capped width)', () => {
+  const css = fs.readFileSync(new URL('../public/dashboard.html', import.meta.url), 'utf8')
+  const block = css.slice(css.indexOf('.dashboard-tour-card--anchored {'), css.indexOf('}', css.indexOf('.dashboard-tour-card--anchored {')))
+  assert.match(block, /box-sizing:\s*border-box/)
+  assert.match(block, /max-width:\s*calc\(100vw - 24px\)/)
 })

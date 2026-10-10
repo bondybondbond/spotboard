@@ -1670,15 +1670,16 @@ function showDashboardTourWhenVisible() {
     // Re-read: another dashboard tab may already have shown it.
     chrome.storage.local.get(['dashboardTourShown'], ({ dashboardTourShown }) => {
       if (dashboardTourShown) return
+      // The tab can flip back to hidden while the read is in flight: wait again rather than render unseen.
+      if (document.visibilityState !== 'visible') {
+        waitForVisible()
+        return
+      }
       // "start == shown" (dev plan 16 / GitHub #16): persist as the tour appears so a mid-tour reload
       // cannot re-arm it on a board of real cards. Data safety outranks tour completion.
       chrome.storage.local.set({ dashboardTourShown: true })
       renderDashboardTour()
     })
-  }
-  if (document.visibilityState === 'visible') {
-    start()
-    return
   }
   const onVisible = () => {
     if (document.visibilityState !== 'visible') return
@@ -1687,12 +1688,15 @@ function showDashboardTourWhenVisible() {
     // so a fresh handoff means "a reload is coming — let the reloaded page show it". Same 60s window the
     // render uses to consume the handoff.
     chrome.storage.session.get('pendingHighlightCard', ({ pendingHighlightCard }) => {
+      if (document.visibilityState !== 'visible') return
       if (pendingHighlightCard && Date.now() - (pendingHighlightCard.ts || 0) < 60000) return
       document.removeEventListener('visibilitychange', onVisible)
       start()
     })
   }
-  document.addEventListener('visibilitychange', onVisible)
+  const waitForVisible = () => document.addEventListener('visibilitychange', onVisible)
+  if (document.visibilityState === 'visible') start()
+  else waitForVisible()
 }
 
 function renderDashboardTour() {
@@ -1722,8 +1726,12 @@ function renderDashboardTour() {
     const w = tourCard.offsetWidth
     const left = Math.max(12, Math.min(r.right - w, window.innerWidth - w - 12))
     tourCard.style.left = left + 'px'
-    // Never let "Got it" fall below a short window: clamp (it may then overlap the button, but stays reachable).
-    tourCard.style.top = Math.max(12, Math.min(r.bottom + 14, window.innerHeight - tourCard.offsetHeight - 12)) + 'px'
+    // Never let "Got it" fall below a short window: cap the height (scroll inside if it still doesn't fit),
+    // then clamp the top (the card may then overlap the button, but it stays fully reachable).
+    const maxH = window.innerHeight - 24
+    tourCard.style.maxHeight = maxH + 'px'
+    tourCard.style.overflowY = tourCard.scrollHeight > maxH ? 'auto' : ''
+    tourCard.style.top = Math.max(12, Math.min(r.bottom + 14, window.innerHeight - Math.min(tourCard.offsetHeight, maxH) - 12)) + 'px'
     const arrowLeft = Math.max(16, Math.min(r.left + r.width / 2 - left - 7, w - 30))
     tourCard.style.setProperty('--tour-arrow-left', arrowLeft + 'px')
   }
