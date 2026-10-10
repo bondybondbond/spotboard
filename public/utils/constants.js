@@ -13,6 +13,8 @@
 const GA4_MEASUREMENT_ID = 'G-JLJS09NDZ6';
 const GA4_API_SECRET = 'vrH5dBRiSf6xAuVrJpzKlw';
 const GA4_ENDPOINT = `https://www.google-analytics.com/mp/collect?measurement_id=${GA4_MEASUREMENT_ID}&api_secret=${GA4_API_SECRET}`;
+// Unpacked (dev/test) builds send here instead: validates the payload, records nothing in GA4
+const GA4_DEBUG_ENDPOINT = `https://www.google-analytics.com/debug/mp/collect?measurement_id=${GA4_MEASUREMENT_ID}&api_secret=${GA4_API_SECRET}`;
 
 // Session timeout in milliseconds (30 minutes)
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;

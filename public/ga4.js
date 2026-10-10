@@ -313,10 +313,11 @@ async function sendEvent(eventName, customParams = {}, engagementTimeMs = 100) {
       }]
     };
 
-    // Internal = owner flag OR an unpacked build (no update_url), checked per send so it never
-    // depends on the stored flag having been written first. Internal events carry user_id 'owner'
-    // (BigQuery filter) and traffic_type 'internal' (GA4's built-in internal-traffic data filter).
-    const isInternal = isOwnerCached || !chrome.runtime.getManifest().update_url;
+    // Unpacked builds (no update_url) are dev/test: checked per send so it never depends on a
+    // stored flag. Internal = owner flag OR dev build; internal events carry user_id 'owner'
+    // (BigQuery filter) and traffic_type 'internal' (GA4's internal-traffic data filter).
+    const isDevBuild = !chrome.runtime.getManifest().update_url;
+    const isInternal = isOwnerCached || isDevBuild;
     const { user_id: localUserId } = await chrome.storage.local.get('user_id');
     payload.user_id = isInternal ? 'owner' : localUserId;
     if (isInternal) payload.events[0].params.traffic_type = 'internal';
@@ -325,12 +326,19 @@ async function sendEvent(eventName, customParams = {}, engagementTimeMs = 100) {
     // UA string only — never full URLs, page titles, or captured content (issue #24).
     payload.user_agent = navigator.userAgent;
 
-    // Send to GA4
-    const response = await fetch(GA4_ENDPOINT, {
+    // Send to GA4 (dev builds validate only, never recorded; CWS builds record as before)
+    const response = await fetch(isDevBuild ? GA4_DEBUG_ENDPOINT : GA4_ENDPOINT, {
       method: 'POST',
       body: JSON.stringify(payload)
     });
-    
+
+    if (isDevBuild) {
+      const result = await response.json().catch(() => null);
+      if (result && result.validationMessages && result.validationMessages.length) {
+        console.warn('GA4 payload validation:', result.validationMessages);
+      }
+    }
+
     if (!response.ok) {
       console.error('❌ GA4 event failed:', response.status);
       return false;
