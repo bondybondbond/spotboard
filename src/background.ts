@@ -266,7 +266,18 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 // ================================
 // UNINSTALL SURVEY
 // ================================
+// Count timestamps in a rolling 7-day window. Source of truth: public/ga4.js getRollingMetric
+// (can't be imported here - ga4.js attaches to `window`, which a service worker doesn't have).
+async function countRecentEvents(storageKey: string, windowDays = 7): Promise<number> {
+  const stored = await chrome.storage.local.get(storageKey) as Record<string, unknown>;
+  const events = Array.isArray(stored[storageKey]) ? stored[storageKey] as number[] : [];
+  const cutoff = Date.now() - (windowDays * 24 * 60 * 60 * 1000);
+  return events.filter(ts => ts > cutoff).length;
+}
+
 // Set uninstall survey URL with pre-populated analytics (same pattern as feedback forms)
+// The URL is a snapshot: rebuilt on install/update and every service-worker start, not at uninstall time.
+// chrome.runtime.setUninstallURL throws above 1023 chars; every field here is bounded, so it stays far below.
 async function setUninstallSurveyURL() {
   try {
     // Read analytics data from chrome.storage.local
@@ -278,37 +289,43 @@ async function setUninstallSurveyURL() {
     const installTimestamp = parseInt(install_date || Date.now().toString());
     const daysSinceInstall = Math.floor((Date.now() - installTimestamp) / (1000 * 60 * 60 * 24));
     
-    // Get board statistics from chrome.storage.sync
+    // Get board statistics from chrome.storage.sync (cards are the `comp-*` keys, same as ga4.js / dashboard.js)
     const syncData = await chrome.storage.sync.get(null) as Record<string, any>;
-    const components = Object.values(syncData).filter((item: any) => 
-      item && typeof item === 'object' && item.url && item.selector
-    ) as any[];
-    
+    const components = Object.entries(syncData)
+      .filter(([key, item]) => key.startsWith('comp-') && item && typeof item === 'object')
+      .map(([, item]) => item) as any[];
+
     const totalCards = components.length;
-    const activeCards = components.filter((c: any) => !c.isPaused).length;
+    const activeCards = components.filter((c: any) => !c.refreshPaused).length;
     const pausedCardRate = totalCards > 0 ? Math.round((1 - activeCards / totalCards) * 100) : 0;
-    
-    // Calculate average card age
+
+    // Calculate average card age (created_at is an ISO string; legacy cards may lack it)
     const cardAges = components
-      .filter((c: any) => c.createdAt)
-      .map((c: any) => Math.floor((Date.now() - c.createdAt) / (1000 * 60 * 60 * 24)));
-    const avgCardAge = cardAges.length > 0 
+      .map((c: any) => (c.created_at ? new Date(c.created_at).getTime() : NaN))
+      .filter((createdMs: number) => !isNaN(createdMs))
+      .map((createdMs: number) => Math.floor((Date.now() - createdMs) / (1000 * 60 * 60 * 24)));
+    const avgCardAge = cardAges.length > 0
       ? Math.round(cardAges.reduce((sum, age) => sum + age, 0) / cardAges.length)
       : 0;
-    
-    // Get all tracked sites
-    const allSites = [...new Set(components.map((c: any) => {
+
+    // Count of distinct hostnames across the cards stored right now (raw hostnames, same form as GA4's
+    // url_domain). A count, not the list: hostnames must not reach the survey provider (#191).
+    const uniqueSites = new Set(components.map((c: any) => {
       try {
         return new URL(c.url).hostname;
       } catch {
-        return 'unknown';
+        return '';
       }
-    }))].join(', ');
-    
+    }).filter(Boolean)).size;
+
+    // Rolling 7-day usage counters, written by ga4.js incrementRollingMetric (same `timestamp > now - 7d` rule)
+    const boardOpens7days = await countRecentEvents('board_opens_events');
+    const refreshClicks7days = await countRecentEvents('refresh_clicks_events');
+
     // Build Tally URL with all hidden fields (matches feedback-data.js pattern)
     const baseURL = 'https://tally.so/r/A7vEPN';
     const params = new URLSearchParams();
-    
+
     params.append('user_id', user_id || 'unknown');
     params.append('days_since_install', daysSinceInstall.toString());
     params.append('browser_language', chrome.i18n.getUILanguage());
@@ -316,11 +333,11 @@ async function setUninstallSurveyURL() {
     params.append('total_cards', totalCards.toString());
     params.append('active_cards', activeCards.toString());
     params.append('paused_card_rate_%', pausedCardRate.toString());
-    params.append('all_tracked_sites', allSites || 'none');
+    params.append('unique_sites', uniqueSites.toString());
     params.append('avg_card_age_days', avgCardAge.toString());
-    params.append('board_opens_7days', '0'); // Fallback - tracking not yet migrated to service worker
-    params.append('refresh_clicks_7days', '0'); // Fallback - tracking not yet migrated to service worker
-    
+    params.append('board_opens_7days', boardOpens7days.toString());
+    params.append('refresh_clicks_7days', refreshClicks7days.toString());
+
     const uninstallURL = `${baseURL}?${params.toString()}`;
     
     // Set the uninstall URL
