@@ -2758,8 +2758,14 @@ async function refreshComponent(component) {
         // containers at all, so this can't misfire on one.
         // Same slot definition as the tab tier and the scroll-through (LazyLoad, #72) -- one copy.
         const emptyImageSlotCount = typeof LazyLoad !== 'undefined' ? LazyLoad.countEmptyImageSlots(tempDiv) : 0;
+        // #201: the slot half reads "placeholders outnumber real images", not "zero images". HotUKDeals' server
+        // HTML is 30 Vue shells (30 empty slots) plus ONE promo banner <img>; requiring zero images let that
+        // banner hide the shell and every hydrated-only exclusion rule then matched nothing. The 2x margin is a
+        // safety margin chosen from the census gap (healthy pages sit at slots/imgs <= 0.21, the shell at 30),
+        // not tuned to one site; the old `imgs === 0 && slots >= 3` case is a strict subset, so nothing that
+        // escalated before stops escalating.
         const hasImagesMissing = (originalImgCount >= 3 && extractedImgCount === 0) ||
-          (extractedImgCount === 0 && emptyImageSlotCount >= 3);
+          (emptyImageSlotCount >= 3 && extractedImgCount * 2 < emptyImageSlotCount);
 
         // IGN PATTERN: Check for empty content containers
         const contentContainers = tempDiv.querySelectorAll('[class*="details"], [class*="content"], [class*="title"]:not(h1):not(h2):not(h3)');
