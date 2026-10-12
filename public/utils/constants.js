@@ -16,9 +16,6 @@ const GA4_ENDPOINT = `https://www.google-analytics.com/mp/collect?measurement_id
 // Unpacked (dev/test) builds send here instead: validates the payload, records nothing in GA4
 const GA4_DEBUG_ENDPOINT = `https://www.google-analytics.com/debug/mp/collect?measurement_id=${GA4_MEASUREMENT_ID}&api_secret=${GA4_API_SECRET}`;
 
-// Session timeout in milliseconds (30 minutes)
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
-
 // Debug flag - set to true during development to enable verbose logging
 // Used by: dom-cleanup.js, refresh-engine.js, dashboard.js (engagement tracking)
 const DEBUG = false;

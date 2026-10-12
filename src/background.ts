@@ -12,41 +12,29 @@ const GA4_API_SECRET = 'vrH5dBRiSf6xAuVrJpzKlw';
 const GA4_ENDPOINT = `https://www.google-analytics.com/mp/collect?measurement_id=${GA4_MEASUREMENT_ID}&api_secret=${GA4_API_SECRET}`;
 // Unpacked (dev/test) builds send here instead: validates the payload, records nothing in GA4
 const GA4_DEBUG_ENDPOINT = `https://www.google-analytics.com/debug/mp/collect?measurement_id=${GA4_MEASUREMENT_ID}&api_secret=${GA4_API_SECRET}`;
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 const DEBUG = false;
 
 // Cache owner flag in memory (loaded once on startup, MV3 service worker compatible)
 let isOwnerCached: boolean | null = null;
 
-async function getOrCreateClientId(): Promise<string> {
-  const result = await chrome.storage.local.get('clientId') as { clientId?: string };
-  if (result.clientId) return result.clientId;
-  
-  const newClientId = crypto.randomUUID();
-  await chrome.storage.local.set({ clientId: newClientId });
-  return newClientId;
+// Stateless analytics (#199): GA4 needs a client_id on every request, so each event gets a fresh
+// random one that is stored nowhere. There is no session id and no user id for real users. Not
+// anonymous and not guaranteed unlinkable: other fields (e.g. hostname lists) can still repeat.
+// Same approach as public/ga4.js makeClientId.
+function makeClientId(): string {
+  return crypto.randomUUID();
 }
 
-async function getOrCreateSessionId(): Promise<string> {
-  const now = Date.now();
-  const result = await chrome.storage.session.get('sessionData');
-  const sessionData = result.sessionData as { sessionId: string; lastActivity: number } | undefined;
-  
-  if (sessionData && (now - sessionData.lastActivity) < SESSION_TIMEOUT_MS) {
-    sessionData.lastActivity = now;
-    await chrome.storage.session.set({ sessionData });
-    return sessionData.sessionId;
-  }
-  
-  const newSessionId = now.toString();
-  await chrome.storage.session.set({ sessionData: { sessionId: newSessionId, lastActivity: now } });
-  return newSessionId;
-}
-
-async function getDaysSinceInstall(): Promise<number> {
+// Coarse install-age bucket: lower bound of 0 / 1-6 / 7-29 / 30+ days (0 if not recorded). An exact age
+// is a fixed install date that would link one install's events across days. Same as public/ga4.js.
+async function installAgeBucket(): Promise<number> {
   const result = await chrome.storage.local.get('install_date') as { install_date?: string };
   if (!result.install_date) return 0;
-  return Math.floor((Date.now() - parseInt(result.install_date)) / (24 * 60 * 60 * 1000));
+  const days = Math.floor((Date.now() - parseInt(result.install_date)) / (24 * 60 * 60 * 1000));
+  if (!(days >= 1)) return 0;
+  if (days < 7) return 1;
+  if (days < 30) return 7;
+  return 30;
 }
 
 // Best-effort browser / OS / device from Client Hints, falling back to the UA string.
@@ -97,9 +85,7 @@ function getClientEnv(): { browser: string; device_os: string; device_type: stri
 
 async function sendGA4Event(eventName: string, customParams: Record<string, unknown> = {}): Promise<boolean> {
   try {
-    const clientId = await getOrCreateClientId();
-    const sessionId = await getOrCreateSessionId();
-    const daysSinceInstall = await getDaysSinceInstall();
+    const daysSinceInstall = await installAgeBucket();
 
     // Use cached owner flag (lazy-load if cache not yet initialized)
     if (isOwnerCached === null) {
@@ -108,11 +94,10 @@ async function sendGA4Event(eventName: string, customParams: Record<string, unkn
     }
 
     const payload: Record<string, unknown> = {
-      client_id: clientId,
+      client_id: makeClientId(),
       events: [{
         name: eventName,
         params: {
-          session_id: sessionId,
           engagement_time_msec: 100,
           extension_version: chrome.runtime.getManifest().version,
           browser_language: navigator.language || 'unknown',
@@ -124,20 +109,15 @@ async function sendGA4Event(eventName: string, customParams: Record<string, unkn
     };
 
     // Unpacked builds (no update_url) are dev/test: checked per send so it never depends on a
-    // stored flag. Internal = owner flag OR dev build; internal events carry user_id 'owner'
-    // (BigQuery filter) and traffic_type 'internal' (GA4's internal-traffic data filter).
+    // stored flag. Internal = owner flag OR dev build; internal events carry the constant user_id
+    // 'owner' (BigQuery filter, not an identifier) and traffic_type 'internal' (GA4's internal-traffic
+    // data filter). Real users send no user_id at all (#199).
     const isDevBuild = !chrome.runtime.getManifest().update_url;
     const isInternal = isOwnerCached || isDevBuild;
-    const localData = await chrome.storage.local.get('user_id');
-    const localUserId = localData['user_id'] as string | undefined;
-    payload.user_id = isInternal ? 'owner' : localUserId;
     if (isInternal) {
+      payload.user_id = 'owner';
       (payload.events as Array<{ params: Record<string, unknown> }>)[0].params.traffic_type = 'internal';
     }
-
-    // GA4 MP: forward the UA string so GA4 can populate Browser / OS / Device / Platform.
-    // UA string only — never full URLs, page titles, or captured content (issue #24).
-    payload.user_agent = navigator.userAgent;
 
     // Dev builds validate only (never recorded); CWS builds record as before.
     const response = await fetch(isDevBuild ? GA4_DEBUG_ENDPOINT : GA4_ENDPOINT, {
@@ -213,19 +193,15 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   // Cache toolbar pin status on install/update
   await cacheToolbarPinStatus();
 
+  // Stateless analytics (#199): drop any identifier or per-install counter stored by earlier versions.
+  await removeLegacyAnalyticsKeys();
+
   if (details.reason === 'install') {
-    // Generate anonymous user ID for feedback tracking (privacy-safe UUID)
-    const userId = crypto.randomUUID();
-    
-    // Track install date for feedback system
+    // Install date stays on the device for onboarding timing; analytics only ever sees a coarse bucket.
     const installDate = Date.now().toString();
-    await chrome.storage.local.set({ 
-      'install_date': installDate,
-      'user_id': userId
-    });
+    await chrome.storage.local.set({ 'install_date': installDate });
     if (DEBUG) console.log('SpotBoard installed at:', new Date(parseInt(installDate)).toISOString());
-    if (DEBUG) console.log('Anonymous user ID:', userId);
-    
+
     // GA4: Track extension install
     await sendGA4Event('extension_installed', {
       referrer: 'chrome_web_store'
@@ -239,119 +215,54 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     });
   }
   
-  // Backfill install_date and user_id for users who upgraded from pre-v1.2.1
-  // (These were only set on fresh install, not on update)
+  // Backfill install_date for users who upgraded from pre-v1.2.1
+  // (It was only set on fresh install, not on update)
   if (details.reason === 'update') {
-    const existing = await chrome.storage.local.get(['install_date', 'user_id']) as { install_date?: string; user_id?: string };
-    const backfill: Record<string, string> = {};
+    const existing = await chrome.storage.local.get('install_date') as { install_date?: string };
     if (!existing.install_date) {
-      backfill.install_date = Date.now().toString();
+      await chrome.storage.local.set({ install_date: Date.now().toString() });
       if (DEBUG) console.log('Backfilled install_date for existing user');
-    }
-    if (!existing.user_id) {
-      backfill.user_id = crypto.randomUUID();
-      if (DEBUG) console.log('Backfilled user_id for existing user');
-    }
-    if (Object.keys(backfill).length > 0) {
-      await chrome.storage.local.set(backfill);
     }
     // Mark existing users so dashboard tour doesn't fire after upgrade
     await chrome.storage.local.set({ hasExistingCards: true, dashboardTourShown: true });
   }
 
   // Set uninstall survey URL (runs on both install and update)
-  await setUninstallSurveyURL();
+  setUninstallSurveyURL();
 });
 
 // ================================
 // UNINSTALL SURVEY
 // ================================
-// Count timestamps in a rolling 7-day window. Source of truth: public/ga4.js getRollingMetric
-// (can't be imported here - ga4.js attaches to `window`, which a service worker doesn't have).
-async function countRecentEvents(storageKey: string, windowDays = 7): Promise<number> {
-  const stored = await chrome.storage.local.get(storageKey) as Record<string, unknown>;
-  const events = Array.isArray(stored[storageKey]) ? stored[storageKey] as number[] : [];
-  const cutoff = Date.now() - (windowDays * 24 * 60 * 60 * 1000);
-  return events.filter(ts => ts > cutoff).length;
-}
+// The uninstall survey is a plain link (#199): no identifier and no usage values are sent to Tally when
+// the page opens. Only what the person types and submits reaches the form.
+const UNINSTALL_SURVEY_URL = 'https://tally.so/r/A7vEPN';
 
-// Set uninstall survey URL with pre-populated analytics (same pattern as feedback forms)
-// The URL is a snapshot: rebuilt on install/update and every service-worker start, not at uninstall time.
-// chrome.runtime.setUninstallURL throws above 1023 chars; every field here is bounded, so it stays far below.
-async function setUninstallSurveyURL() {
+function setUninstallSurveyURL() {
   try {
-    // Read analytics data from chrome.storage.local
-    const storageData = await chrome.storage.local.get(['user_id', 'install_date']) as { user_id?: string; install_date?: string };
-    const user_id = storageData.user_id;
-    const install_date = storageData.install_date;
-    
-    // Calculate days since install
-    const installTimestamp = parseInt(install_date || Date.now().toString());
-    const daysSinceInstall = Math.floor((Date.now() - installTimestamp) / (1000 * 60 * 60 * 24));
-    
-    // Get board statistics from chrome.storage.sync (cards are the `comp-*` keys, same as ga4.js / dashboard.js)
-    const syncData = await chrome.storage.sync.get(null) as Record<string, any>;
-    const components = Object.entries(syncData)
-      .filter(([key, item]) => key.startsWith('comp-') && item && typeof item === 'object')
-      .map(([, item]) => item) as any[];
-
-    const totalCards = components.length;
-    const activeCards = components.filter((c: any) => !c.refreshPaused).length;
-    const pausedCardRate = totalCards > 0 ? Math.round((1 - activeCards / totalCards) * 100) : 0;
-
-    // Calculate average card age (created_at is an ISO string; legacy cards may lack it)
-    const cardAges = components
-      .map((c: any) => (c.created_at ? new Date(c.created_at).getTime() : NaN))
-      .filter((createdMs: number) => !isNaN(createdMs))
-      .map((createdMs: number) => Math.floor((Date.now() - createdMs) / (1000 * 60 * 60 * 24)));
-    const avgCardAge = cardAges.length > 0
-      ? Math.round(cardAges.reduce((sum, age) => sum + age, 0) / cardAges.length)
-      : 0;
-
-    // Count of distinct hostnames across the cards stored right now (raw hostnames, same form as GA4's
-    // url_domain). A count, not the list: hostnames must not reach the survey provider (#191).
-    const uniqueSites = new Set(components.map((c: any) => {
-      try {
-        return new URL(c.url).hostname;
-      } catch {
-        return '';
-      }
-    }).filter(Boolean)).size;
-
-    // Rolling 7-day usage counters, written by ga4.js incrementRollingMetric (same `timestamp > now - 7d` rule)
-    const boardOpens7days = await countRecentEvents('board_opens_events');
-    const refreshClicks7days = await countRecentEvents('refresh_clicks_events');
-
-    // Build Tally URL with all hidden fields (matches feedback-data.js pattern)
-    const baseURL = 'https://tally.so/r/A7vEPN';
-    const params = new URLSearchParams();
-
-    params.append('user_id', user_id || 'unknown');
-    params.append('days_since_install', daysSinceInstall.toString());
-    params.append('browser_language', chrome.i18n.getUILanguage());
-    params.append('extension_version', chrome.runtime.getManifest().version);
-    params.append('total_cards', totalCards.toString());
-    params.append('active_cards', activeCards.toString());
-    params.append('paused_card_rate_%', pausedCardRate.toString());
-    params.append('unique_sites', uniqueSites.toString());
-    params.append('avg_card_age_days', avgCardAge.toString());
-    params.append('board_opens_7days', boardOpens7days.toString());
-    params.append('refresh_clicks_7days', refreshClicks7days.toString());
-
-    const uninstallURL = `${baseURL}?${params.toString()}`;
-    
-    // Set the uninstall URL
-    chrome.runtime.setUninstallURL(uninstallURL);
-    if (DEBUG) console.log('🔗 Uninstall survey URL set with analytics params');
+    chrome.runtime.setUninstallURL(UNINSTALL_SURVEY_URL);
   } catch (error) {
     console.error('Failed to set uninstall survey URL:', error);
-    // Fallback to basic URL without params
-    chrome.runtime.setUninstallURL('https://tally.so/r/A7vEPN');
+  }
+}
+
+// ================================
+// LEGACY ANALYTICS KEYS
+// ================================
+// Versions before #199 stored a persistent client id, a persistent user id and two rolling 7-day
+// counters in chrome.storage.local. They are removed (idempotent) so nothing identifying an install
+// stays on the device. install_date is kept: it drives onboarding timing and is only ever sent as a bucket.
+async function removeLegacyAnalyticsKeys(): Promise<void> {
+  try {
+    await chrome.storage.local.remove(['clientId', 'user_id', 'board_opens_events', 'refresh_clicks_events']);
+  } catch (error) {
+    console.warn('Could not remove legacy analytics keys:', error);
   }
 }
 
 // Also set on service worker startup (in case of browser restart)
 setUninstallSurveyURL();
+removeLegacyAnalyticsKeys();
 
 // ================================
 // MESSAGE HANDLERS

@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-### Fixed
+### Changed
 
-- **The optional uninstall feedback link no longer includes the names of your sites, and its usage numbers are now real** (#191): when you uninstall, Chrome offers an optional feedback survey with a few anonymous figures pre-filled. Two of those (dashboard opens and refresh clicks in the last 7 days) were always 0, and two more (how many cards are paused, and average card age) were always 0 or wrong because they read fields SpotBoard never saves. They now report the real numbers. The pre-filled list of site names is replaced by a count of how many different sites you follow, so no site names are sent to the survey provider from this link. The link can also no longer grow past Chrome's length limit and silently lose all its details when you follow many sites.
+- **SpotBoard's usage analytics no longer carry an ID that follows your installation, and the uninstall survey link sends nothing** (#199, supersedes #191): every analytics event now gets a fresh random ID that is not kept on your device, there is no session or user ID, and install age and card age are sent as rough bands instead of exact days. Seven-day usage counters, paused-card rate, average card age and per-card and per-board IDs are no longer sent, and small board and card counts are capped at 10. The hostnames of the sites you capture and refresh are still reported, so site problems can be found and fixed. The optional feedback survey Chrome opens when you uninstall is now a plain link with no pre-filled ID, counts or site names. On update, SpotBoard deletes the old stored IDs and counters from your device.
 
 ## [1.4.4] - 2026-10-10
 

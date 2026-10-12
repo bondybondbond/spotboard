@@ -60,40 +60,21 @@ async function calculateTier1Fields() {
   };
 }
 
-// ===== ROLLING WINDOW HELPER =====
-// Count events within last N days from timestamp array
-function countEventsInWindow(storageKey, windowDays) {
-  const raw = localStorage.getItem(storageKey) || '[]';
-  const timestamps = JSON.parse(raw);
-  const cutoff = Date.now() - (windowDays * 24 * 60 * 60 * 1000);
-  
-  return timestamps.filter(t => t > cutoff).length;
-}
-
-// ===== TIER 2: Requires Tracking Code (Batch 2-4) =====
-// NOW USING ROLLING WINDOWS - survives version updates!
+// ===== TIER 2: install-age band only (no counters, no user id; #199) =====
 async function calculateTier2Fields() {
-  // Read install_date and user_id from chrome.storage.local (service worker compatible)
-  const { install_date, user_id } = await chrome.storage.local.get(['install_date', 'user_id']);
-  const installDate = parseInt(install_date || Date.now());
-  const daysSinceInstall = Math.floor(
-    (Date.now() - installDate) / (1000 * 60 * 60 * 24)
-  );
-
-  // Rolling 7-day windows (reads from timestamp arrays in localStorage)
-  const boardOpens = countEventsInWindow('board_open_timestamps', 7);
-  const refreshClicks = countEventsInWindow('refresh_click_timestamps', 7);
+  // #199: no user id and no per-install counters. The install age is a coarse bucket (0 / 1 / 7 / 30),
+  // because an exact age is a fixed install date that would link responses to an install.
+  const { install_date } = await chrome.storage.local.get('install_date');
+  const days = Math.floor((Date.now() - parseInt(install_date || Date.now())) / (1000 * 60 * 60 * 24));
+  const daysBucket = !(days >= 1) ? 0 : days < 7 ? 1 : days < 30 ? 7 : 30; // same band as ga4.js ageBandFromDays
 
   return {
-    user_id: user_id || 'unknown', // Fallback for old installs without UUID
-    days_since_install: daysSinceInstall,
-    board_opens_7days: boardOpens,
-    refresh_clicks_7days: refreshClicks,
+    days_since_install: daysBucket,
   };
 }
 
 // ===== COMBINED CALCULATOR (Batch 5) =====
-// Returns all 11 hidden fields for Tally form (includes user_id + browser_language)
+// Returns the hidden fields for the Tally feedback forms (no user id, no per-install counters)
 async function getAllHiddenFields() {
   const tier1 = await calculateTier1Fields();
   const tier2 = await calculateTier2Fields();
@@ -111,7 +92,6 @@ const TALLY_NEGATIVE_URL = 'https://tally.so/r/7RKNlZ';
 // Hidden field IDs (same across both forms)
 // Note: Tally uses field names directly
 const HIDDEN_FIELD_IDS = {
-  user_id: 'user_id', // Anonymous installation UUID
   browser_language: 'browser_language', // e.g. "en-US", "es-ES"
   extension_version: 'extension_version',
   total_cards: 'total_cards',
@@ -120,17 +100,15 @@ const HIDDEN_FIELD_IDS = {
   all_tracked_sites: 'all_tracked_sites',
   avg_card_age_days: 'avg_card_age_days',
   days_since_install: 'days_since_install',
-  board_opens_7days: 'board_opens_7days',
-  refresh_clicks_7days: 'refresh_clicks_7days',
 };
 
 // ===== BATCH 7: Build Tally URL with Hidden Fields =====
-// Builds pre-populated Tally URL with all 11 hidden fields (user_id + browser_language + 9 others)
+// Builds pre-populated Tally URL with the hidden fields (no user id)
 async function buildTallyURL(sentiment) {
   // Select base URL based on sentiment
   const baseURL = sentiment === 'positive' ? TALLY_POSITIVE_URL : TALLY_NEGATIVE_URL;
   
-  // Get all 9 hidden fields
+  // Get all hidden fields
   const hiddenFields = await getAllHiddenFields();
 
   // Build URL parameters

@@ -105,13 +105,14 @@ for (const [name, send] of SENDERS) {
     }
   })
 
-  test(`${name}: PRODUCTION (update_url) build still records to the real endpoint, payload unchanged`, async () => {
+  test(`${name}: PRODUCTION (update_url) build still records to the real endpoint, with no user id (#199)`, async () => {
     const env = makeEnv({ updateUrl: true })
     await send(env)
     assert.equal(env.calls.length, 1)
     assert.equal(pathOf(env.calls[0].url), REAL)
     const p = env.calls[0].body
-    assert.equal(p.user_id, 'real-install-uuid-0001')
+    assert.equal(p.user_id, undefined, 'a real install must not send a user id (a legacy stored one is ignored)')
+    assert.notEqual(p.client_id, 'cid-1', 'a legacy stored client id must not be reused')
     assert.equal(p.events[0].params.traffic_type, undefined)
     assert.equal(p.events[0].name, 'board_opened')
     assert.equal(p.events[0].params.extension_version, '9.9.9')

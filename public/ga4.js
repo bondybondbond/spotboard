@@ -1,22 +1,25 @@
 /**
  * GA4 Analytics Module for SpotBoard
- * Privacy-compliant anonymous tracking via Measurement Protocol
- * 
+ * Stateless usage analytics via Measurement Protocol (#199): no stored or persistent identifier is
+ * sent. Every event gets a fresh random client_id that is kept nowhere, there is no session id and no
+ * user id, and ages are sent as coarse bands. Not anonymous and not guaranteed unlinkable: the hostname
+ * list from one refresh can repeat for the same board, and a few one-shot onboarding events carry the
+ * time since install.
+ *
  * Tracks:
  * - Feature usage (captures, refreshes, clicks)
- * - Activation funnel (install → first capture → retention)
+ * - Hostnames of captured / refreshed sites and refresh outcomes (reliability)
  * - Error rates (debugging)
- * 
+ *
  * Does NOT track:
- * - Browsing history
- * - Captured content
- * - Personal information
+ * - Page paths, titles or captured content
+ * - Names, emails or accounts
  */
 
 // ================================
 // CONFIGURATION
 // ================================
-// GA4_MEASUREMENT_ID, GA4_API_SECRET, GA4_ENDPOINT, and SESSION_TIMEOUT_MS
+// GA4_MEASUREMENT_ID, GA4_API_SECRET and GA4_ENDPOINT
 // are loaded from utils/constants.js (must be loaded before this file in dashboard.html)
 
 // ================================
@@ -40,59 +43,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 // ================================
-// CLIENT ID MANAGEMENT
+// CLIENT ID (stateless)
 // ================================
 
 /**
- * Gets or creates a persistent anonymous client ID
- * Stored in chrome.storage.local (permanent, survives browser restarts)
- * @returns {Promise<string>} UUID format client_id
+ * GA4 requires a client_id on every request. A fresh random value is generated per event and is
+ * never stored, so the ID itself cannot link events (#199). Other fields can still repeat.
+ * @returns {string} UUID format client_id
  */
-async function getOrCreateClientId() {
-  const { clientId } = await chrome.storage.local.get('clientId');
-  
-  if (clientId) {
-    return clientId;
-  }
-  
-  // Generate new UUID for anonymous tracking
-  const newClientId = crypto.randomUUID();
-  await chrome.storage.local.set({ clientId: newClientId });
-  
-  return newClientId;
-}
-
-// ================================
-// SESSION MANAGEMENT
-// ================================
-
-/**
- * Gets or creates a session ID with 30-minute timeout
- * Stored in chrome.storage.session (cleared on browser close)
- * @returns {Promise<string>} Timestamp-based session_id
- */
-async function getOrCreateSessionId() {
-  const now = Date.now();
-  const { sessionData } = await chrome.storage.session.get('sessionData');
-  
-  // Check if existing session is still valid
-  if (sessionData && (now - sessionData.lastActivity) < SESSION_TIMEOUT_MS) {
-    // Update last activity timestamp
-    sessionData.lastActivity = now;
-    await chrome.storage.session.set({ sessionData });
-    return sessionData.sessionId;
-  }
-  
-  // Create new session
-  const newSessionId = now.toString();
-  const newSessionData = {
-    sessionId: newSessionId,
-    lastActivity: now
-  };
-  
-  await chrome.storage.session.set({ sessionData: newSessionData });
-  
-  return newSessionId;
+function makeClientId() {
+  return crypto.randomUUID();
 }
 
 // ================================
@@ -194,79 +154,46 @@ async function getToolbarPinStatus() {
 }
 
 /**
- * Calculates days since extension was first installed
- * @returns {Promise<number>} Number of days (0 if install date not recorded)
+ * Coarse age band: the lower bound of 0 / 1-6 / 7-29 / 30+ days (0 for anything not a number >= 1).
+ * An exact age is a fixed date that links events across days (#199). Used for install age and card age.
+ * Same logic as src/background.ts installAgeBucket and public/utils/feedback-data.js.
+ * @param {number} days
+ * @returns {number} 0, 1, 7 or 30
  */
-async function getDaysSinceInstall() {
-  const { firstInstallDate } = await chrome.storage.local.get('firstInstallDate');
-  
-  if (!firstInstallDate) {
-    return 0;
-  }
-  
-  const installTime = new Date(firstInstallDate).getTime();
-  const now = Date.now();
-  const daysSince = Math.floor((now - installTime) / (24 * 60 * 60 * 1000));
-  
-  return daysSince;
+function ageBandFromDays(days) {
+  if (!(days >= 1)) return 0;
+  if (days < 7) return 1;
+  if (days < 30) return 7;
+  return 30;
 }
 
 /**
- * Gets board statistics for analytics
- * @returns {Promise<Object>} Board stats object
+ * Install-age band (0 if not recorded).
+ * @returns {Promise<number>} 0, 1, 7 or 30
+ */
+async function getDaysSinceInstall() {
+  const { install_date } = await chrome.storage.local.get('install_date');
+  if (!install_date) return 0;
+  return ageBandFromDays(Math.floor((Date.now() - parseInt(install_date)) / (24 * 60 * 60 * 1000)));
+}
+
+/**
+ * Gets board statistics for analytics. Counts are clamped at 10 ("10 or more") so a large board is
+ * not a distinguishing value (#199).
+ * @returns {Promise<Object>} { total, active } (each 0-10)
  */
 async function getBoardStats() {
   try {
-    // Get all components from sync storage
     const allStorage = await chrome.storage.sync.get(null);
     const components = Object.entries(allStorage)
       .filter(([key]) => key.startsWith('comp-'))
       .map(([, value]) => value);
-    
-    // Calculate stats
     const total = components.length;
     const active = components.filter(c => !c.refreshPaused).length;
-    const paused = total - active;
-    const pausedRate = total > 0 ? Math.round((paused / total) * 100) : 0;
-    
-    // Get unique domains (limit to 100 chars for GA4)
-    const domains = [...new Set(components.map(c => {
-      try {
-        return new URL(c.url).hostname;
-      } catch {
-        return 'unknown';
-      }
-    }))];
-    const allTrackedSites = domains.join(',').substring(0, 100);
-    
-    // Calculate average card age
-    const now = Date.now();
-    const ages = components.map(c => {
-      const created = new Date(c.created_at || Date.now()).getTime();
-      return Math.floor((now - created) / (24 * 60 * 60 * 1000));
-    });
-    const avgCardAge = ages.length > 0 
-      ? Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length)
-      : 0;
-    
-    return {
-      total,
-      active,
-      paused,
-      pausedRate,
-      allTrackedSites,
-      avgCardAge
-    };
+    return { total: Math.min(total, 10), active: Math.min(active, 10) };
   } catch (error) {
     console.error('❌ Error getting board stats:', error);
-    return {
-      total: 0,
-      active: 0,
-      paused: 0,
-      pausedRate: 0,
-      allTrackedSites: '',
-      avgCardAge: 0
-    };
+    return { total: 0, active: 0 };
   }
 }
 
@@ -276,7 +203,7 @@ async function getBoardStats() {
 
 /**
  * Sends an event to GA4 via Measurement Protocol
- * All events are anonymous - no PII collected
+ * Stateless: nothing identifying an install is stored or sent (#199)
  * 
  * @param {string} eventName - Event name (e.g., 'board_opened')
  * @param {Object} customParams - Additional event parameters
@@ -284,8 +211,6 @@ async function getBoardStats() {
  */
 async function sendEvent(eventName, customParams = {}, engagementTimeMs = 100) {
   try {
-    const clientId = await getOrCreateClientId();
-    const sessionId = await getOrCreateSessionId();
     const daysSinceInstall = await getDaysSinceInstall();
     const isPinned = await getToolbarPinStatus();
 
@@ -297,11 +222,10 @@ async function sendEvent(eventName, customParams = {}, engagementTimeMs = 100) {
 
     // Construct GA4 Measurement Protocol payload
     const payload = {
-      client_id: clientId,
+      client_id: makeClientId(),
       events: [{
         name: eventName,
         params: {
-          session_id: sessionId,
           engagement_time_msec: engagementTimeMs, // Dynamic engagement time (default 100ms for backward compatibility)
           extension_version: getExtensionVersion(),
           browser_language: getBrowserLanguage(),
@@ -314,17 +238,15 @@ async function sendEvent(eventName, customParams = {}, engagementTimeMs = 100) {
     };
 
     // Unpacked builds (no update_url) are dev/test: checked per send so it never depends on a
-    // stored flag. Internal = owner flag OR dev build; internal events carry user_id 'owner'
-    // (BigQuery filter) and traffic_type 'internal' (GA4's internal-traffic data filter).
+    // stored flag. Internal = owner flag OR dev build; internal events carry the constant user_id
+    // 'owner' (BigQuery filter, not an identifier) and traffic_type 'internal' (GA4's internal-traffic
+    // data filter). Real users send no user_id at all (#199).
     const isDevBuild = !chrome.runtime.getManifest().update_url;
     const isInternal = isOwnerCached || isDevBuild;
-    const { user_id: localUserId } = await chrome.storage.local.get('user_id');
-    payload.user_id = isInternal ? 'owner' : localUserId;
-    if (isInternal) payload.events[0].params.traffic_type = 'internal';
-
-    // GA4 MP: forward the UA string so GA4 can populate Browser / OS / Device / Platform.
-    // UA string only — never full URLs, page titles, or captured content (issue #24).
-    payload.user_agent = navigator.userAgent;
+    if (isInternal) {
+      payload.user_id = 'owner';
+      payload.events[0].params.traffic_type = 'internal';
+    }
 
     // Send to GA4 (dev builds validate only, never recorded; CWS builds record as before)
     const response = await fetch(isDevBuild ? GA4_DEBUG_ENDPOINT : GA4_ENDPOINT, {
@@ -353,66 +275,16 @@ async function sendEvent(eventName, customParams = {}, engagementTimeMs = 100) {
 }
 
 // ================================
-// ROLLING WINDOW METRICS
-// ================================
-
-/**
- * Increments a rolling metric by adding current timestamp
- * Auto-prunes events older than specified window
- * 
- * @param {string} metricName - Metric identifier (e.g., 'board_opens')
- * @param {number} windowDays - Window size in days (default: 7)
- * @returns {Promise<number>} Count of events in window
- */
-async function incrementRollingMetric(metricName, windowDays = 7) {
-  const key = `${metricName}_events`;
-  const { [key]: events = [] } = await chrome.storage.local.get(key);
-  
-  // Add current timestamp
-  events.push(Date.now());
-  
-  // Remove events older than window
-  const cutoff = Date.now() - (windowDays * 24 * 60 * 60 * 1000);
-  const recentEvents = events.filter(ts => ts > cutoff);
-  
-  // Save back to storage
-  await chrome.storage.local.set({ [key]: recentEvents });
-  
-  return recentEvents.length;
-}
-
-/**
- * Gets count of events within rolling window (read-only)
- * 
- * @param {string} metricName - Metric identifier (e.g., 'board_opens')
- * @param {number} windowDays - Window size in days (default: 7)
- * @returns {Promise<number>} Count of events in window
- */
-async function getRollingMetric(metricName, windowDays = 7) {
-  const key = `${metricName}_events`;
-  const { [key]: events = [] } = await chrome.storage.local.get(key);
-  
-  // Filter to events within window
-  const cutoff = Date.now() - (windowDays * 24 * 60 * 60 * 1000);
-  const recentEvents = events.filter(ts => ts > cutoff);
-  
-  return recentEvents.length;
-}
-
-// ================================
 // EXPORTS
 // ================================
 
 // Make functions available globally for use in other scripts
 window.GA4 = {
   sendEvent,
-  getOrCreateClientId,
-  getOrCreateSessionId,
   getExtensionVersion,
   getBrowserLanguage,
   getDaysSinceInstall,
+  ageBandFromDays,
   getBoardStats,
-  incrementRollingMetric,
-  getRollingMetric,
   getToolbarPinStatus
 };

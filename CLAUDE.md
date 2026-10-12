@@ -24,7 +24,7 @@ Chrome extension that captures live website sections (news, deals, scores) into 
 | `public/dashboard.html`          | Dashboard page — loads ga4.js, dashboard.js, refresh-engine.js |
 | `public/utils/refresh-engine.js` | 3-tier refresh fallback — loaded directly                      |
 | `public/ga4.js`                  | GA4 analytics                                                  |
-| `public/utils/constants.js`      | Shared constants (GA4 credentials, SESSION_TIMEOUT_MS)         |
+| `public/utils/constants.js`      | Shared constants (GA4 credentials)         |
 | `scripts/build-shared.js`        | esbuild pre-build for dom-cleanup.ts → IIFE                    |
 
 **NEVER edit** `dist/` — build output only.

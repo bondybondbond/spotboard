@@ -708,10 +708,10 @@ async function applyReorder(cardId, viewId, targetIndex) {
 
   if (window.GA4 && window.GA4.sendEvent) {
     window.GA4.sendEvent('card_reordered', {
-      board_id: viewId, // 'all' for the master view
+      is_all_view: viewId === 'all', // never the board id: it persists and encodes the board's creation time (#199)
       from_index: fromIndex,
       to_index: insertAt,
-      card_count: memberIds.length
+      card_count: Math.min(memberIds.length, 10)
     });
   }
 }
@@ -805,7 +805,7 @@ function setActiveBoard(id) {
   filterCardsToBoard(id);
   if (id !== 'all' && window.GA4 && window.GA4.sendEvent) {
     loadBoards().then(boards => {
-      window.GA4.sendEvent('board_switched', { board_id: id, total_boards: boards.length });
+      window.GA4.sendEvent('board_switched', { total_boards: Math.min(boards.length, 10) });
     });
   }
 }
@@ -1118,7 +1118,7 @@ async function addBoard() {
   await saveBoards(boards);
   renderTabTray(boards, allComponents);
   if (window.GA4 && window.GA4.sendEvent) {
-    window.GA4.sendEvent('board_created', { board_count: boards.length, has_keyword_emoji: !NUMBER_EMOJIS.includes(emoji) });
+    window.GA4.sendEvent('board_created', { board_count: Math.min(boards.length, 10), has_keyword_emoji: !NUMBER_EMOJIS.includes(emoji) });
   }
 }
 
@@ -1253,7 +1253,7 @@ async function deleteBoard(boardId) {
   renderTabTray(updated, allComponents);
   filterCardsToBoard(activeBoard);
   if (window.GA4 && window.GA4.sendEvent) {
-    window.GA4.sendEvent('board_deleted', { board_count: updated.length });
+    window.GA4.sendEvent('board_deleted', { board_count: Math.min(updated.length, 10) });
   }
 }
 
@@ -1843,7 +1843,7 @@ function showAddCardModal(cardCount = 0) {
   closeBtn.addEventListener('click', () => {
     overlay.remove();
     if (window.GA4 && window.GA4.sendEvent) {
-      window.GA4.sendEvent('add_card_modal_dismissed', { card_count: cardCount });
+      window.GA4.sendEvent('add_card_modal_dismissed', { card_count: Math.min(cardCount, 10) });
     }
   });
   sheet.appendChild(closeBtn);
@@ -1901,7 +1901,7 @@ function showAddCardModal(cardCount = 0) {
       chip.addEventListener('click', () => {
         overlay.remove();
         if (window.GA4 && window.GA4.sendEvent) {
-          window.GA4.sendEvent('add_card_modal_site_selected', { domain, card_count: cardCount });
+          window.GA4.sendEvent('add_card_modal_site_selected', { domain, card_count: Math.min(cardCount, 10) });
         }
         chrome.tabs.create({ url: DOMAIN_URL_OVERRIDES[domain] || 'https://' + domain }, (tab) => {
           chrome.storage.session.set({ pendingCaptureTabId: tab.id });
@@ -1943,7 +1943,7 @@ function renderGhostCards(grid, components) {
 
     ghost.addEventListener('click', () => {
       if (window.GA4 && window.GA4.sendEvent) {
-        window.GA4.sendEvent('ghost_card_clicked', { card_count: components.length });
+        window.GA4.sendEvent('ghost_card_clicked', { card_count: Math.min(components.length, 10) });
       }
       showAddCardModal(components.length);
     });
@@ -2157,7 +2157,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       if (window.GA4 && window.GA4.sendEvent) {
         window.GA4.sendEvent('onboarding_category_selected', {
           categories: Array.from(selected).join(','),
-          card_count: cardCount
+          card_count: Math.min(cardCount, 10)
         }, getEngagementTime());
       }
 
@@ -2304,13 +2304,9 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
     
     // Fresh navigation (not reload) AND (new session OR explicit navigate)
     if (navigationType !== 'reload' && !sessionActive) {
-      const boardOpens7d = await GA4.incrementRollingMetric('board_opens');
-      
       sendEvent('board_opened', {
         total_cards: stats.total,
-        active_cards: stats.active,
-        paused_card_rate_pct: stats.pausedRate,
-        board_opens_7days: boardOpens7d
+        active_cards: stats.active
       }, getEngagementTime());
     } 
     // Manual reload (F5/Ctrl+R) - track separately
@@ -2521,7 +2517,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
         contentDiv.addEventListener('click', (e) => {
           // Only track if clicking a link or the content itself (not buttons)
           if (e.target.closest('a') || e.target === contentDiv || contentDiv.contains(e.target)) {
-            const cardAgeDays = Math.floor((Date.now() - new Date(component.created_at || component.last_refresh || Date.now()).getTime()) / (1000 * 60 * 60 * 24));
+            const cardAgeDays = window.GA4.ageBandFromDays(Math.floor((Date.now() - new Date(component.created_at || component.last_refresh || Date.now()).getTime()) / (1000 * 60 * 60 * 24)));
             sendEvent('component_clicked', {
               url_domain: new URL(component.url).hostname,
               card_age_days: cardAgeDays
@@ -2725,7 +2721,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
         if (!shouldDelete) card.querySelector('.card-menu-btn').focus();
         if (shouldDelete) {
           // GA4: Track component deletion
-          const cardAgeDays = Math.floor((Date.now() - new Date(component.created_at || component.last_refresh || Date.now()).getTime()) / (1000 * 60 * 60 * 24));
+          const cardAgeDays = window.GA4.ageBandFromDays(Math.floor((Date.now() - new Date(component.created_at || component.last_refresh || Date.now()).getTime()) / (1000 * 60 * 60 * 24)));
           sendEvent('component_deleted', {
             url_domain: new URL(component.url).hostname,
             card_age_days: cardAgeDays,
@@ -3018,7 +3014,6 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           // GA4: Track size changes
           if (window.GA4 && window.GA4.sendEvent) {
             window.GA4.sendEvent('card_size_changed', {
-              card_id: component.id,
               old_size: component.cardSize || '1x1',
               new_size: newSize,
               extension_version: chrome.runtime.getManifest().version
@@ -3621,14 +3616,12 @@ async function trackRefreshClick() {
   
   // GA4: Track every refresh click (Batch 4 core loop event)
   try {
-    if (window.GA4 && window.GA4.getBoardStats && window.GA4.sendEvent && window.GA4.incrementRollingMetric) {
+    if (window.GA4 && window.GA4.getBoardStats && window.GA4.sendEvent) {
       const stats = await window.GA4.getBoardStats();
-      const refreshClicks7d = await window.GA4.incrementRollingMetric('refresh_clicks');
       
       window.GA4.sendEvent('refresh_clicked', {
         total_cards: stats.total,
-        active_cards: stats.active,
-        refresh_clicks_7days: refreshClicks7d
+        active_cards: stats.active
       }, getEngagementTime());
     }
   } catch (e) {
