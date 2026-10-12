@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A card that stopped refreshing because its page loaded half-built now refreshes again** (#201): HotUKDeals sends a half-built version of its page first (empty placeholder tiles plus one banner picture), and SpotBoard mistook that banner for proof the page was complete, so your "exclude all like this" rules found nothing and the card stayed stale. SpotBoard now treats a page whose empty picture slots outnumber its real pictures two to one as unfinished and loads it in a real tab, as it already did for pages with no pictures at all. When the refresh window's narrow width hides something one of your rules is built on, SpotBoard now widens that window once and retries before giving up. Cards that were already refreshing quickly are unchanged.
+
 ### Changed
 
 - **SpotBoard's usage analytics no longer carry an ID that follows your installation, and the uninstall survey link sends nothing** (#199, supersedes #191): every analytics event now gets a fresh random ID that is not kept on your device, there is no session or user ID, and install age and card age are sent as rough bands instead of exact days. Seven-day usage counters, paused-card rate, average card age and per-card and per-board IDs are no longer sent, and small board and card counts are capped at 10. The hostnames of the sites you capture and refresh are still reported, so site problems can be found and fixed. The optional feedback survey Chrome opens when you uninstall is now a plain link with no pre-filled ID, counts or site names. On update, SpotBoard deletes the old stored IDs and counters from your device.

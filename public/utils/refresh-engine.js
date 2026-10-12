@@ -1233,7 +1233,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     if (requiresVisibleTab(url) || skipToActive) {
       // Skip background + offscreen attempts - go straight to active tab
       // activeFocusNeeded stays false: nothing new to learn on this path
-      const meta = {};
+      const meta = { layoutOk };
       const result = await tryActiveTab(url, selector, fingerprint, meta);
       if (result && !passesQualityGate(result, meta, 'active')) {
         return { html: null, activeFocusNeeded: false, renderDegraded: true };
@@ -1325,7 +1325,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     // ATTEMPT 3: Focused active popup (last resort — site requires compositor focus frame to render)
     // Set activeFocusNeeded BEFORE calling so it is captured in the return value on success.
     activeFocusNeeded = true;
-    const activeMeta = {};
+    const activeMeta = { layoutOk };
     const fallbackResult = await tryActiveTab(url, selector, fingerprint, activeMeta);
     // #132: the last tier rendered a layout the stored rules don't fit. Prefer a compatible candidate an
     // earlier tier set aside; otherwise hand back the first faulting one so the caller names the real cause.
@@ -2422,8 +2422,13 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
     // popup's normal narrow width, widen the same live window (no reload — preserves
     // scroll/React state) and re-run the identical extraction once. Only pays the extra
     // ~2s when the signal is actually detected; most sites never hit this path.
-    if (results[0]?.result?.hasEmptyImageSlots) {
-      if (DEBUG) console.log('[SB-REFRESH] tryActiveTab: empty image slots, widening + retrying');
+    // #201: also when the narrow capture no longer fits the card's own "exclude all like this" rules
+    // (meta.layoutOk, #132). HotUKDeals hides one rule's targets (hide--toW3) below its W3 breakpoint and the
+    // extraction strips hidden elements, so the rule matches 0 at popup width but 30 at 1400px. Cards without
+    // rules (layoutOk null) and cards whose narrow capture already fits never pay this.
+    const layoutMismatch = !!html && typeof meta.layoutOk === 'function' && !meta.layoutOk(_tagSentimentHtml(html));
+    if (results[0]?.result?.hasEmptyImageSlots || layoutMismatch) {
+      if (DEBUG) console.log('[SB-REFRESH] tryActiveTab:', layoutMismatch ? 'stored rules do not fit the narrow layout' : 'empty image slots', ', widening + retrying');
       try {
         // Must reposition `left` too: the popup is pinned 55%-visible at the screen's right
         // edge, so widening in place alone pushes it past Chrome's "≥50% on-screen" bounds
