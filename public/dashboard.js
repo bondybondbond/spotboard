@@ -3792,6 +3792,7 @@ const ORIGINAL_DRAWER_HTML = `
       <span>Remind me later</span>
     </button>
   </div>
+  <p class="drawer-note">The form is hosted by Tally (tally.so). Opening it shares your SpotBoard version, roughly how long you've had it and your card count (up to 10), plus the usual details any website receives (such as your IP address).</p>
 `;
 
 // ===== ANALYTICS TRACKING =====
@@ -3839,6 +3840,30 @@ function trackSurveyStarted() {
   logAnalyticsSummary();
 }
 
+// The embedded Tally iframe (null until the user picks thumbs-up/down). Nothing is sent to Tally before that click.
+let feedbackFrame = null;
+
+// #194: load the Tally form in the drawer. The URL carries only the fields built in feedback-data.js.
+async function openFeedbackForm(sentiment) {
+  surveyCompleted = false; // Reset completion flag
+  
+  // CRITICAL FIX: Track BEFORE loading iframe (prevents crash edge case)
+  trackSurveyStarted();
+  
+  const url = await buildTallyURL(sentiment);
+  const drawer = document.querySelector('.sentiment-drawer');
+  drawer.classList.add('survey-embedded');
+  drawer.textContent = '';
+  const frame = document.createElement('iframe');
+  frame.src = `${url}&hideTitle=1&transparentBackground=1&alignLeft=1`;
+  frame.width = '100%';
+  frame.height = '550px';
+  frame.setAttribute('frameborder', '0');
+  frame.style.cssText = 'border: none; border-radius: 8px; display: block;';
+  drawer.appendChild(frame);
+  feedbackFrame = frame;
+}
+
 // PHASE 2: Reattach button listeners (called after drawer reset)
 function reattachButtonListeners() {
   const posBtn = document.getElementById('sentiment-positive');
@@ -3847,51 +3872,8 @@ function reattachButtonListeners() {
   const picker = document.getElementById('sentiment-picker');
   const bubble = document.getElementById('feedback-bubble');
   
-  if (posBtn) {
-    posBtn.addEventListener('click', async () => {
-      surveyCompleted = false; // Reset completion flag
-      
-      // CRITICAL FIX: Track BEFORE loading iframe (prevents crash edge case)
-      trackSurveyStarted();
-      
-      const url = await buildTallyURL('positive');
-      const drawer = document.querySelector('.sentiment-drawer');
-      drawer.classList.add('survey-embedded');
-      drawer.innerHTML = `
-        <iframe 
-          src="${url}&hideTitle=1&transparentBackground=1&alignLeft=1"
-          width="100%" 
-          height="550px" 
-          frameborder="0"
-          style="border: none; border-radius: 8px; display: block;">
-        </iframe>
-      `;
-
-    });
-  }
-  
-  if (negBtn) {
-    negBtn.addEventListener('click', async () => {
-      surveyCompleted = false; // Reset completion flag
-      
-      // CRITICAL FIX: Track BEFORE loading iframe (prevents crash edge case)
-      trackSurveyStarted();
-      
-      const url = await buildTallyURL('negative');
-      const drawer = document.querySelector('.sentiment-drawer');
-      drawer.classList.add('survey-embedded');
-      drawer.innerHTML = `
-        <iframe 
-          src="${url}&hideTitle=1&transparentBackground=1&alignLeft=1"
-          width="100%" 
-          height="550px" 
-          frameborder="0"
-          style="border: none; border-radius: 8px; display: block;">
-        </iframe>
-      `;
-
-    });
-  }
+  if (posBtn) posBtn.addEventListener('click', () => openFeedbackForm('positive'));
+  if (negBtn) negBtn.addEventListener('click', () => openFeedbackForm('negative'));
   
   if (delBtn) {
     delBtn.addEventListener('click', () => {
@@ -3911,6 +3893,7 @@ function resetDrawerToOriginal() {
   if (!drawer) return;
   
   drawer.classList.remove('survey-embedded');
+  feedbackFrame = null;
   drawer.innerHTML = ORIGINAL_DRAWER_HTML;
 
   
@@ -3978,12 +3961,21 @@ function showThankYouOverlay() {
 
 }
 
+// #194: a Tally submit event counts only if it comes from OUR iframe on tally.so. Without this, any frame or script
+// that can post a message could mark the survey done and snooze the prompt.
+function isTallySubmitMessage(event) {
+  if (event.origin !== 'https://tally.so') return false;
+  if (!feedbackFrame || event.source !== feedbackFrame.contentWindow) return false;
+  let data = event.data;
+  if (typeof data === 'string') {
+    try { data = JSON.parse(data); } catch (e) { return false; }
+  }
+  // Tally documents { event: 'Tally.FormSubmitted', payload }; the old code read .type, so accept either until the real shape is logged
+  return !!data && (data.event === 'Tally.FormSubmitted' || data.type === 'Tally.FormSubmitted');
+}
+
 window.addEventListener('message', (event) => {
-  // Check incoming messages
-  
-  // Check for Tally submission event (try both possible formats)
-  const isSubmitted = event.data?.type === 'Tally.FormSubmitted' || 
-                     (typeof event.data === 'string' && event.data.includes('Tally.FormSubmitted'));
+  const isSubmitted = isTallySubmitMessage(event);
   
   if (isSubmitted) {
     surveyCompleted = true;
