@@ -28,8 +28,7 @@ Visit [bondybondbond.github.io/spotboard](https://bondybondbond.github.io/spotbo
 - No accounts, no backend
 - Captured HTML stays in your browser — never uploaded
 - Component metadata syncs via Chrome sync
-- Anonymous usage analytics via Google Analytics (no browsing history, no content)
-- Zero tracking of which sites you visit outside SpotBoard
+- Usage analytics via Google Analytics, including the hostnames of sites you capture or refresh. The privacy policy below says exactly what is sent and shared
 
 [Read full privacy policy](https://bondybondbond.github.io/spotboard/privacy)
 
