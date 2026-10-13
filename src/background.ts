@@ -550,21 +550,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 addEventListener('unhandledrejection', async (event) => {
   console.error('❌ Unhandled Promise Rejection:', event.reason);
   
-  // Sanitize error message (remove URLs and sensitive data)
-  const sanitizeError = (msg: string): string => {
-    return msg
-      .replace(/https?:\/\/[^\s]+/g, '[URL]') // Remove URLs
-      .replace(/chrome-extension:\/\/[^\s]+/g, '[EXT_URL]') // Remove extension URLs
-      .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '[EMAIL]') // Remove emails
-      .substring(0, 200); // Limit length
-  };
-  
-  const errorMsg = event.reason?.message || String(event.reason) || 'Unknown error';
-  const errorStack = event.reason?.stack?.split('\n')[0] || 'unknown';
-  
+  // #196: no free text leaves the device. Message and stack can carry hostnames, paths, selectors and
+  // card names, so only the error's class name is sent, and only if it is on this list (#192).
+  const ERROR_TYPES = ['Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError'];
+  let errorType = 'other';
+  try {
+    const name = event.reason?.name;
+    if (typeof name === 'string' && ERROR_TYPES.includes(name)) errorType = name;
+  } catch {
+    // a throwing getter on the rejection reason must not stop the report
+  }
+
   await sendGA4Event('extension_error', {
-    error_message: sanitizeError(errorMsg),
-    error_source: sanitizeError(errorStack)
+    error_type: errorType,
+    error_where: 'background_unhandled_rejection'
   });
 });
 
