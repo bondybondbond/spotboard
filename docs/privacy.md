@@ -62,7 +62,7 @@ Each card's **full page address (URL, including path and query)**, label, the se
 ## Uninstall survey (Tally)
 When you uninstall SpotBoard, Chrome opens an optional survey hosted by Tally (`tally.so`). SpotBoard sets that address in advance and it is a plain link: **it carries no ID and no usage values**, so a response carries nothing that identifies your installation or ties it to analytics events. Your browser still contacts Tally when the page opens, as for any web page.
 - **Not sent:** any ID, site names, page addresses, counts, anything you captured.
-- **What we ask:** the survey does not ask for your name or email. It asks why you uninstalled and, if you say a site did not work, which sites had issues, and has an optional free-text box. What you type there is yours to choose; please do not put personal details in it.
+- **What we ask:** the survey does not ask for your name or email. It asks why you uninstalled and, if you say a site did not work or something broke, which sites had issues and what the problem was, and has an optional free-text box. What you type there is yours to choose; please do not put personal details in it.
 - **Where and how long:** Tally says it stores form data in Europe. We keep responses until we delete them; automatic deletion is not switched on.
 - **Older survey responses:** responses collected before [PUBLISH: date] included a random ID, usage counts and, in the oldest, a list of the site names on your board. We deleted those responses on 13 October 2026.
 
