@@ -3792,7 +3792,7 @@ const ORIGINAL_DRAWER_HTML = `
       <span>Remind me later</span>
     </button>
   </div>
-  <p class="drawer-note">The form is hosted by Tally (tally.so). Opening it shares your SpotBoard version, roughly how long you've had it and your card count (up to 10), plus the usual details any website receives (such as your IP address).</p>
+  <p class="drawer-note">The form is hosted by Tally (tally.so). Opening it shares your SpotBoard version, roughly how long you've had it and your card count (up to 10), plus the usual details any website receives (such as your IP address). Tally also records that the form was opened.</p>
 `;
 
 // ===== ANALYTICS TRACKING =====
