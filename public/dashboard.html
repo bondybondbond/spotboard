@@ -2413,14 +2413,6 @@
       flex-shrink: 0;
     }
 
-    /* PHASE 2: Survey embedded state - padding for breathing room */
-    .sentiment-drawer.survey-embedded {
-      padding: 24px; /* Increased padding for better form border visibility */
-      width: 480px; /* Slightly wider for better survey display */
-      max-height: calc(100vh - 120px); /* Leave room for button + margin */
-      overflow: hidden; /* Prevent scrollbar on drawer */
-    }
-
     /* ── BOARDS PILL TRAY ── */
     #tab-tray {
       background: var(--bg-page);
@@ -2824,7 +2816,7 @@
           <span>Remind me later</span>
         </button>
       </div>
-      <p class="drawer-note">The form is hosted by Tally (tally.so). Opening it shares your SpotBoard version, roughly how long you've had it and your card count (up to 10), plus the usual details any website receives (such as your IP address). Tally also records that the form was opened.</p>
+      <p class="drawer-note">The survey opens in a new tab on tally.so. The link shares your SpotBoard version, roughly how long you've had it and your card count (up to 10); Tally also sees the usual details any website does (such as your IP address).</p>
     </div>
   </div>
 

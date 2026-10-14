@@ -3774,27 +3774,6 @@ function snoozeFeedback(days, reason) {
   // Feedback snoozed (user sees UI confirmation)
 }
 
-// PHASE 2: Store original drawer HTML for reset (matches dashboard.html)
-const ORIGINAL_DRAWER_HTML = `
-  <h3>What do you think about SpotBoard?</h3>
-  <p class="drawer-subtext">3 quick questions • About 1 minute</p>
-  <div class="sentiment-buttons">
-    <button id="sentiment-positive">
-      <span class="button-emoji">👍</span>
-      <span>I like it!</span>
-    </button>
-    <button id="sentiment-negative">
-      <span class="button-emoji">👎</span>
-      <span>It could be better</span>
-    </button>
-    <button id="sentiment-delay">
-      <span class="button-emoji">⏰</span>
-      <span>Remind me later</span>
-    </button>
-  </div>
-  <p class="drawer-note">The form is hosted by Tally (tally.so). Opening it shares your SpotBoard version, roughly how long you've had it and your card count (up to 10), plus the usual details any website receives (such as your IP address). Tally also records that the form was opened.</p>
-`;
-
 // ===== ANALYTICS TRACKING =====
 // Lightweight metrics stored in localStorage (no backend needed)
 
@@ -3807,12 +3786,6 @@ function saveAnalytics(data) {
   localStorage.setItem('feedback_analytics', JSON.stringify(data));
 }
 
-function incrementAnalytic(key) {
-  const analytics = getAnalytics();
-  analytics[key] = (analytics[key] || 0) + 1;
-  saveAnalytics(analytics);
-}
-
 function trackSnoozeReason(reason) {
   const analytics = getAnalytics();
   if (!analytics.snooze_reasons) analytics.snooze_reasons = {};
@@ -3820,200 +3793,44 @@ function trackSnoozeReason(reason) {
   saveAnalytics(analytics);
 }
 
-function logAnalyticsSummary() {
-  const analytics = getAnalytics();
-  const started = analytics.survey_started || 0;
-  const completed = analytics.survey_completed || 0;
-  const completionRate = started > 0 ? ((completed / started) * 100).toFixed(1) : 0;
-  
-  // Feedback analytics available in storage
-}
-
-// PHASE 3: Track survey started timestamp
-function trackSurveyStarted() {
-  const timestamp = Date.now();
-  localStorage.setItem('feedback_survey_started', timestamp.toString());
-  
-  // Analytics: Increment started count
-  incrementAnalytic('survey_started');
-  
-  logAnalyticsSummary();
-}
-
-// The embedded Tally iframe (null until the user picks thumbs-up/down). Nothing is sent to Tally before that click.
-let feedbackFrame = null;
-
-// #194: load the Tally form in the drawer. The URL carries only the fields built in feedback-data.js.
-async function openFeedbackForm(sentiment) {
-  surveyCompleted = false; // Reset completion flag
-  
-  // CRITICAL FIX: Track BEFORE loading iframe (prevents crash edge case)
-  trackSurveyStarted();
-  
+// #194: the feedback buttons open the Tally survey in a NEW TAB. No frame is embedded, so the extension's
+// content-security policy is unchanged, and nothing is sent to Tally before the click. The address carries
+// only the fields built in feedback-data.js. A click proves the survey was opened, not that it was submitted.
+async function openFeedbackSurvey(sentiment) {
   const url = await buildTallyURL(sentiment);
-  const drawer = document.querySelector('.sentiment-drawer');
-  drawer.classList.add('survey-embedded');
-  drawer.textContent = '';
-  const frame = document.createElement('iframe');
-  frame.src = `${url}&hideTitle=1&transparentBackground=1&alignLeft=1`;
-  frame.width = '100%';
-  frame.height = '550px';
-  frame.setAttribute('frameborder', '0');
-  frame.style.cssText = 'border: none; border-radius: 8px; display: block;';
-  drawer.appendChild(frame);
-  feedbackFrame = frame;
+  chrome.tabs.create({ url });
+  snoozeFeedback(45, 'opened_survey');
+  const picker = document.getElementById('sentiment-picker');
+  const bubble = document.getElementById('feedback-bubble');
+  if (picker) picker.style.display = 'none';
+  if (bubble) bubble.style.display = 'none';
+  showToast('Thank you! The survey opened in a new tab.');
 }
 
-// PHASE 2: Reattach button listeners (called after drawer reset)
-function reattachButtonListeners() {
+function attachFeedbackButtonListeners() {
   const posBtn = document.getElementById('sentiment-positive');
   const negBtn = document.getElementById('sentiment-negative');
   const delBtn = document.getElementById('sentiment-delay');
   const picker = document.getElementById('sentiment-picker');
   const bubble = document.getElementById('feedback-bubble');
-  
-  if (posBtn) posBtn.addEventListener('click', () => openFeedbackForm('positive'));
-  if (negBtn) negBtn.addEventListener('click', () => openFeedbackForm('negative'));
-  
+
+  if (posBtn) posBtn.addEventListener('click', () => openFeedbackSurvey('positive'));
+  if (negBtn) negBtn.addEventListener('click', () => openFeedbackSurvey('negative'));
+
   if (delBtn) {
     delBtn.addEventListener('click', () => {
       snoozeFeedback(7, 'remind_later');
       if (picker) picker.style.display = 'none';
       if (bubble) bubble.style.display = 'none';
-      
-      // Show confirmation toast
-      showToast('No problem - we\'ll ask again later! 👋');
+      showToast("No problem - we'll ask again later! 👋");
     });
   }
 }
-
-// PHASE 2: Reset drawer to original 3-button state
-function resetDrawerToOriginal() {
-  const drawer = document.querySelector('.sentiment-drawer');
-  if (!drawer) return;
-  
-  drawer.classList.remove('survey-embedded');
-  feedbackFrame = null;
-  drawer.innerHTML = ORIGINAL_DRAWER_HTML;
-
-  
-  // Re-attach button listeners after resetting HTML
-  reattachButtonListeners();
-}
-
-// PHASE 2: Completion tracking via postMessage
-let surveyCompleted = false;
-
-// Helper function to show "Click anywhere to close" overlay
-function showThankYouOverlay() {
-  const picker = document.getElementById('sentiment-picker');
-  if (!picker) return;
-  
-
-  
-  // Remove any existing overlay first
-  const existingOverlay = document.getElementById('thank-you-close-overlay');
-  if (existingOverlay) existingOverlay.remove();
-  
-  // Create overlay that covers the ENTIRE picker area (not just drawer)
-  const overlay = document.createElement('div');
-  overlay.id = 'thank-you-close-overlay';
-  overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.8);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10001;
-    cursor: pointer;
-  `;
-  
-  overlay.innerHTML = `
-    <div style="
-      background: white;
-      padding: 40px;
-      border-radius: 12px;
-      text-align: center;
-      max-width: 400px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    ">
-      <div style="font-size: 48px; margin-bottom: 16px;">✅</div>
-      <div style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">Thank you for your feedback!</div>
-      <div style="font-size: 14px; color: #666; margin-bottom: 8px;">We'll use this to improve SpotBoard</div>
-      <div style="font-size: 13px; color: #999; margin-top: 20px;">Click anywhere to close</div>
-    </div>
-  `;
-  
-  // Close on click anywhere
-  overlay.addEventListener('click', () => {
-    if (picker) picker.style.display = 'none';
-    const bubble = document.getElementById('feedback-bubble');
-    if (bubble) bubble.style.display = 'none';
-    overlay.remove();
-
-  });
-  
-  document.body.appendChild(overlay);
-
-}
-
-// #194: a Tally submit event counts only if it comes from OUR iframe on tally.so. Without this, any frame or script
-// that can post a message could mark the survey done and snooze the prompt.
-function isTallySubmitMessage(event) {
-  if (event.origin !== 'https://tally.so') return false;
-  if (!feedbackFrame || event.source !== feedbackFrame.contentWindow) return false;
-  let data = event.data;
-  if (typeof data === 'string') {
-    try { data = JSON.parse(data); } catch (e) { return false; }
-  }
-  // Tally documents { event: 'Tally.FormSubmitted', payload }; the old code read .type, so accept either until the real shape is logged
-  return !!data && (data.event === 'Tally.FormSubmitted' || data.type === 'Tally.FormSubmitted');
-}
-
-window.addEventListener('message', (event) => {
-  const isSubmitted = isTallySubmitMessage(event);
-  
-  if (isSubmitted) {
-    surveyCompleted = true;
-    
-    // Calculate completion time
-    const startedAt = parseInt(localStorage.getItem('feedback_survey_started') || '0');
-    if (startedAt > 0) {
-      const completionTime = Math.round((Date.now() - startedAt) / 1000); // seconds
-      const analytics = getAnalytics();
-      const totalTime = (analytics.avg_completion_time || 0) * (analytics.survey_completed || 0);
-      const newAvg = Math.round((totalTime + completionTime) / ((analytics.survey_completed || 0) + 1));
-      analytics.avg_completion_time = newAvg;
-      saveAnalytics(analytics);
-    }
-    
-    // PHASE 3: Clear survey started flag on completion
-    localStorage.removeItem('feedback_survey_started');
-    
-    // Analytics: Increment completed count
-    incrementAnalytic('survey_completed');
-    
-    logAnalyticsSummary();
-    
-    // Snooze for 60 days
-    snoozeFeedback(45, 'completed');
-    
-    // Show thank you overlay with close button
-    showThankYouOverlay();
-  }
-});
 
 // Initialize feedback bubble (show/hide based on conditions)
 async function initFeedbackBubble() {
   const bubble = document.getElementById('feedback-bubble');
   const picker = document.getElementById('sentiment-picker');
-  const positiveBtn = document.getElementById('sentiment-positive');
-  const negativeBtn = document.getElementById('sentiment-negative');
-  const delayBtn = document.getElementById('sentiment-delay');
 
   if (!bubble || !picker) return; // Elements not found
 
@@ -4021,79 +3838,23 @@ async function initFeedbackBubble() {
   
   // Toggle drawer on bubble click (open/close)
   bubble.addEventListener('click', () => {
-    if (picker.style.display === 'block') {
-      // Drawer is open - check if survey is active before closing
-      const drawer = document.querySelector('.sentiment-drawer');
-      const isSurveyEmbedded = drawer && drawer.classList.contains('survey-embedded');
-      
-      if (isSurveyEmbedded && !surveyCompleted) {
-        // User has active survey - confirm before closing
-        const confirmed = confirm(
-          "Are you sure you want to leave this feedback?\n\n" +
-          "Your progress will be lost. Click OK to close, or Cancel to continue."
-        );
-        
-        if (confirmed) {
-          picker.style.display = 'none';
-        }
-      } else {
-        // No active survey or survey completed - just close
-        picker.style.display = 'none';
-      }
-    } else {
-      // Drawer is closed - open it (and reset if needed)
-      const drawer = document.querySelector('.sentiment-drawer');
-      if (drawer && drawer.classList.contains('survey-embedded')) {
-        resetDrawerToOriginal();
-      }
-      picker.style.display = 'block';
-    }
+    picker.style.display = picker.style.display === 'block' ? 'none' : 'block';
   });
 
   // Sentiment button listeners
-  reattachButtonListeners();
+  attachFeedbackButtonListeners();
 
-  // Close drawer on overlay click with confirmation for active surveys
+  // Dismissing the drawer without choosing - snooze 7 days
   const overlay = document.querySelector('.sentiment-overlay');
   if (overlay) {
     overlay.addEventListener('click', () => {
-      if (surveyCompleted) {
-        picker.style.display = 'none';
-        return;
-      }
-      
-      const drawer = document.querySelector('.sentiment-drawer');
-      const isSurveyEmbedded = drawer && drawer.classList.contains('survey-embedded');
-      
-      if (isSurveyEmbedded) {
-        const confirmed = confirm(
-          "Are you sure you want to leave this feedback?\n\n" +
-          "Your progress will be lost. Click OK to close, or Cancel to continue."
-        );
-        
-        if (confirmed) {
-          resetDrawerToOriginal();
-          picker.style.display = 'none';
-        }
-      } else {
-        // User dismissed without opening survey - snooze 7 days
-        snoozeFeedback(7, 'dismissed');
-        picker.style.display = 'none';
-        showToast('No problem - we\'ll ask again later! 👋');
-      }
+      snoozeFeedback(7, 'dismissed');
+      picker.style.display = 'none';
+      showToast("No problem - we'll ask again later! 👋");
     });
   }
 
   // ===== NOW CHECK VISIBILITY CRITERIA =====
-
-  // PHASE 3: Check for partial completion (started but not finished)
-  const surveyStartedAt = parseInt(localStorage.getItem('feedback_survey_started') || '0');
-  const snoozedUntil = parseInt(localStorage.getItem('feedback_snoozed_until') || '0');
-  
-  if (surveyStartedAt > 0 && Date.now() >= snoozedUntil) {
-    snoozeFeedback(3, 'partial_completion');
-    localStorage.removeItem('feedback_survey_started');
-  }
 
   // Check display conditions
   const updatedSnoozeUntil = parseInt(localStorage.getItem('feedback_snoozed_until') || '0');
@@ -4149,18 +3910,10 @@ window.testFeedbackBanner = function() {
     return;
   }
   
-  // Reset to clean state first
-  const drawer = document.querySelector('.sentiment-drawer');
-  if (drawer && drawer.classList.contains('survey-embedded')) {
-    resetDrawerToOriginal();
-  }
   picker.style.display = 'none';
   
   // Force show bubble (but let user click it manually)
   bubble.style.display = 'flex';
-  
-  // Ensure button listeners are attached
-  reattachButtonListeners();
   
   console.log('✅ Feedback button visible - click it to open drawer');
   console.log('📊 Current criteria status:');

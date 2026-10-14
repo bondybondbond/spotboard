@@ -1,6 +1,6 @@
 // ===== FEEDBACK DATA BUILDER =====
-// Builds the Tally feedback form URL. Everything below ends up in the iframe's address, so it reaches
-// Tally the moment the form loads (not only on Submit). #194: send the minimum, nothing per-install.
+// Builds the Tally feedback survey link. Everything below ends up in the link's address, so it reaches
+// Tally when the survey page opens (not only on Submit). #194: send the minimum, nothing per-install.
 // NOTE: These functions are global (no export) since loaded via <script> tag
 
 // Hidden fields sent, and why each earns its place:
@@ -30,7 +30,7 @@ async function calculateFeedbackFields() {
 const TALLY_POSITIVE_URL = 'https://tally.so/r/GxppGe'
 const TALLY_NEGATIVE_URL = 'https://tally.so/r/7RKNlZ'
 
-// Builds the pre-populated Tally URL. Tally matches hidden fields by name; only these names are ever added.
+// Builds the pre-populated Tally link. Tally matches hidden fields by name; only these names are ever added.
 async function buildTallyURL(sentiment) {
   const baseURL = sentiment === 'positive' ? TALLY_POSITIVE_URL : TALLY_NEGATIVE_URL
   const params = new URLSearchParams()

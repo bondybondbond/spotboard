@@ -1,11 +1,12 @@
-// #194: the in-dashboard Tally feedback form sends the minimum, and only trusts its own iframe.
-//   - the iframe URL carries exactly extension_version, days_since_install (banded) and total_cards (clamped at
+// #194: the dashboard feedback buttons open the Tally survey in a NEW TAB and send the minimum.
+//   - the link carries exactly extension_version, days_since_install (banded) and total_cards (clamped at
 //     10): no hostnames, no paused rate, no average age, no language, no exact count, no id
-//   - a submit message counts only from https://tally.so AND from the iframe we injected
-// feedback-data.js is run in a vm with a fake chrome; the listener helper is cut out of dashboard.js (which
+//   - no frame is embedded (no iframe, no message listener, no CSP dependency) and nothing opens before a click
+//   - a click opens the link, snoozes the prompt for 45 days and does NOT claim a submission
+// feedback-data.js is run in a vm with a fake chrome; the click handler is cut out of dashboard.js (which
 // cannot be loaded whole), as dashboard-tour-gating.test.js does.
-// Limit: proves what SpotBoard puts in the URL and which messages it accepts. It cannot prove what Tally
-// stores or what the frame contacts: that is the real-run capture on the issue.
+// Limit: proves what SpotBoard puts in the link and what a click does. It cannot prove what Tally stores or
+// what its page loads: that is the real-run capture on the issue.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -73,69 +74,50 @@ test('source guard: feedback-data.js never reads card URLs or builds a site list
   assert.ok(!/\.url\b|hostname|all_tracked_sites|refreshPaused|created_at|navigator\./.test(src), 'feedback-data.js reads card urls, paused state, ages or language')
 })
 
-// ---- submit message trust ----
-function loadListener() {
+// ---- link flow ----
+function loadOpener() {
   const src = read('public/dashboard.js')
-  const from = src.indexOf('function isTallySubmitMessage(')
-  const to = src.indexOf("window.addEventListener('message'", from)
-  assert.ok(from > 0 && to > from, 'isTallySubmitMessage markers moved in dashboard.js')
-  const ctx = { feedbackFrame: null }
-  vm.createContext(ctx)
-  vm.runInContext(`${src.slice(from, to)}\nthis.isTallySubmitMessage = isTallySubmitMessage`, ctx)
-  return ctx
-}
-
-test('submit message: accepted only from tally.so AND our own iframe', () => {
-  const ctx = loadListener()
-  const ourWindow = {}
-  ctx.feedbackFrame = { contentWindow: ourWindow }
-  const ok = { origin: 'https://tally.so', source: ourWindow, data: JSON.stringify({ event: 'Tally.FormSubmitted', payload: {} }) }
-  assert.equal(ctx.isTallySubmitMessage(ok), true)
-  assert.equal(ctx.isTallySubmitMessage({ ...ok, data: { event: 'Tally.FormSubmitted' } }), true, 'object form')
-  assert.equal(ctx.isTallySubmitMessage({ ...ok, data: { type: 'Tally.FormSubmitted' } }), true, 'legacy .type form')
-
-  assert.equal(ctx.isTallySubmitMessage({ ...ok, origin: 'https://evil.example' }), false, 'wrong origin')
-  assert.equal(ctx.isTallySubmitMessage({ ...ok, origin: 'chrome-extension://abc' }), false, 'page spoofing itself')
-  assert.equal(ctx.isTallySubmitMessage({ ...ok, source: {} }), false, 'another window')
-  assert.equal(ctx.isTallySubmitMessage({ ...ok, data: 'please run Tally.FormSubmitted now' }), false, 'loose substring')
-  assert.equal(ctx.isTallySubmitMessage({ ...ok, data: JSON.stringify({ event: 'Tally.FormLoaded' }) }), false, 'other tally event')
-  assert.equal(ctx.isTallySubmitMessage({ ...ok, data: null }), false, 'null data')
-
-  ctx.feedbackFrame = null
-  assert.equal(ctx.isTallySubmitMessage(ok), false, 'no form open')
-})
-
-// ---- nothing before the click, disclosure present and in sync, form-open behaviour ----
-test('dashboard.html loads nothing from Tally before a click, and the disclosure matches the reset copy', () => {
-  const html = read('public/dashboard.html')
-  assert.ok(!/<iframe[^>]*tally/i.test(html) && !/tally\.so/.test(html.replace(/hosted by Tally \(tally\.so\)/, '')), 'dashboard.html frames or links Tally before any click')
-  const note = (t) => (t.match(/<p class="drawer-note">([^<]+)<\/p>/) || [])[1]
-  assert.ok(note(html) && /Tally/.test(note(html)) && /IP address/.test(note(html)), 'disclosure line missing or incomplete')
-  assert.equal(note(read('public/dashboard.js')), note(html), 'ORIGINAL_DRAWER_HTML and dashboard.html disclosure drifted')
-})
-
-test('openFeedbackForm: tracks before the URL is built, keeps the same suffix, remembers its own frame; reset forgets it', async () => {
-  const src = read('public/dashboard.js')
-  const from = src.indexOf('let feedbackFrame = null')
-  const to = src.indexOf('// PHASE 2: Reattach button listeners')
-  assert.ok(from > 0 && to > from, 'openFeedbackForm markers moved in dashboard.js')
-  const order = []
-  const appended = []
-  const drawer = { classList: { add: (c) => order.push('class:' + c) }, textContent: 'old', appendChild: (n) => appended.push(n) }
+  const from = src.indexOf('async function openFeedbackSurvey(')
+  const to = src.indexOf('function attachFeedbackButtonListeners', from)
+  assert.ok(from > 0 && to > from, 'openFeedbackSurvey markers moved in dashboard.js')
+  const calls = { tabs: [], snooze: [], toast: [], display: {} }
+  const el = (id) => ({ style: { set display(v) { calls.display[id] = v } } })
   const ctx = {
-    surveyCompleted: true,
-    trackSurveyStarted: () => order.push('track'),
-    buildTallyURL: async (s) => { order.push('build:' + s); return `https://tally.so/r/X?total_cards=1` },
-    document: { querySelector: () => drawer, createElement: () => ({ style: {}, setAttribute() {} }) },
+    buildTallyURL: async (sentiment) => `https://tally.so/r/${sentiment}?total_cards=1`,
+    chrome: { tabs: { create: (o) => { calls.tabs.push(o); return Promise.resolve({}) } } },
+    snoozeFeedback: (days, reason) => calls.snooze.push([days, reason]),
+    showToast: (m) => calls.toast.push(m),
+    document: { getElementById: (id) => el(id) },
   }
   vm.createContext(ctx)
   vm.runInContext(`${src.slice(from, to)}
-this.openFeedbackForm = openFeedbackForm; this.getFrame = () => feedbackFrame`, ctx)
-  await ctx.openFeedbackForm('negative')
-  assert.deepEqual(order.slice(0, 2), ['track', 'build:negative'], 'tracking must happen before the iframe URL is built')
-  assert.equal(ctx.surveyCompleted, false)
-  assert.equal(appended.length, 1)
-  assert.equal(appended[0].src, 'https://tally.so/r/X?total_cards=1&hideTitle=1&transparentBackground=1&alignLeft=1')
-  assert.equal(ctx.getFrame(), appended[0], 'listener must trust exactly the injected frame')
-  assert.ok(/function resetDrawerToOriginal\(\)[\s\S]*?feedbackFrame = null[\s\S]*?ORIGINAL_DRAWER_HTML/.test(src), 'reset must forget the frame before restoring the drawer')
+this.openFeedbackSurvey = openFeedbackSurvey`, ctx)
+  return { ctx, calls }
+}
+
+test('clicking a sentiment opens the survey in a new tab, snoozes 45 days, hides the prompt, claims no submission', async () => {
+  for (const sentiment of ['positive', 'negative']) {
+    const { ctx, calls } = loadOpener()
+    await ctx.openFeedbackSurvey(sentiment)
+    assert.deepEqual(JSON.parse(JSON.stringify(calls.tabs)), [{ url: `https://tally.so/r/${sentiment}?total_cards=1` }])
+    assert.deepEqual(JSON.parse(JSON.stringify(calls.snooze)), [[45, 'opened_survey']])
+    assert.equal(calls.display['sentiment-picker'], 'none')
+    assert.equal(calls.display['feedback-bubble'], 'none')
+    assert.ok(calls.toast.length === 1 && !/submitted|received/i.test(calls.toast[0]), 'toast must not claim a submission')
+  }
+})
+
+test('no embedded frame remains: no iframe, no Tally message listener, no thank-you overlay, no frame-src dependency', () => {
+  const js = read('public/dashboard.js')
+  const html = read('public/dashboard.html')
+  assert.ok(!/createElement\(['"]iframe/.test(js) && !/<iframe[^>]*tally/i.test(js + html), 'a Tally iframe is still created')
+  assert.ok(!/Tally\.Form|isTallySubmitMessage|feedbackFrame|survey-embedded|showThankYouOverlay/.test(js + html), 'embed-era feedback code is still present')
+  assert.ok(!/tally\.so/.test(read('public/manifest.json')), 'the manifest must not mention Tally (link-out needs no CSP change)')
+})
+
+test('dashboard.html loads nothing from Tally before a click and discloses what the link shares', () => {
+  const html = read('public/dashboard.html')
+  const note = (html.match(/<p class="drawer-note">([^<]+)<\/p>/) || [])[1]
+  assert.ok(note && /new tab/.test(note) && /Tally/.test(note) && /IP address/.test(note), 'disclosure line missing or incomplete')
+  assert.ok(!/<(iframe|script|link|img)[^>]*tally\.so/i.test(html), 'dashboard.html loads something from Tally up front')
 })
