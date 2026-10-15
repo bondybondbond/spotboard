@@ -1359,7 +1359,7 @@ function _countStructure(html) {
  * is cleaned through the same pipeline as a stored refresh so its image count is like-for-like
  * with the saved copy. Every refreshComponent / drift-guard tab path goes through here.
  */
-async function _tabRefreshForComponent(component, fingerprint, expectedImgCount, expectedLargeImgCount) {
+async function _tabRefreshForComponent(component, fingerprint, expectedImgCount, expectedLargeImgCount, quietOnly = false) {
   // #132: only cards with stored "exclude all like this" rules get a layout-compatibility check, run on
   // the same input and with the same function the pipeline's pattern guard uses (never stricter than it).
   const patterns = component.exclusionPatterns;
@@ -1376,7 +1376,9 @@ async function _tabRefreshForComponent(component, fingerprint, expectedImgCount,
   const flagged = component.requiresActiveFocus === true;
   const phase = _refreshPhase.get(component);
   const probes = _canQuietProbe(component) && phase !== 'focus';
-  const probeOnly = probes && phase === 'probe';
+  // #204: quietOnly = the unfocused tiers only (background tab, offscreen window), never the focused popup. Used when a
+  // direct fetch may merely be missing script-injected elements: a dead rule must not pop a window on every refresh.
+  const probeOnly = quietOnly || (probes && phase === 'probe');
   // #202: after a structure settle in the focused popup, is the CLEANED capture comparable to the saved copy? Same
   // pipeline as the saved copy, so the counts are like-for-like (the raw block holds hidden/excluded items it lost).
   const expectedStructure = _countStructure(component.html_cache);
@@ -1385,7 +1387,7 @@ async function _tabRefreshForComponent(component, fingerprint, expectedImgCount,
     return { count, ok: window.LazyLoad ? window.LazyLoad.structureRecovered(count, expectedStructure) : count > 0 };
   };
   const run = () => tabBasedRefresh(component.url, component.selector, fingerprint, expectedImgCount, expectedLargeImgCount,
-    flagged && !probes, probes || component.requiresFixedCaptureWidth === true,
+    flagged && !probes && !quietOnly, probes || component.requiresFixedCaptureWidth === true,
     {
       assess: (html, pageVisible, tier) => {
         const candidate = applySanitizationPipeline(html, component);
@@ -2899,7 +2901,8 @@ async function refreshComponent(component) {
         // Skeleton check triggers: skeleton class, empty container, missing images, wrapper skeleton,
         // Suspense boundary, React client-side-rendering bailout
 
-        if (isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing || hasSuspenseBoundary || isBailoutPage || isPlaceholderShell) {
+        const looksLikeShell = isSkeletonContent || isEmptyContainer || hasEmptyContainers || hasDuplicates || isPureWrapperSkeleton || hasImagesMissing || hasSuspenseBoundary || isBailoutPage || isPlaceholderShell;
+        if (looksLikeShell) {
           // Extract fingerprint FIRST to pass to tab refresh
           const originalFingerprint = extractFingerprint(component.html_cache);
 
@@ -2954,6 +2957,33 @@ async function refreshComponent(component) {
             error: isEmptyContainer ? 'Page returned empty container (JS not loaded yet)' : 'Page returned skeleton content (JS not loaded)',
             keepOriginal: true
           };
+        }
+
+        // #204: the page looks healthy but a stored "exclude all like this" rule matches NOTHING in it. The rule may target
+        // elements a script adds after load (NPR's video-player controls: 0 in the server HTML, present once rendered), which
+        // a browser tier would have. Try the QUIET browser tiers before failing closed. This only supplies another candidate:
+        // the same gates and the same final pattern guard (zero / 3x) still judge whatever is committed, and when no quiet
+        // tier yields a usable, fingerprint-matching candidate we carry on with THIS one so the guard raises the real fault
+        // (a rule that is genuinely gone still fails closed and keeps the last good copy). Over-growth never triggers this.
+        // Cards flagged requiresActiveFocus (known to need the focused popup) and cards Refresh All lane-schedules keep their
+        // own routing, unchanged: a quiet capture of a flagged card is judged by a lenient gate, so it is not offered here.
+        if (!looksLikeShell && component.requiresActiveFocus !== true && !requiresVisibleTab(component.url) &&
+            _refreshPhase.get(component) === undefined &&
+            typeof patternsMatchNothing === 'function' && patternsMatchNothing(extractedHtml, component.exclusionPatterns)) {
+          const patternFingerprint = extractFingerprint(component.html_cache);
+          let quiet = { html: null, activeFocusNeeded: false };
+          try {
+            quiet = await _tabRefreshForComponent(component, patternFingerprint, originalImgCount, originalLargeImgCount, true) || quiet;
+          } catch (quietErr) {
+            // an escalation that blows up changes nothing: the direct-fetch candidate goes to the guard as if it had not run
+            console.warn(`[SB-REFRESH] #204 quiet escalation failed for ${component.name}:`, quietErr);
+          }
+          const quietHtml = quiet.html;
+          const fingerprintOk = component.positionBased || !patternFingerprint || (quietHtml && quietHtml.toLowerCase().includes(patternFingerprint.toLowerCase()));
+          if (quietHtml && fingerprintOk) {
+            return _buildTabSuccessResult(applySanitizationPipeline(quietHtml, component), component, quiet.activeFocusNeeded);
+          }
+          if (DEBUG) console.log(`[SB-REFRESH] #204 quiet tiers gave no usable candidate for ${component.name}; the direct-fetch candidate faces the pattern guard`);
         }
 
       } else {

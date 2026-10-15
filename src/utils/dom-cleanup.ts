@@ -294,9 +294,12 @@ export function deriveTwinAlternate(rule: ExclusionPattern, root: HTMLElement, i
   return derived.rule;
 }
 
+/** The fault text for a rule that resolves to nothing; patternsMatchNothing() recognises it, so there is one source. */
+const PATTERN_FAULT_NOTHING = 'matched nothing';
+
 /** Why a stored pattern cannot be trusted on this markup, or null when it is fine. */
 export function patternFault(rule: ExclusionPattern, matchCount: number): string | null {
-  if (matchCount === 0) return 'matched nothing';
+  if (matchCount === 0) return PATTERN_FAULT_NOTHING;
   // Computed from the class, never stored: older records and Kalshi's alternate rules get the same bound.
   const growth = rule.a.toLowerCase() !== 'time' && isUtilityOnlyClass(rule.c) ? PATTERN_MAX_GROWTH_UTILITY : PATTERN_MAX_GROWTH;
   if (matchCount > Math.max(rule.n, 1) * growth) return `matched ${matchCount} elements (was ${rule.n} at capture)`;
@@ -377,6 +380,16 @@ export function markPatternExclusions(html: string, patterns?: ExclusionPattern[
     matches.concat(altMatches).forEach(el => el.setAttribute(EXCLUDED_MARK_ATTR, 'pattern'));
   });
   return { html: tpl.innerHTML, faults, counts, altCounts };
+}
+
+/**
+ * #204: does at least one stored rule resolve to NOTHING on this markup? Same input and same fault as the final
+ * pattern guard (it asks markPatternExclusions, never a second copy of the rule), but ONLY the zero-match fault
+ * counts: a rule that matches too many is not a sign the page was handed over without its scripts.
+ * Refresh uses it to decide that a direct-fetch candidate may simply be missing script-injected elements.
+ */
+export function patternsMatchNothing(html: string, patterns?: ExclusionPattern[] | null): boolean {
+  return markPatternExclusions(html, patterns).faults.some(fault => fault.endsWith(` ${PATTERN_FAULT_NOTHING}`));
 }
 
 /**
