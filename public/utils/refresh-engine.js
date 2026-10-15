@@ -1187,7 +1187,7 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
  *
  * Used in: refreshComponent() when direct fetch fails or for known problematic sites
  */
-async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0, skipToActive = false, skipToOffscreen = false, { assess = null, layoutOk = null, probeOnly = false } = {}) {
+async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCount = 0, expectedLargeImgCount = 0, skipToActive = false, skipToOffscreen = false, { assess = null, layoutOk = null, probeOnly = false, expectedStructure = 0, structureCheck = null } = {}) {
   // Per-call local flag — parallel-refresh safe (no shared module-level state)
   let activeFocusNeeded = false;
   // #132: `layoutOk(html)` is true when the card's stored "exclude all like this" rules still
@@ -1233,7 +1233,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     if (requiresVisibleTab(url) || skipToActive) {
       // Skip background + offscreen attempts - go straight to active tab
       // activeFocusNeeded stays false: nothing new to learn on this path
-      const meta = { layoutOk };
+      const meta = { layoutOk, expectedStructure, structureCheck };
       const result = await tryActiveTab(url, selector, fingerprint, meta);
       if (result && !passesQualityGate(result, meta, 'active')) {
         return { html: null, activeFocusNeeded: false, renderDegraded: true };
@@ -1325,7 +1325,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     // ATTEMPT 3: Focused active popup (last resort — site requires compositor focus frame to render)
     // Set activeFocusNeeded BEFORE calling so it is captured in the return value on success.
     activeFocusNeeded = true;
-    const activeMeta = { layoutOk };
+    const activeMeta = { layoutOk, expectedStructure, structureCheck };
     const fallbackResult = await tryActiveTab(url, selector, fingerprint, activeMeta);
     // #132: the last tier rendered a layout the stored rules don't fit. Prefer a compatible candidate an
     // earlier tier set aside; otherwise hand back the first faulting one so the caller names the real cause.
@@ -1344,6 +1344,14 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     console.error('Tab refresh failed:', error);
     return { html: null, activeFocusNeeded: false };
   }
+}
+
+// #202: li/tr/article in a saved copy, the same elements isContentLost counts. Parsed inert (template): no loads.
+function _countStructure(html) {
+  if (!html) return 0;
+  const t = document.createElement('template');
+  t.innerHTML = html;
+  return t.content.querySelectorAll('li, tr, article').length;
 }
 
 /**
@@ -1369,6 +1377,13 @@ async function _tabRefreshForComponent(component, fingerprint, expectedImgCount,
   const phase = _refreshPhase.get(component);
   const probes = _canQuietProbe(component) && phase !== 'focus';
   const probeOnly = probes && phase === 'probe';
+  // #202: after a structure settle in the focused popup, is the CLEANED capture comparable to the saved copy? Same
+  // pipeline as the saved copy, so the counts are like-for-like (the raw block holds hidden/excluded items it lost).
+  const expectedStructure = _countStructure(component.html_cache);
+  const structureCheck = html => {
+    const count = _countStructure(applySanitizationPipeline(html, component));
+    return { count, ok: window.LazyLoad ? window.LazyLoad.structureRecovered(count, expectedStructure) : count > 0 };
+  };
   const run = () => tabBasedRefresh(component.url, component.selector, fingerprint, expectedImgCount, expectedLargeImgCount,
     flagged && !probes, probes || component.requiresFixedCaptureWidth === true,
     {
@@ -1381,7 +1396,9 @@ async function _tabRefreshForComponent(component, fingerprint, expectedImgCount,
           : assessCaptureQuality(candidate, component.html_cache, pageVisible);
       },
       layoutOk,
-      probeOnly
+      probeOnly,
+      expectedStructure, // #202: gates the structure settle in the focused popup
+      structureCheck
     });
   if (!probeOnly) return run();
   const result = await _withUrlGate(_urlKey(component.url), run);
@@ -2231,10 +2248,12 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
     await chrome.scripting.executeScript({ target: { tabId: atTabId }, files: ['utils/dom-snapshot.js', 'utils/lazy-load.js'] });
     // Named (not inline) so the widen-and-retry path below (issue #72) can re-run the
     // identical extraction after resizing, without duplicating this whole function body.
-    const extractFromTab = async (sel, fp) => {
-        // Find the correct element (by fingerprint if provided)
+    const extractFromTab = async (sel, fp, expectedStructure = 0) => {
+      // Find the correct element (by fingerprint if provided). A function because the settle below can make
+      // the site re-render, so the block is looked up again afterwards if it was replaced.
+      const findElement = () => {
         let element = null;
-        
+
         if (fp) {
           const allMatches = document.querySelectorAll(sel);
           const _norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
@@ -2262,9 +2281,33 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
           element = document.querySelector(sel);
         }
 
+        return element;
+      };
+        let element = findElement();
+
         if (!element) {
           console.error('[Active Tab] Element not found!');
           return null;
+        }
+
+        // 🎯 STRUCTURE SETTLE (issue #202): Kalshi mounts its news + comments only after a scroll in this
+        // narrow popup, so the block arrives as the page head with no list items. Fires ONLY when the saved
+        // copy has >= 3 li/tr/article and this block has none (isContentLost's structural rule) and runs
+        // one bounded scroll that stops when the structure stops growing. Whether the result is comparable to
+        // the saved copy is judged back in the extension (meta.structureCheck), on the cleaned capture.
+        // No site constants. Healthy cards never scroll.
+        let structure = null;
+        const LL = window.LazyLoad;
+        if (LL && LL.settleStructure && expectedStructure > 0 && LL.needsStructureSettle(LL.countStructure(element), expectedStructure)) {
+          try {
+            const s = await LL.settleStructure(element, expectedStructure, { resolve: findElement });
+            if (!element.isConnected) element = findElement() || element;
+            structure = { triggered: true, count: s.count, peak: s.peak, steps: s.steps, ms: s.elapsedMs, capped: s.capped, aborted: s.aborted };
+          } catch (_) {
+            // Best-effort: fall through to the capture as it is. It still counts as settled, so the recovery check
+            // below judges it (a partly mounted stub must not slip past the zero-only isContentLost gate).
+            structure = { triggered: true, error: true };
+          }
         }
 
         // 🎯 SCROLL-THROUGH LAZY LOAD (issue #72): sites like CNBC only mount a thumbnail once it
@@ -2272,7 +2315,9 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
         // sitting at scrollY=0 holds a few real images and many empty placeholders. Scrolls only
         // across this block, only when it holds >= MIN_EMPTY_SLOTS empty image slots, bounded by
         // step/time caps, and restores the scroll position. No-op for ordinary cards.
-        if (window.LazyLoad) {
+        // Skipped after a structure settle (#202): that pass already walked the page, and the two
+        // time caps must not stack (a triggered card pays at most the settle's ~10 s).
+        if (window.LazyLoad && !(structure && structure.triggered)) {
           try { await window.LazyLoad.ensureLazyContentLoaded(element) } catch (_) { /* best-effort */ }
         }
 
@@ -2406,17 +2451,21 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
           console.log(`🖼️ [SpotBoard] Next.js fill layout fix: ${fillFixes} images un-collapsed`);
         }
 
-        return { html: clone.outerHTML, hasEmptyImageSlots };
+        return { html: clone.outerHTML, hasEmptyImageSlots, structure };
     };
 
     meta.pageVisible = await readPageVisible(atTabId); // #101
+    const expectedStructure = meta.expectedStructure || 0; // #202: li/tr/article in the saved copy
     const results = await chrome.scripting.executeScript({
       target: { tabId: atTabId },
-      args: [selector, fingerprint],
+      args: [selector, fingerprint, expectedStructure],
       func: extractFromTab
     });
 
     let html = results[0]?.result?.html;
+    // #202: remember whether a structure settle ran (diagnostics land on meta.structureSettle).
+    let structureSettled = !!results[0]?.result?.structure?.triggered;
+    meta.structureSettle = results[0]?.result?.structure || null;
 
     // 🎯 WIDEN-AND-RETRY (issue #72): if an expected image slot never resolved at the
     // popup's normal narrow width, widen the same live window (no reload — preserves
@@ -2462,15 +2511,28 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
         const retryVisible = await readPageVisible(atTabId); // #101: visibility of the retry capture
         const retryResults = await chrome.scripting.executeScript({
           target: { tabId: atTabId },
-          args: [selector, fingerprint],
+          // A settle already ran on the first pass: the retry must not pay a second one (one popup, one ~10 s budget).
+          args: [selector, fingerprint, structureSettled ? 0 : expectedStructure],
           func: extractFromTab
         });
         const retryHtml = retryResults[0]?.result?.html;
         if (retryHtml) {
           html = retryHtml;
           meta.pageVisible = retryVisible;
+          structureSettled = structureSettled || !!retryResults[0]?.result?.structure?.triggered;
+          meta.structureSettle = retryResults[0]?.result?.structure || meta.structureSettle;
         }
       } catch (_) { /* best-effort — fall back to the first-pass html below */ }
+    }
+
+    // #202: a settle ran, but is what it mounted comparable to the saved copy? isContentLost only fails at ZERO
+    // structure, so a stub (2 of 36 items) would pass every gate and replace a good copy: reject it here. The check
+    // runs on the CLEANED capture (same pipeline as the saved copy), not the raw block. A capture still at zero is
+    // left to the existing gates, so those cards keep failing with today's message.
+    if (html && structureSettled && typeof meta.structureCheck === 'function') {
+      const check = meta.structureCheck(html);
+      if (meta.structureSettle) meta.structureSettle.cleanedCount = check.count;
+      if (!check.ok && check.count > 0) html = null;
     }
 
     // Close popup and restore focus to user's window

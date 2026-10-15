@@ -23,8 +23,14 @@ var LazyLoad = (() => {
   __export(lazy_load_exports, {
     EMPTY_IMAGE_SLOT_SELECTOR: () => EMPTY_IMAGE_SLOT_SELECTOR,
     MIN_EMPTY_SLOTS: () => MIN_EMPTY_SLOTS,
+    MIN_SAVED_STRUCTURE: () => MIN_SAVED_STRUCTURE,
+    STRUCTURAL_SELECTOR: () => STRUCTURAL_SELECTOR,
     countEmptyImageSlots: () => countEmptyImageSlots,
-    ensureLazyContentLoaded: () => ensureLazyContentLoaded
+    countStructure: () => countStructure,
+    ensureLazyContentLoaded: () => ensureLazyContentLoaded,
+    needsStructureSettle: () => needsStructureSettle,
+    settleStructure: () => settleStructure,
+    structureRecovered: () => structureRecovered
   });
   var MIN_EMPTY_SLOTS = 3;
   var EMPTY_IMAGE_SLOT_SELECTOR = '[class*="thumbnail" i], [class*="image" i]';
@@ -36,6 +42,75 @@ var LazyLoad = (() => {
       if (!el.querySelector("img, picture") && (el.textContent || "").trim() === "") count++;
     });
     return count;
+  }
+  var STRUCTURAL_SELECTOR = "li, tr, article";
+  var MIN_SAVED_STRUCTURE = 3;
+  function countStructure(root) {
+    return root.querySelectorAll(STRUCTURAL_SELECTOR).length;
+  }
+  function needsStructureSettle(count, expected) {
+    return expected >= MIN_SAVED_STRUCTURE && count === 0;
+  }
+  function structureRecovered(count, expected) {
+    return count >= Math.max(MIN_SAVED_STRUCTURE, Math.ceil(expected / 2));
+  }
+  async function settleStructure(block, expected, opts = {}) {
+    const maxSteps = opts.maxSteps ?? 30;
+    const maxMs = opts.maxMs ?? 1e4;
+    const stepWaitMs = opts.stepWaitMs ?? 350;
+    const finalSettleMs = opts.finalSettleMs ?? 500;
+    const started = Date.now();
+    const before = countStructure(block);
+    const result = { triggered: false, before, peak: before, count: before, steps: 0, elapsedMs: 0, aborted: false, capped: false };
+    if (!needsStructureSettle(before, expected)) return result;
+    result.triggered = true;
+    let current = block;
+    const cur = () => {
+      if (!current.isConnected && opts.resolve) current = opts.resolve() || current;
+      return current;
+    };
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const onUserInput = (e) => {
+      if (e.isTrusted) result.aborted = true;
+    };
+    const inputEvents = ["wheel", "keydown", "touchstart", "mousedown"];
+    inputEvents.forEach((t) => window.addEventListener(t, onUserInput, { capture: true, passive: true }));
+    try {
+      const viewportH = window.innerHeight;
+      const step = Math.max(300, Math.floor(viewportH * 0.6));
+      let y = Math.max(0, block.getBoundingClientRect().top + window.scrollY - Math.floor(viewportH * 0.25));
+      let grew = false;
+      let flat = 0;
+      while (!result.aborted) {
+        if (result.steps >= maxSteps || Date.now() - started >= maxMs) {
+          result.capped = true;
+          break;
+        }
+        window.scrollTo({ left: window.scrollX, top: y, behavior: "instant" });
+        result.steps++;
+        await sleep(stepWaitMs);
+        const now = countStructure(cur());
+        if (now > result.peak) {
+          grew = true;
+          flat = 0;
+        } else if (grew) flat++;
+        result.peak = Math.max(result.peak, now);
+        if (grew && flat >= 2) break;
+        if (now >= expected) break;
+        const pageBottom = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+        y += step;
+        if (y > pageBottom) break;
+      }
+      if (!result.aborted) {
+        await sleep(finalSettleMs);
+        result.peak = Math.max(result.peak, countStructure(cur()));
+      }
+    } finally {
+      inputEvents.forEach((t) => window.removeEventListener(t, onUserInput, { capture: true }));
+      result.count = countStructure(cur());
+      result.elapsedMs = Date.now() - started;
+    }
+    return result;
   }
   async function ensureLazyContentLoaded(block, opts = {}) {
     const maxSteps = opts.maxSteps ?? 30;
