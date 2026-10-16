@@ -5,193 +5,108 @@ permalink: /privacy/
 
 # SpotBoard Privacy Policy
 
-**Effective Date:** December 27, 2024
-**Last Updated:** January 29, 2026
-**Version:** 1.2.1 (GA4 Analytics Added)
+**Effective Date:** 16 October 2026
+**Applies to:** SpotBoard 1.4.5 and later
+**Scope:** the SpotBoard extension. It does not cover the SpotBoard website.
 
-## Overview
-SpotBoard is a Chrome extension that allows you to capture specific sections of websites that **you explicitly select** and display them in a personal dashboard. We are committed to protecting your privacy and being transparent about our data practices.
+## In short
+- SpotBoard has no servers or accounts of its own. The content you capture is stored in your browser. Your card settings, including the full page address of each card, sync through your Google account using Chrome Sync, if you have Chrome Sync switched on.
+- SpotBoard sends usage statistics to **Google Analytics 4 (GA4)**: SpotBoard asks for no name, email or account and sends no ID that stays the same. Events include the **hostnames** of sites you capture, refresh or visit from your board (for example `bbc.com`). A hostname includes any subdomain, so on some sites it can contain an account or organisation name. Each event gets a fresh random ID that is not kept on your device, and there is no session ID, and no user ID except in the developer's own test traffic. Google still sees each request's IP address in transit, and the list of hostnames from one refresh can look the same as the next, so we don't promise the data can never be linked.
+- Analytics events are designed not to include page addresses beyond the hostname, page titles, card or board names, or captured content. Error reports carry only the kind of error, never its message (see below).
+- **Analytics cannot currently be switched off inside SpotBoard**, and SpotBoard does not read a Do Not Track or Global Privacy Control signal. Uninstalling SpotBoard stops its analytics from then on.
+- When you uninstall, Chrome opens an optional survey hosted by **Tally**. SpotBoard sends no data to it beyond the page request itself: the link carries no ID and no usage values. What you type and submit goes to Tally and to us.
+- If you press the **Feedback button in the dashboard**, the survey opens on Tally's website in a new tab. The link carries three rough details (SpotBoard version, install-age band, card count up to 10), never the sites on your board. Once it is open it is Tally's page: Tally sees your IP address and browser details, and its page may record views and use its own identifiers. See "Feedback survey in the dashboard" below.
+- Showing a **captured card's** icon sends that site's **hostname to Google's favicon service**. Opening the SpotBoard popup does not ask Google's favicon service for the icon of the tab you are on: it shows that tab's own icon, loaded from the site itself or from servers the site uses for its images (or your browser's copy of it). On a site where you have a captured card, the popup also shows that card's stored icon, and that icon does come from Google's favicon service. Every time the dashboard opens it also loads icons for four fixed example sites (the practice links in the Help window, which stays hidden until opened), and the first-run and add-card screens load more, all from Google's favicon service. Google receives your IP address, and any cookies Chrome chooses to send to google.com (in our test, including Google sign-in cookies), with these requests whether or not you have captured anything; they do not depend on your browsing (see "Other things that touch your browsing").
 
-**Key Principle:** SpotBoard is a **user-driven monitoring tool** - you choose which page sections to capture, when to refresh them, and when to delete them. We do not automatically crawl, scrape, or collect any data without your explicit action.
+## Who is responsible, and how to contact us
+SpotBoard is operated under the name SpotBoard. Contact: spotboard@outlook.com
 
-**Chrome Web Store Compliance:** SpotBoard is designed to comply with the Chrome Web Store User Data and Limited Use policies. We collect only what is necessary to provide the core features you initiate, and we do not sell, repurpose, or use your data for advertising or unrelated purposes.
+## Who receives what
+| Service | What it receives | Linked to |
+|---|---|---|
+| **Google Analytics 4** | The analytics events described below, including hostnames | Nothing that persists: a fresh random ID per event |
+| **Google favicon service** | The hostname of a site you captured, or of one of the fixed example sites the dashboard shows, plus your IP address and any cookies Chrome chooses to send to google.com, as part of the web request | No SpotBoard ID is sent; Google may link the request to its own cookies, including a Google sign-in if you are signed in |
+| **Google Chrome Sync** (your own Google account; run by Chrome, not SpotBoard) | Your card settings, including full page addresses | Your Google account |
+| **Tally** (uninstall survey) | Your answers, if you submit the survey, plus whatever Tally's page records when it opens (see "Feedback survey in the dashboard" for what we observed on the same pages) | Nothing from SpotBoard |
+| **Tally** (dashboard feedback survey) | The three details in the link, your IP address and browser details when the page opens, whatever Tally's page records (views, progress, its own identifiers, error reports), and your answers if you submit | SpotBoard adds no ID. Tally appears to keep its own respondent and session identifiers (see below) |
 
-## What We Collect
-SpotBoard collects only the information necessary to provide its core functionality **when you explicitly capture a component**:
+## What stays on your device
+Captured HTML, refresh results, and the date you installed SpotBoard (used on your device for onboarding timing; most events send only a rough band, and a few onboarding events send the time since install, as described below). The dashboard also keeps the times you opened the board or clicked refresh, for up to 30 days, on your device only; they are not sent. It also keeps a few notes for the feedback prompt (whether it has been shown, when it may return, why it was last put off, and how often each reason has happened); these are not sent either. Your exclusions are kept on the device and also sync (next section). Chrome limits how much SpotBoard can keep on a device, so very large boards can fill that space. Display preferences (theme, sort order and filter) and whether you have seen the welcome window are also kept on your device only.
 
-- **HTML Content**: The specific webpage sections you manually select and capture
-- **Website URLs**: The source URLs of components you chose to capture
-- **User Labels & Notes**: Any custom names or notes you add to your components
-- **Last Refresh Timestamps**: When each component was last updated
-- **Excluded Elements**: DOM elements you choose to remove from captures
+## What syncs through Chrome Sync (this is not analytics)
+Each card's **full page address (URL, including path and query)**, label, the selector SpotBoard uses to find the section again, the card's icon address (which contains the site's hostname), a short text fingerprint (the first visible heading of the captured section, such as an article headline, or the card's name; saved at up to 100 characters when you capture, and a later refresh may replace it with the full heading text), a short markup identifier from the section (a `data-testid`-style attribute name and value, when it has one), your exclusions (the patterns always sync, and they can include a page's class names and element positions; the selector list syncs when it fits), size, whether the card is paused, its list-format setting, creation and refresh times, refresh status (including whether the site needed a focused window), which board each card is on, plus board names and card order. Google handles this under your Google account. SpotBoard does not receive it, and captured HTML is not synced.
 
-## How We Store Your Data
-**SpotBoard uses HYBRID STORAGE to balance cross-device sync with storage efficiency:**
+## Analytics we send (GA4)
+**With every event**
+- A fresh random ID for that one event. It is generated in memory, never stored and never reused, so the ID itself cannot link two events. There is no session ID, and no user ID except in the developer's own test traffic.
+- Your browser name, OS and device type, browser language, SpotBoard version, and a rough install-age band (0, 1 to 6, 7 to 29, or 30 or more days). Some events sent from the dashboard also say whether SpotBoard is pinned to the toolbar. Card clicks and deletes also carry a rough card-age band.
+- Google also receives the usual details of any web request, including your IP address and browser identification. SpotBoard does not add them to the event.
 
-### Sync Storage (Chrome's `chrome.storage.sync`)
-**What syncs:**
-- Component metadata (URLs, selectors, custom labels, excluded elements)
-- Your component list and settings
+**Events** (for example capture completed or failed, refresh completed or failed, board opened, card deleted, resized or reordered, board created, switched or deleted, onboarding steps, and one event when SpotBoard is installed)
+- **Individual hostname events:** when you finish, adjust, re-capture or cancel a capture (including captures that fail or come out empty), when you pick a site from the add-card list, when a refresh of a card fails, when you click anywhere in a card's content, or when you delete a card, the event carries that site's hostname. A refresh that succeeds does not send an individual hostname event. Failure events also carry the kind of error, the card's capture mode (position or selector), whether it has exclusions, and a rough fallback label guessed from the error. A failed capture also carries a category for the form of the selector (an id, a data attribute or a class), never the selector itself.
+- **Refresh hostname list:** each time you refresh your cards (all of them, or all cards on the board you are viewing), one event carries the hostnames of the cards that were refreshed (cards you have paused are left out) as a sorted, comma-separated list. The list is limited to 100 characters, so on a large board it holds only the hostnames that fit. It describes your board, not one site.
+- Counts and flags: the categories you pick during onboarding, number of cards and active cards (shown as 10 when you have 10 or more), how long a refresh took, whether you used exclusions, which capture mode you used, and a few other yes/no flags. The event sent when a refresh finishes also carries the exact number of cards that refreshed and the exact number that failed (these are not capped at 10) how many cards' quiet refresh worked without a focused window, and how many had to be retried in one; reordering cards sends the old and new position (exact, not capped). Many dashboard events also carry how long you have had the dashboard visible in this browser tab session (capped at 30 minutes).
+- **What can still repeat:** a few onboarding events carry the time since you installed (in seconds or hours), and the refresh hostname list can repeat for the same board. So these events are **not guaranteed to be unlinkable**.
+- **Selection shape:** when you finish or cancel adjusting a selection, the event carries the site's hostname, the outcome, how many times you reselected, how long it took, and the HTML tag names and pixel sizes of the element you most recently selected and of each element you stepped through from it with Grow or Shrink (for example `div:300x200`, up to 100 characters). It does not carry the page's text, class names or selectors.
 
-**How it works:**
-- ✅ Syncs across your Chrome browsers (if signed into Chrome)
-- ✅ Encrypted by Google during transmission
-- ✅ 8KB per component limit, 100KB total quota
-- ⚠️ Passes through Google's servers for syncing
+**Error reports.** When SpotBoard hits an unexpected error in its background process, it can send the kind of error (one of `Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError`, or `other`) and a fixed label saying it came from the background process. It does not send the error message or any part of the technical stack. Older versions sent the error message and first line of the stack; five such reports were recorded between 18 February and 22 May 2026, and we can no longer read their text.
 
-### Local Storage (Chrome's `chrome.storage.local`)
-**What stays local:**
-- Captured HTML content (the actual webpage sections)
+**Not sent as event data:** page titles, card names, board names, selectors, captured text or images, and web addresses beyond the hostname.
 
-**How it works:**
-- ✅ Stored only on your current device
-- ✅ No size limits (beyond disk space)
-- ✅ Never leaves your device
-- ✅ Never transmitted to any server (Google or ours)
+**Why:** to find and fix sites and layouts that fail, find errors, and decide what to build. We do not use analytics for advertising and we do not sell it.
 
-**What this means:**
-- Your **component list** syncs across devices (you see same captures everywhere)
-- The **actual content** stays local per device (refresh required on new devices)
-- Google's infrastructure handles metadata syncing (we don't operate any servers)
-- If you're not signed into Chrome, everything stays local to that device only
+**Google Analytics settings.** Google signals, granular location and device data, and all Google data-sharing options are switched off. We have accepted Google's data processing terms for Google Analytics.
 
-**We do NOT:**
-- Operate our own servers or cloud infrastructure
-- Have access to your data (neither sync nor local)
-- Track, analyze, or process your captured data
-- Share your data with any third parties
-- Sell or repurpose scraped content
-- Use scraped data for advertising, AI training, or unrelated purposes
-- Perform human review of your data (except for user-initiated support requests)
+**How long analytics data is kept — two different systems**
+- **Google Analytics 4:** our settings keep event data for **2 months**. These settings do not affect Google's standard aggregated reports.
+- **BigQuery copy:** we also copy raw events to Google BigQuery (London) for analysis. Those copies are deleted automatically after **60 days**. This limit applies to that copy only, not to GA4.
+- **Events from older versions:** versions before 1.4.5 sent two random IDs that stayed the same until you uninstalled, an exact install age and 7-day usage counts. Those events stay in both places until the limits above remove them. This version deletes the stored IDs and the old counter keys from your device when it updates; the dashboard's local list of board-open and refresh times (kept up to 30 days, never sent) remains.
+- **Versions before 1.4.5:** these versions behave as described in the "Events from older versions" bullet above and in the older-version notes under "Error reports", "Uninstall survey" and "Feedback survey in the dashboard". They also requested the active tab site's favicon from Google's favicon service whenever the popup was opened. The remaining sections describe the practices applicable to version 1.4.5 and later, including practices that have not changed.
 
-## What We Don't Collect
+## Uninstall survey (Tally)
+When you uninstall SpotBoard, Chrome opens an optional survey hosted by Tally (`tally.so`). SpotBoard sets that address in advance and it is a plain link: **it carries no ID and no usage values**, so a response carries nothing that identifies your installation or ties it to analytics events. Your browser still contacts Tally when the page opens, as for any web page. When we opened this survey page in a browser tab on 14 October 2026 it behaved like the dashboard surveys: it contacted Tally's event service and the same error-monitoring service, set no cookies and stored the same kinds of identifier-like keys in browser storage (see "Feedback survey in the dashboard").
+- **Not sent:** any ID, site names, page addresses, counts, anything you captured. We removed the survey's old hidden fields on 14 October 2026. Older versions of SpotBoard may still add an ID or counts to this survey's link, and Tally's view records may still hold the full link address, including those values; we have not tested what Tally does with them.
+- **What we ask:** the survey does not ask for your name or email (we checked the survey's questions on 14 October 2026). It asks why you uninstalled and, if you say a site did not work or something broke, which sites had issues and what the problem was, and has an optional free-text box. What you type there is yours to choose; please do not put personal details in it.
+- **Where and how long:** Tally says it stores form data in Europe. We keep responses until we delete them; automatic deletion is not switched on, and Tally emails us a copy of each submitted response.
+- **Older survey responses:** responses collected before 14 October 2026 included a random ID, usage counts and, in the oldest, a list of the site names on your board. We deleted 11 such responses from the survey on 13 October 2026 and permanently removed them from Tally's trash on 15 October 2026 (Tally's trash was then empty). We also deleted the emailed copies of those responses from our mailbox on 15 October 2026. Email copies of any later response stay in our mailbox until we delete them.
 
-**We NEVER collect:**
-- Authentication credentials or passwords
-- Payment card numbers or financial account information
-- Personal communications (emails, texts, chat messages)
-- Location data
-- Health information
+## Feedback survey in the dashboard (Tally)
+After a few days of use, a Feedback button can appear on the dashboard. Pressing it only opens a small panel. **Nothing is sent to Tally until you press 👍 or 👎**, which opens the survey on Tally's website (`tally.so`) in a new tab. SpotBoard does not embed the survey in the dashboard.
+- **What SpotBoard puts in the link:** the SpotBoard version, a rough install-age band (under 1 day, 1 to 6, 7 to 29, or 30 or more days) and your number of cards (shown as 10 when you have 10 or more). Nothing else: not the sites on your board, page addresses, card names, any ID of ours, or anything you captured. If you want to tell us about a site, you type it into the survey.
+- **What happens when the page opens:** your browser contacts Tally, which receives the link (with those three details), your IP address and browser details, as for any web page. After that it is Tally's page and Tally's practices apply; see Tally's own privacy notice.
+- **What we saw when we opened the surveys in their own browser tab (14 October 2026):** the page sent events to Tally's event service (api.tally.so) and contacted an error-monitoring service (Sentry; the connection appears to be Tally's own). In an earlier test with the same survey loaded inside a frame we saw these events were view and progress events (form viewed, page viewed, question viewed, drop-off) sent even though nothing was submitted, and that the form-viewed event carried the full link address. We saw no cookies, but in the tab the page stored two kinds of key in browser storage that look like identifiers (a respondent key and a per-form session key), and this still happened with the surveys' "save answers for later" setting switched off. We did not read the stored values and cannot see inside Tally, so treat this as what we observed, not a promise about what Tally does. Tally may be able to recognise the same browser if you open a survey again.
+- **Browser storage and UK rules:** the ICO's published guidance says the UK rules on storing information on a device (PECR) cover browser local storage as well as cookies, and that an organisation running an online service is responsible for storage by third-party components it builds into that service. The guidance pages we read do not say what applies when someone is sent to another organisation's own website. SpotBoard's own pages store nothing from Tally and load nothing from Tally: the survey opens on Tally's own website in a new tab, so the keys described above are set by Tally's page, not by SpotBoard, and Tally's own notice applies to them. We have not taken legal advice on this.
+- **What you type:** the positive survey asks two free-text questions and one multiple-choice question; the negative survey asks three free-text questions. They do not ask for your name. The last page of each asks for an **optional email address** if you are happy for us to follow up; if you give one, it is stored with your response and emailed to us with it. Please do not put other personal details in the text boxes. Answers you submit go to Tally and to us. Partial submissions are switched off on both surveys (checked 13 and 14 October 2026), so Tally should not keep answers you do not submit, though it may record that you viewed a question. The surveys' "save answers for later" setting, which would keep what you type in your own browser, is switched off (changed 14 October 2026).
+- **Putting the prompt off:** pressing 👍 or 👎 opens the survey and hides the Feedback button for 45 days. That records only that you opened it on your device, not that you submitted.
+- **Where and how long:** Tally says it stores form data in Europe. We keep responses until we delete them (automatic deletion is not switched on, checked 14 October 2026), and Tally emails us a copy of each submitted response. We do not know how long Tally keeps IP addresses, view and progress records or session identifiers, or how long the error-monitoring service keeps its record.
+- **Older responses and records (important):** neither survey shows any submitted response, and Tally's trash holds none for them (checked 14 October 2026). Tally may also keep view records for them. From about 20 January to 17 February 2026, an earlier version of SpotBoard loaded this survey inside the dashboard and put eleven details in this survey's address: a random ID that stayed the same until you uninstalled, your browser language, exact card counts, the share of paused cards, average card age, exact install age, board-open and refresh counts for the previous 7 days, and the list of site hostnames on your board with counts. After about 17 February 2026 the browser blocked that frame, so nothing was sent from the dashboard after that date. Tally's view records for these surveys may still hold such addresses. On 14 October 2026 we removed those old fields from both surveys, so they now define only the three details above. We have not been able to inspect or remove them. Tally's dashboard shows us only totals (visits, submissions), not individual view records, and we found no way to delete view records, so we cannot inspect or remove them. We have never received a response to either feedback survey. We re-checked this on 16 October 2026: all three surveys still show no completed submissions.
 
-**We only collect what you explicitly capture:**
-- URLs of pages you select to capture
-- HTML content of sections you choose to save
-- Custom labels and notes you add
+## Other things that touch your browsing
+- **Google favicon service:** the hostname of each captured card, including when the popup shows that card, and the hostnames of fixed example sites each time the dashboard opens. The popup does not ask Google's favicon service for the icon of the tab you are on: it shows that tab's own icon, loaded from the site itself or from servers the site uses for its images (or your browser's copy of it), and shows a small outlined circle when the site has no icon or its icon can't be loaded.
+- **Cookies on favicon requests:** the icon requests go to `google.com` first and are then redirected to Google's `gstatic.com` image servers. In a test on 16 October 2026, in a Chrome signed in to Google, the first request carried the browser's Google cookies (including sign-in cookies) and the redirected request did not. SpotBoard does not read or send those cookies; Chrome attaches them. This means Google can link the hostname in a favicon request to a signed-in Google account or browser. We did not find a way to switch this off in SpotBoard.
+- **Sites you capture:** refreshing a card fetches the saved page using your browser's cookies for that site, as if you had visited it. Pictures and media in a saved card load from the original site's servers when the card is displayed.
 
-## Analytics & Usage Tracking
+## Permissions
+- `storage`, `activeTab`, `scripting`: save your cards, capture the page you choose, and read a page's content when a card is refreshed.
+- `tabs`, `windows`: open a background tab or small window to refresh a card from its site, and bring the dashboard window to the front. When you open the SpotBoard popup it reads the address and icon of your active tab, to show that site's icon and to filter your cards. SpotBoard also checks the addresses of your open tabs to find its own dashboard tab. Chrome describes the `tabs` permission as "Read your browsing history"; that is Chrome's wording for the permission. SpotBoard does not keep a list of the sites you visit.
+- `system.display`: check that the SpotBoard dashboard window is on a screen that is connected, and move it back onto the main screen if it is not.
+- Access to all sites (`<all_urls>`): needed because you can capture any site.
 
-**As of v1.2.1**, SpotBoard uses Google Analytics 4 (GA4) to measure anonymous feature usage and improve the product. This helps us understand what works well and what needs improvement.
+## Why we process this data, and your rights
+- **Why and legal basis (UK GDPR):** for analytics, the uninstall survey and the dashboard feedback survey, we rely on **legitimate interests**. Our interest is keeping SpotBoard working, which means finding sites and layouts that fail, and deciding what to build. We collect hostnames and usage counts for this, and not names or accounts (the only email address we receive is one you choose to type into a survey, and giving it is optional).
+- **Your rights:** You can ask us for a copy of the data we hold about you, to correct it, to delete it, to restrict or object to its use, and to receive it. You can object by emailing spotboard@outlook.com. We cannot delete the view records Tally keeps for its surveys (see above); you can ask Tally directly. Because we hold no name or account to match events to, the practical way to stop analytics is to uninstall SpotBoard.
+- **Complaints:** if you are in the UK, you can complain to the Information Commissioner's Office (ico.org.uk).
+- **Transfers:** our BigQuery copy is in London. Google may process Google Analytics data in any country where it or its sub-processors operate, under its data processing terms (it states it takes part in the EU-US Data Privacy Framework and UK Extension). Tally is based in Belgium and says it stores form data in Europe (that is Tally's statement; we have not verified it). On 14 October 2026 we observed the survey page contacting an error-monitoring service at an address that suggests a US ingest region. We did not inspect what was sent, and we have not verified where Tally or that service processes data, what data the service receives, or what safeguards apply. So your IP address and browser details might be processed outside the UK and Europe, including in the US, but we cannot confirm that either way. We have not been able to confirm where Google processes favicon requests or Chrome Sync data.
 
-### What Analytics We Collect
-**Anonymous device identifiers:**
-- Random UUID (generated locally, not tied to your identity)
-- Session ID (resets after 30 minutes of inactivity)
-- Extension version number
-- Browser language setting
+## Your choices
+- **Delete a card:** removes it from your device and from Chrome Sync.
+- **Export your board:** open the ☰ menu in the dashboard and choose Export board.
 
-**Feature usage counts:**
-- Number of components captured/refreshed/deleted
-- Dashboard opens and refresh clicks
-- Error rates (e.g., failed captures/refreshes)
+## Using SpotBoard responsibly
+You are responsible for having the right to capture the content you choose, for following the terms of the sites you capture from, and for how you use captured content. SpotBoard is for personal monitoring of public content you already visit, not for bulk crawling, bypassing paywalls or logins, or resale. We are not responsible for third-party site content.
 
-**Board statistics:**
-- Total number of components you have
-- How many are active vs paused
-- Average age of your components
-
-### What Analytics We DON'T Collect
-**We NEVER track:**
-- Your browsing history or which specific sites you visit
-- The actual content you capture (HTML, text, images)
-- Personal information (name, email, location)
-- Specific URLs beyond domain names (e.g., we see "bbc.com" not "bbc.com/news/article-12345")
-- Authentication credentials or sensitive data
-- Any data outside SpotBoard's interface
-
-### How Analytics Data is Used
-- **Retention analysis**: Understanding which features keep users engaged
-- **Error debugging**: Identifying common failure patterns to fix bugs
-- **Feature prioritization**: Deciding what to build next based on actual usage
-- **Performance optimization**: Measuring load times and system health
-
-### Your Analytics Privacy Controls
-**You cannot opt out individually**, but you can:
-- Uninstall the extension (stops all tracking immediately)
-- Use browser privacy features like "Do Not Track" (GA4 respects this setting)
-- Review exactly what events we track in our [open-source code](https://github.com/bondybondbond/spotboard)
-
-**We promise:**
-- ✅ NEVER sell or share analytics data with third parties
-- ✅ NEVER use analytics for advertising or profiling
-- ✅ NEVER track specific websites you visit
-- ✅ Keep analytics anonymous (no way to identify individual users)
-
-
-
-## Permissions Explained
-SpotBoard requires the following Chrome permissions to function:
-
-- **`activeTab`**: Allows the extension to capture content from the webpage you're currently viewing when you click the capture button
-- **`storage`**: Enables saving your captured components locally on your device
-- **`scripting`**: Required to inject the capture interface onto webpages
-- **`tabs`**: Allows the extension to refresh component content from source websites
-- **`<all_urls>`**: Enables capturing content from any website you choose to visit
-
-These permissions are used **only** for the stated functionality and nothing else.
-
-## Data Control & User Rights
-You have complete control over your data:
-
-- **Delete Components**: Remove any captured component at any time from the dashboard
-- **Uninstall**: Removing the extension will delete all stored data from your device (both sync and local storage)
-- **Request Data Deletion**: Email spotboard@outlook.com to request deletion of any synced metadata from Chrome's sync storage
-- **Data Export**: Your captured components are stored locally in Chrome storage - you can export them by using Chrome's built-in developer tools or by contacting us for assistance
-- **No Recovery**: Since we don't store your data on our servers, we cannot recover deleted components once removed
-
-**GDPR/UK Data Protection Rights:**
-If you are in the UK or EEA, you have the right to:
-- Access your personal data (though SpotBoard stores minimal personal data)
-- Request deletion of your data
-- Object to data processing
-- Lodge a complaint with your local data protection authority
-
-To exercise these rights, contact: spotboard@outlook.com
-
-## User Responsibilities & Compliance
-
-**You are responsible for:**
-- Ensuring you have the right to access and capture content from websites you visit
-- Respecting the terms of service of websites you capture content from
-- Not using SpotBoard to bypass paywalls, access controls, or website protections
-- Not using captured content for commercial resale or redistribution
-- Complying with copyright, database rights, and applicable laws in your jurisdiction
-
-**SpotBoard is designed for:**
-- Personal monitoring of publicly accessible content
-- Tracking updates to content you regularly visit
-- Creating a personal dashboard of information sources you trust
-
-**SpotBoard is NOT designed for:**
-- Bulk crawling or mass scraping of entire websites
-- Bypassing authentication or paywalls
-- Commercial data extraction or resale
-- Violating website terms of service
-
-**If a website owner contacts us:** We reserve the right to help users comply with takedown requests or to restrict functionality for specific domains if needed to respect intellectual property rights.
-
-## Third-Party Websites
-When you capture content from websites, you are responsible for complying with those websites' terms of service and applicable laws. SpotBoard fetches publicly accessible content that you explicitly select, but we are not responsible for:
-- The content of third-party websites
-- How you use captured content
-- Violations of third-party terms of service
-
-## Changes to This Policy
-We may update this privacy policy from time to time. Any changes will be reflected in the "Last Updated" date above. Continued use of SpotBoard after changes constitutes acceptance of the updated policy.
-
-**How we notify you of changes:**
-- Major changes (e.g., adding analytics, changing data collection) will be announced via the extension's changelog on GitHub
-- You can view the full changelog here: https://github.com/bondybondbond/spotboard/releases
-- Privacy policy updates will be visible on GitHub with timestamps
+## Changes to this policy
+We will change the "Effective Date" above when this policy changes, and note major changes in the release notes: https://github.com/bondybondbond/spotboard/releases
 
 ## Contact
 If you have questions about this privacy policy or SpotBoard's data practices, please contact:
@@ -199,13 +114,3 @@ If you have questions about this privacy policy or SpotBoard's data practices, p
 **Email**: spotboard@outlook.com
 
 **GitHub**: https://github.com/bondybondbond/spotboard
-
----
-
-## Summary
-SpotBoard uses hybrid storage:
-- **Sync storage**: Component metadata syncs across your Chrome browsers (via Google's infrastructure)
-- **Local storage**: HTML content stays on each device only
-- **No SpotBoard servers**: We don't operate any backend or access your data
-- **User-driven**: You choose what to capture, when to refresh, when to delete
-- **Limited Use compliant**: No selling, repurposing, or unauthorized use of captured data
