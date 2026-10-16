@@ -3,6 +3,7 @@
 // counting as a fresh Refresh All click in GA4.
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
 import { loadRefreshEngine } from './helpers/refresh-engine-env.js'
 
@@ -223,7 +224,8 @@ test('#168 mixed: Re-capture group lists its cards; Retry retries ONLY the retry
   assert.match(t, /Failed \(1\):/)
   assert.match(t, /Re-capture needed/)
   assert.ok(t.includes('Delta') && t.includes('Echo') && t.includes('Same'))
-  assert.ok(t.includes('Excluded content came back') && !t.includes('re-capture this card')) // no repeated advice inside the group
+  assert.ok(t.includes('Excluded content came back') && !t.includes('re-capture this card') && !t.includes('re-capture (')) // no repeated advice inside the group (#205: trimmed tail must not leak per item)
+  assert.equal(t.split('resets this card\'s exclusions').length - 1, 1) // #205: said once, in the hint, not per item
   assert.equal(document.querySelectorAll('.toast-failure-list ul')[1].querySelectorAll('li').length, 2)
   assert.equal(document.querySelector('.toast-retry-btn').textContent.trim(), 'Retry failed card') // 1 retryable, not 3
   refreshedIds = []
@@ -231,6 +233,21 @@ test('#168 mixed: Re-capture group lists its cards; Retry retries ONLY the retry
   document.querySelector('.toast-retry-btn').click()
   await new Promise(r => nativeSetTimeout(r, 50))
   assert.deepEqual(refreshedIds, ['b']) // d (layout) and e (excluded) are not re-run
+})
+
+test('#205 banner labels: only the two exclusion failures tell the user re-capturing resets exclusions', () => {
+  for (const code of ['exclusions_unapplied', 'pattern_unapplied']) {
+    assert.ok(g.getErrorLabel(code).endsWith('re-capture (resets its exclusions)'), code)
+  }
+  for (const code of ['network', 'skeleton', 'layout_changed', 'content_drift', 'content_lost', 'render_degraded', 'unknown']) {
+    assert.ok(!/exclusion/i.test(g.getErrorLabel(code)), code)
+  }
+})
+
+test('#205 Re-capture offering is unchanged', () => {
+  const offers = (code) => g.shouldOfferRecapture({ lastOutcome: 'failed', lastErrorCode: code })
+  for (const code of ['layout_changed', 'content_lost', 'exclusions_unapplied', 'pattern_unapplied']) assert.equal(offers(code), true, code)
+  for (const code of ['network', 'skeleton', 'content_drift', 'render_degraded', 'unknown']) assert.equal(offers(code), false, code)
 })
 
 test('#168 every failure needs Re-capture: no Retry button at all', async () => {
@@ -246,4 +263,11 @@ test('#168 entries with an unknown / missing code stay retryable', async () => {
   g.showRefreshFailureToast([{ id: 'x', name: 'Mystery', errorCode: 'unknown' }, { id: 'y', name: 'Old' }])
   assert.ok(!toastText().includes('Re-capture'))
   assert.ok(document.querySelector('.toast-retry-btn'))
+})
+
+test('#205 the Re-capture button hover text carries the same note (source guard: dashboard.js is not loadable in node)', () => {
+  const src = readFileSync(new URL('../public/dashboard.js', import.meta.url), 'utf8')
+  const line = src.split('\n').find(l => l.startsWith('const RECAPTURE_BUTTON_HTML'))
+  assert.ok(line && line.includes('RECAPTURE_NOTE') && line.includes('class="error-recapture-btn"'))
+  assert.match(readFileSync(new URL('../public/utils/refresh-engine.js', import.meta.url), 'utf8'), /const RECAPTURE_NOTE = "Re-capture resets this card's exclusions\."/)
 })

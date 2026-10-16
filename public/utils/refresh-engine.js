@@ -208,6 +208,11 @@ function classifyError(errorString) {
   return 'unknown';     // Fallback
 }
 
+// #205: Re-capture overwrites the card's exclusions (mergeRecapture), so every place that
+// points at it says so. The banner labels end in this tail; the failure toast strips it.
+const RECAPTURE_NOTE = "Re-capture resets this card's exclusions."
+const RECAPTURE_LABEL_TAIL = " — re-capture (resets its exclusions)"
+
 /**
  * Get user-friendly error label from error code enum
  */
@@ -218,8 +223,8 @@ function getErrorLabel(errorCode) {
     'layout_changed': "Site layout changed",
     'content_drift': "Content changed significantly",
     'content_lost': "Card came back empty",
-    'exclusions_unapplied': "Excluded content came back — re-capture this card",
-    'pattern_unapplied': "An “exclude all like this” rule no longer fits this page — re-capture this card",
+    'exclusions_unapplied': "Excluded content came back" + RECAPTURE_LABEL_TAIL,
+    'pattern_unapplied': "An “exclude all like this” rule no longer fits this page" + RECAPTURE_LABEL_TAIL,
     'render_degraded': "Page didn't fully load — kept your last good copy",
     'unknown': "Refresh failed"
   };
@@ -366,10 +371,10 @@ function showRefreshFailureToast(failedComponents, successCount = null) {
     shouldOfferRecapture({ lastOutcome: 'failed', lastErrorCode: f.errorCode }))
   const retryable = failedComponents.filter(f => !needsRecapture.includes(f))
   // Inside the Re-capture group the heading + hint already say it, so drop the label's own
-  // "— re-capture this card" tail (the per-card banner keeps the full label).
+  // RECAPTURE_LABEL_TAIL (the per-card banner keeps the full label).
   const listItems = (list, trimRecapture = false) => list.map(f => {
     const label = getErrorLabel(f.errorCode)
-    return `<li><strong>${f.name}</strong> — ${trimRecapture ? label.replace(/ — re-capture this card$/, '') : label}</li>`
+    return `<li><strong>${f.name}</strong> — ${trimRecapture && label.endsWith(RECAPTURE_LABEL_TAIL) ? label.slice(0, -RECAPTURE_LABEL_TAIL.length) : label}</li>`
   }).join('')
   const listHtml = (list, trimRecapture = false) =>
     `<ul style="margin: 4px 0 8px 0; padding-left: 20px; list-style: disc;">${listItems(list, trimRecapture)}</ul>`
@@ -383,7 +388,7 @@ function showRefreshFailureToast(failedComponents, successCount = null) {
     : (retryable.length > 0 ? `<strong>Failed (${retryable.length}):</strong>${listHtml(retryable)}` : '') +
       `<strong>Re-capture needed — retrying won't fix ${needsRecapture.length === 1 ? 'this' : 'these'}:</strong>` +
       listHtml(needsRecapture, true) +
-      `<div class="toast-recapture-hint">Use Re-capture on the card.</div>`)
+      `<div class="toast-recapture-hint">Use Re-capture on the card. ${RECAPTURE_NOTE}</div>`)
 
   const retryButton = retryable.length > 0
     ? `<button class="toast-retry-btn" data-action="retry-failed">

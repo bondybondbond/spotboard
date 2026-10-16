@@ -14,7 +14,7 @@
 // CHECK_CAPTURE / RECAPTURE_CLAIM), so an abandoned attempt can never turn a later "Add card"
 // into an overwrite. Button visibility rules live in refresh-engine.js shouldOfferRecapture().
 // ══════════════════════════════════════════════
-const RECAPTURE_BUTTON_HTML = '<button type="button" class="error-recapture-btn" title="Pick the section again on the original page">Re-capture</button>';
+const RECAPTURE_BUTTON_HTML = '<button type="button" class="error-recapture-btn" title="Pick the section again on the original page. ' + RECAPTURE_NOTE + '">Re-capture</button>';
 
 function startRecapture(component) {
   const label = component.customLabel || component.name || 'this card';
