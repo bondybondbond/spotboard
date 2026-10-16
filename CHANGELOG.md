@@ -1,6 +1,6 @@
 # SpotBoard Changelog
 
-## [Unreleased]
+## [1.4.5] - 2026-10-16
 
 ### Fixed
 
