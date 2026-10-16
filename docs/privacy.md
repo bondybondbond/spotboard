@@ -5,10 +5,8 @@ permalink: /privacy/
 
 # SpotBoard Privacy Policy
 
-**Effective Date:** [PUBLISH: date]
-**Applies to:** SpotBoard [PUBLISH: version] and later
-
-[PUBLISH: all wording about the dashboard feedback survey (the "In short" bullet, the Tally table row, the section "Feedback survey in the dashboard", and the mentions in the legal-basis and transfers sections) describes the version in which the dashboard Feedback buttons open the survey in a new tab. Remove all of it if that version is not the one published.]
+**Effective Date:** 16 October 2026
+**Applies to:** SpotBoard 1.4.5 and later
 
 ## In short
 - SpotBoard has no servers or accounts of its own. The content you capture is stored in your browser. Your card settings, including the full page address of each card, sync through your Google account using Chrome Sync.
@@ -61,14 +59,14 @@ Each card's **full page address (URL, including path and query)**, label, the se
 **How long analytics data is kept — two different systems**
 - **Google Analytics 4:** our settings keep event data for **2 months**. These settings do not affect Google's standard aggregated reports. [PUBLISH: confirm the 2-month setting is live; the 14-month figure applies until then.]
 - **BigQuery copy:** we also copy raw events to Google BigQuery (London) for analysis. Those copies are deleted automatically after **60 days**. This limit applies to that copy only, not to GA4.
-- **Events from older versions:** versions before [PUBLISH: version] sent two random IDs that stayed the same until you uninstalled, an exact install age and 7-day usage counts. Those events stay in both places until the limits above remove them. This version deletes the stored IDs and counters from your device when it updates.
+- **Events from older versions:** versions before 1.4.5 sent two random IDs that stayed the same until you uninstalled, an exact install age and 7-day usage counts. Those events stay in both places until the limits above remove them. This version deletes the stored IDs and counters from your device when it updates.
 
 ## Uninstall survey (Tally)
 When you uninstall SpotBoard, Chrome opens an optional survey hosted by Tally (`tally.so`). SpotBoard sets that address in advance and it is a plain link: **it carries no ID and no usage values**, so a response carries nothing that identifies your installation or ties it to analytics events. Your browser still contacts Tally when the page opens, as for any web page. When we opened this survey page in a browser tab on 14 October 2026 it behaved like the dashboard surveys: it contacted Tally's event service and the same error-monitoring service, set no cookies and stored the same kinds of identifier-like keys in browser storage (see "Feedback survey in the dashboard").
 - **Not sent:** any ID, site names, page addresses, counts, anything you captured. We removed the survey's old hidden fields on 14 October 2026. Older versions of SpotBoard may still add an ID or counts to this survey's link, and Tally's view records may still hold the full link address, including those values; we have not tested what Tally does with them.
 - **What we ask:** the survey does not ask for your name or email (we checked the survey's questions on 14 October 2026). It asks why you uninstalled and, if you say a site did not work or something broke, which sites had issues and what the problem was, and has an optional free-text box. What you type there is yours to choose; please do not put personal details in it.
 - **Where and how long:** Tally says it stores form data in Europe. We keep responses until we delete them; automatic deletion is not switched on, and Tally emails us a copy of each submitted response.
-- **Older survey responses:** responses collected before [PUBLISH: date] included a random ID, usage counts and, in the oldest, a list of the site names on your board. We deleted 11 such responses from the survey on 13 October 2026 and permanently removed them from Tally's trash on 15 October 2026 (Tally's trash was then empty). We also deleted the emailed copies of those responses from our mailbox on 15 October 2026. Email copies of any later response stay in our mailbox until we delete them.
+- **Older survey responses:** responses collected before 14 October 2026 included a random ID, usage counts and, in the oldest, a list of the site names on your board. We deleted 11 such responses from the survey on 13 October 2026 and permanently removed them from Tally's trash on 15 October 2026 (Tally's trash was then empty). We also deleted the emailed copies of those responses from our mailbox on 15 October 2026. Email copies of any later response stay in our mailbox until we delete them.
 
 ## Feedback survey in the dashboard (Tally)
 After a few days of use, a Feedback button can appear on the dashboard. Pressing it only opens a small panel. **Nothing is sent to Tally until you press 👍 or 👎**, which opens the survey on Tally's website (`tally.so`) in a new tab. SpotBoard does not embed the survey in the dashboard.
