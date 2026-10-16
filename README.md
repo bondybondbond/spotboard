@@ -28,7 +28,7 @@ Visit [bondybondbond.github.io/spotboard](https://bondybondbond.github.io/spotbo
 - No accounts, no backend
 - Captured HTML stays in your browser — never uploaded
 - Card settings, including each card's full page address, sync via Chrome Sync
-- Usage analytics via Google Analytics, including the hostnames of sites you capture or refresh. The privacy policy below says exactly what is sent and shared
+- Usage analytics via Google Analytics, including the hostnames of sites you capture, refresh, open from a card or delete. The privacy policy below says exactly what is sent and shared
 
 [Read full privacy policy](https://bondybondbond.github.io/spotboard/privacy)
 
