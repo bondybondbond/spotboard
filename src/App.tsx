@@ -18,6 +18,14 @@ function isRestrictedUrl(url?: string): boolean {
   return false;
 }
 
+// The active tab's own icon (Chrome already holds it, and it loads from the site the user is on —
+// no third-party request, #200). Neutral chip when the site has none or it fails to load.
+function TabIcon({ src, alt = '' }: { src?: string; alt?: string }) {
+  const [failedSrc, setFailedSrc] = useState('')
+  if (!src || failedSrc === src) return <span className="sb-icon-fallback" aria-hidden="true" />
+  return <img src={src} alt={alt} onError={() => setFailedSrc(src)} />
+}
+
 interface Component {
   id: string; // UUID for matching sync + local data
   name: string;
@@ -36,6 +44,7 @@ interface Component {
 function App() {
   const [components, setComponents] = useState<Component[]>([]);
   const [currentDomain, setCurrentDomain] = useState<string>('');
+  const [tabIconUrl, setTabIconUrl] = useState<string>('');
   // null = current tab URL not resolved yet — render only the brand until we know,
   // so a restricted page never flashes the action buttons before collapsing.
   const [restricted, setRestricted] = useState<boolean | null>(null);
@@ -44,6 +53,7 @@ function App() {
     // Get current tab URL
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       setRestricted(isRestrictedUrl(tabs[0]?.url));
+      setTabIconUrl(tabs[0]?.favIconUrl || '');
       if (tabs[0]?.url) {
         try {
           const url = new URL(tabs[0].url);
@@ -221,10 +231,7 @@ function App() {
         <>
           <div className="sb-divider" />
           <div className="sb-filter">
-            <img
-              src={`https://www.google.com/s2/favicons?sz=64&domain=${currentDomain}`}
-              alt="Website favicon"
-            />
+            <TabIcon src={tabIconUrl} alt="Website favicon" />
             <span>Showing spots from: {currentDomain}</span>
           </div>
         </>
@@ -238,7 +245,7 @@ function App() {
                 {component.favicon ? (
                   <img src={component.favicon} alt="" />
                 ) : (
-                  <img src={`https://www.google.com/s2/favicons?sz=64&domain=${currentDomain}`} alt="" />
+                  <TabIcon src={tabIconUrl} />
                 )}
                 <h3 className="sb-card-title">{component.customLabel || component.name}</h3>
                 <button className="sb-card-del" onClick={() => handleDelete(component)}>

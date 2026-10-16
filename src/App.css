@@ -173,6 +173,15 @@
   height: 14px;
   border-radius: 2px;
 }
+/* Neutral stand-in when the site has no icon of its own (#200) */
+.sb-icon-fallback {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--pop-text-muted);
+  border-radius: 50%;
+}
 
 .sb-cards {
   display: flex;
