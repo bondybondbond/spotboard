@@ -17,7 +17,7 @@ permalink: /privacy/
 - **Analytics cannot currently be switched off inside SpotBoard**, and SpotBoard does not read a Do Not Track or Global Privacy Control signal. Uninstalling SpotBoard stops its analytics from then on.
 - When you uninstall, Chrome opens an optional survey hosted by **Tally**. SpotBoard sends no data to it beyond the page request itself: the link carries no ID and no usage values. What you type and submit goes to Tally and to us.
 - If you press the **Feedback button in the dashboard**, the survey opens on Tally's website in a new tab. The link carries three rough details (SpotBoard version, install-age band, card count up to 10), never the sites on your board. Once it is open it is Tally's page: Tally sees your IP address and browser details, and its page may record views and use its own identifiers. See "Feedback survey in the dashboard" below.
-- Showing a site's icon sends that site's **hostname to Google's favicon service**. This includes the site in your current tab each time you open the SpotBoard popup, even if you have not captured it.
+- Showing a **captured card's** icon sends that site's **hostname to Google's favicon service**. Opening the SpotBoard popup does not: it shows the icon of the tab you are on, which your browser already holds and which loads from that site's own servers, not from Google.
 
 ## Who is responsible, and how to contact us
 SpotBoard is operated under the name SpotBoard. Contact: spotboard@outlook.com
@@ -26,7 +26,7 @@ SpotBoard is operated under the name SpotBoard. Contact: spotboard@outlook.com
 | Service | What it receives | Linked to |
 |---|---|---|
 | **Google Analytics 4** | The analytics events described below, including hostnames | Nothing that persists: a fresh random ID per event |
-| **Google favicon service** | A site hostname, plus your IP address as part of the web request | No SpotBoard ID is sent |
+| **Google favicon service** | The hostname of a site you captured, plus your IP address as part of the web request | No SpotBoard ID is sent |
 | **Google Chrome Sync** (your own Google account; run by Chrome, not SpotBoard) | Your card settings, including full page addresses | Your Google account |
 | **Tally** (uninstall survey) | Your answers, if you submit the survey, plus whatever Tally's page records when it opens (see "Feedback survey in the dashboard" for what we observed on the same pages) | Nothing from SpotBoard |
 | **Tally** (dashboard feedback survey) | The three details in the link, your IP address and browser details when the page opens, whatever Tally's page records (views, progress, its own identifiers, error reports), and your answers if you submit | SpotBoard adds no ID. Tally appears to keep its own respondent and session identifiers (see below) |
@@ -82,12 +82,12 @@ After a few days of use, a Feedback button can appear on the dashboard. Pressing
 - **Older responses and records (important):** neither survey shows any submitted response, and Tally's trash holds none for them (checked 14 October 2026). Tally may also keep view records for them. From about 20 January to 17 February 2026, an earlier version of SpotBoard loaded this survey inside the dashboard and put eleven details in this survey's address: a random ID that stayed the same until you uninstalled, your browser language, exact card counts, the share of paused cards, average card age, exact install age, board-open and refresh counts for the previous 7 days, and the list of site hostnames on your board with counts. After about 17 February 2026 the browser blocked that frame, so nothing was sent from the dashboard after that date. Tally's view records for these surveys may still hold such addresses. On 14 October 2026 we removed those old fields from both surveys, so they now define only the three details above. We have not been able to inspect or remove them. Tally's dashboard shows us only totals (visits, submissions), not individual view records, and we found no way to delete view records, so we cannot inspect or remove them. We have never received a response to either feedback survey. [PUBLISH: re-check the submission counts on the day of publication.]
 
 ## Other things that touch your browsing
-- **Google favicon service:** the hostname of each card, and, when you open the popup, of the site in your active tab (except browser-internal pages).
+- **Google favicon service:** the hostname of each captured card. Not the site in your active tab: the popup shows that site's own icon, loaded from the site you are already on (or your browser's copy of it), and shows a plain grey circle when the site has none.
 - **Sites you capture:** refreshing a card fetches the saved page using your browser's cookies for that site, as if you had visited it. Pictures and media in a saved card load from the original site's servers when the card is displayed.
 
 ## Permissions
 - `storage`, `activeTab`, `scripting`: save your cards and capture the page you choose.
-- `tabs`, `windows`: open a background tab or small window to refresh a card from its site, and bring the dashboard window to the front. When you open the SpotBoard popup it reads the hostname of your active tab, to show that site's icon and to filter your cards. Chrome describes the `tabs` permission as "Read your browsing history"; that is Chrome's wording for the permission. SpotBoard does not keep a list of the sites you visit.
+- `tabs`, `windows`: open a background tab or small window to refresh a card from its site, and bring the dashboard window to the front. When you open the SpotBoard popup it reads the address and icon of your active tab, to show that site's icon and to filter your cards. Chrome describes the `tabs` permission as "Read your browsing history"; that is Chrome's wording for the permission. SpotBoard does not keep a list of the sites you visit.
 - `system.display`: check that the SpotBoard dashboard window is on a screen that is connected, and move it back onto the main screen if it is not.
 - Access to all sites (`<all_urls>`): needed because you can capture any site.
 
