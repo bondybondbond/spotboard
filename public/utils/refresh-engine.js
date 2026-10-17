@@ -2255,7 +2255,11 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
     await chrome.scripting.executeScript({ target: { tabId: atTabId }, files: ['utils/dom-snapshot.js', 'utils/lazy-load.js'] });
     // Named (not inline) so the widen-and-retry path below (issue #72) can re-run the
     // identical extraction after resizing, without duplicating this whole function body.
-    const extractFromTab = async (sel, fp, expectedStructure = 0) => {
+    // opts (#208): { skipLazy } skips the #72 image scroll; { walk: { op, y } } runs one step of the structure
+    // settle instead of an extraction ('begin' installs the user-input abort listeners and returns where to start,
+    // 'scroll' moves the page, 'end' removes the listeners). The settle LOOP lives in the extension page because its
+    // measure is the cleaned capture; the tab only scrolls and extracts.
+    const extractFromTab = async (sel, fp, opts = {}) => {
       // Find the correct element (by fingerprint if provided). A function because the settle below can make
       // the site re-render, so the block is looked up again afterwards if it was replaced.
       const findElement = () => {
@@ -2290,6 +2294,20 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
 
         return element;
       };
+        if (opts.walk && opts.walk.op === 'scroll') {
+          const st = window.__sbSettle;
+          // The user took over since the last step (input during the wait or the extraction): do not move their page again.
+          if (st && st.aborted) return { aborted: true };
+          window.scrollTo({ left: window.scrollX, top: opts.walk.y, behavior: 'instant' });
+          return { aborted: false };
+        }
+        if (opts.walk && opts.walk.op === 'end') {
+          const st = window.__sbSettle;
+          if (st) ['wheel', 'keydown', 'touchstart', 'mousedown'].forEach(t => window.removeEventListener(t, st.onInput, { capture: true }));
+          delete window.__sbSettle;
+          return { ended: true };
+        }
+
         let element = findElement();
 
         if (!element) {
@@ -2297,24 +2315,13 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
           return null;
         }
 
-        // 🎯 STRUCTURE SETTLE (issue #202): Kalshi mounts its news + comments only after a scroll in this
-        // narrow popup, so the block arrives as the page head with no list items. Fires ONLY when the saved
-        // copy has >= 3 li/tr/article and this block has none (isContentLost's structural rule) and runs
-        // one bounded scroll that stops when the structure stops growing. Whether the result is comparable to
-        // the saved copy is judged back in the extension (meta.structureCheck), on the cleaned capture.
-        // No site constants. Healthy cards never scroll.
-        let structure = null;
-        const LL = window.LazyLoad;
-        if (LL && LL.settleStructure && expectedStructure > 0 && LL.needsStructureSettle(LL.countStructure(element), expectedStructure)) {
-          try {
-            const s = await LL.settleStructure(element, expectedStructure, { resolve: findElement });
-            if (!element.isConnected) element = findElement() || element;
-            structure = { triggered: true, count: s.count, peak: s.peak, steps: s.steps, ms: s.elapsedMs, capped: s.capped, aborted: s.aborted };
-          } catch (_) {
-            // Best-effort: fall through to the capture as it is. It still counts as settled, so the recovery check
-            // below judges it (a partly mounted stub must not slip past the zero-only isContentLost gate).
-            structure = { triggered: true, error: true };
-          }
+        if (opts.walk && opts.walk.op === 'begin') {
+          // Our own scrollTo never produces trusted wheel/key/touch/mouse events, so any of these is the user taking over.
+          const st = { aborted: false, onInput: e => { if (e.isTrusted) st.aborted = true; } };
+          window.__sbSettle = st;
+          ['wheel', 'keydown', 'touchstart', 'mousedown'].forEach(t => window.addEventListener(t, st.onInput, { capture: true, passive: true }));
+          const vh = window.innerHeight;
+          return { step: Math.max(300, Math.floor(vh * 0.6)), y: Math.max(0, element.getBoundingClientRect().top + window.scrollY - Math.floor(vh * 0.25)) };
         }
 
         // 🎯 SCROLL-THROUGH LAZY LOAD (issue #72): sites like CNBC only mount a thumbnail once it
@@ -2322,9 +2329,9 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
         // sitting at scrollY=0 holds a few real images and many empty placeholders. Scrolls only
         // across this block, only when it holds >= MIN_EMPTY_SLOTS empty image slots, bounded by
         // step/time caps, and restores the scroll position. No-op for ordinary cards.
-        // Skipped after a structure settle (#202): that pass already walked the page, and the two
+        // Skipped during and after a structure settle (#202, #208): the settle already walks the page, and the two
         // time caps must not stack (a triggered card pays at most the settle's ~10 s).
-        if (window.LazyLoad && !(structure && structure.triggered)) {
+        if (window.LazyLoad && !opts.skipLazy) {
           try { await window.LazyLoad.ensureLazyContentLoaded(element) } catch (_) { /* best-effort */ }
         }
 
@@ -2458,21 +2465,69 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
           console.log(`🖼️ [SpotBoard] Next.js fill layout fix: ${fillFixes} images un-collapsed`);
         }
 
-        return { html: clone.outerHTML, hasEmptyImageSlots, structure };
+        return { html: clone.outerHTML, hasEmptyImageSlots, pageBottom: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0) };
     };
 
     meta.pageVisible = await readPageVisible(atTabId); // #101
     const expectedStructure = meta.expectedStructure || 0; // #202: li/tr/article in the saved copy
-    const results = await chrome.scripting.executeScript({
+    const exec = (opts) => chrome.scripting.executeScript({
       target: { tabId: atTabId },
-      args: [selector, fingerprint, expectedStructure],
+      args: [selector, fingerprint, opts],
       func: extractFromTab
     });
+    // A card whose saved copy has structure may need the settle, which must not stack another ~10 s of scrolling (#72) on top
+    // of its own. Whether a settle runs is only known after the first extraction (it is judged on the cleaned capture), so
+    // for such cards the #72 image scroll is held back and run afterwards if no settle did (same scroll, one extra extraction).
+    const deferLazy = expectedStructure >= (window.LazyLoad ? window.LazyLoad.MIN_SAVED_STRUCTURE : 3);
+    const results = await exec(deferLazy ? { skipLazy: true } : {});
 
     let html = results[0]?.result?.html;
-    // #202: remember whether a structure settle ran (diagnostics land on meta.structureSettle).
-    let structureSettled = !!results[0]?.result?.structure?.triggered;
-    meta.structureSettle = results[0]?.result?.structure || null;
+    let hasEmptyImageSlots = !!results[0]?.result?.hasEmptyImageSlots;
+    meta.structureSettle = null;
+    let structureSettled = false;
+
+    // 🎯 STRUCTURE SETTLE (issue #202, one measure since #208): Kalshi mounts its news + comments only after a scroll
+    // in this narrow popup, so the capture arrives as the page head with no list items. Fires ONLY when the saved
+    // copy has >= 3 li/tr/article and the CLEANED capture (the card's own exclusion rules applied: breadcrumb or
+    // rules-list items that the card strips do not count) has none. Then ONE bounded walk (LazyLoad.settleStructure)
+    // scrolls, re-extracts and re-cleans each step with the same structureCheck the final accept uses.
+    // No site constants. Healthy cards (cleaned structure > 0) never scroll and pay one cleaning pass here.
+    // Whether the result is comparable to the saved copy is judged below, on the cleaned capture.
+    const settleIfNeeded = async () => {
+      const LL = window.LazyLoad;
+      if (structureSettled || !html || !LL || !LL.settleStructure || typeof meta.structureCheck !== 'function') return;
+      if (expectedStructure < LL.MIN_SAVED_STRUCTURE) return;
+      const measure = capture => meta.structureCheck(capture).count;
+      let before;
+      try { before = measure(html); } catch (_) { return; } // a cleaning error is the existing gates' business, not a reason to scroll
+      if (!LL.needsStructureSettle(before, expectedStructure)) return;
+      structureSettled = true; // even a failed walk is judged by the accept check below (no fail-open)
+      let last = null;
+      try {
+        const walk = async (op, y) => (await exec({ walk: { op, y }, skipLazy: true }))[0]?.result;
+        const s = await LL.settleStructure(expectedStructure, before, {
+          begin: async () => { const r = await walk('begin'); if (!r) throw new Error('block not found'); return r; },
+          scroll: async y => { const r = await walk('scroll', y); if (!r) throw new Error('scroll failed'); return r; },
+          extract: async () => { const r = (await exec({ skipLazy: true }))[0]?.result; if (r) last = r; return r ? { html: r.html, pageBottom: r.pageBottom } : null; },
+          measure,
+          end: async () => { await walk('end'); }
+        });
+        if (s.html) { html = s.html; hasEmptyImageSlots = !!(last && last.hasEmptyImageSlots); }
+        meta.structureSettle = { triggered: true, before: s.before, count: s.count, peak: s.peak, steps: s.steps, ms: s.elapsedMs, capped: s.capped, aborted: s.aborted };
+      } catch (_) {
+        // Best-effort: fall through with the capture as it is. It still counts as settled, so the recovery check
+        // below judges it (a partly mounted stub must not slip past the zero-only isContentLost gate).
+        meta.structureSettle = { triggered: true, error: true };
+      }
+    };
+    await settleIfNeeded();
+    if (deferLazy && !structureSettled && hasEmptyImageSlots) {
+      const lazyResults = await exec({});
+      if (lazyResults[0]?.result?.html) {
+        html = lazyResults[0].result.html;
+        hasEmptyImageSlots = !!lazyResults[0].result.hasEmptyImageSlots;
+      }
+    }
 
     // 🎯 WIDEN-AND-RETRY (issue #72): if an expected image slot never resolved at the
     // popup's normal narrow width, widen the same live window (no reload — preserves
@@ -2483,7 +2538,7 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
     // extraction strips hidden elements, so the rule matches 0 at popup width but 30 at 1400px. Cards without
     // rules (layoutOk null) and cards whose narrow capture already fits never pay this.
     const layoutMismatch = !!html && typeof meta.layoutOk === 'function' && !meta.layoutOk(_tagSentimentHtml(html));
-    if (results[0]?.result?.hasEmptyImageSlots || layoutMismatch) {
+    if (hasEmptyImageSlots || layoutMismatch) {
       if (DEBUG) console.log('[SB-REFRESH] tryActiveTab:', layoutMismatch ? 'stored rules do not fit the narrow layout' : 'empty image slots', ', widening + retrying');
       try {
         // Must reposition `left` too: the popup is pinned 55%-visible at the screen's right
@@ -2516,18 +2571,19 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
         // longer than 2s after a width change — 2s consistently left the placeholder unresolved.
         await new Promise(r => setTimeout(r, 4000));
         const retryVisible = await readPageVisible(atTabId); // #101: visibility of the retry capture
-        const retryResults = await chrome.scripting.executeScript({
-          target: { tabId: atTabId },
-          // A settle already ran on the first pass: the retry must not pay a second one (one popup, one ~10 s budget).
-          args: [selector, fingerprint, structureSettled ? 0 : expectedStructure],
-          func: extractFromTab
-        });
+        // The #72 scroll must not stack with a settle (one popup, one ~10 s budget): it is skipped after a settle, and for a card
+        // with saved structure it is held back here too, because the widened capture may be the first judged empty.
+        const retryResults = await exec({ skipLazy: deferLazy || structureSettled });
         const retryHtml = retryResults[0]?.result?.html;
         if (retryHtml) {
           html = retryHtml;
           meta.pageVisible = retryVisible;
-          structureSettled = structureSettled || !!retryResults[0]?.result?.structure?.triggered;
-          meta.structureSettle = retryResults[0]?.result?.structure || meta.structureSettle;
+          // The widened capture may be the first to be judged empty (or the first extraction to be): settle then.
+          await settleIfNeeded();
+          if (deferLazy && !structureSettled && retryResults[0]?.result?.hasEmptyImageSlots) {
+            const lazyRetry = await exec({}); // no settle ran: the held-back #72 pass, as on the first extraction
+            if (lazyRetry[0]?.result?.html) html = lazyRetry[0].result.html;
+          }
         }
       } catch (_) { /* best-effort — fall back to the first-pass html below */ }
     }

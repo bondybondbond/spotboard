@@ -48,30 +48,46 @@ export function countEmptyImageSlots(root: Element): number {
   return count
 }
 
-// ─── Structure settle (issue #202) ──────────────────────────────────────────────────────────────
+// ─── Structure settle (issue #202, measure moved to the cleaned capture in #208) ───────────────
 // Kalshi mounts its Breaking News + comments only once the page is scrolled in the narrow refresh
 // popup, so the selected block arrives as the page head: no list items at all. That is detected
-// from the structure, not the site: the saved copy has real structure and the live block has none.
+// from the structure, not the site: the saved copy has real structure and the live capture has none.
 // Same elements and the same >= 3 floor as isContentLost's structural-regression rule (dom-cleanup.ts).
-export const STRUCTURAL_SELECTOR = 'li, tr, article'
+//
+// ONE measure (#208): every number here is the li/tr/article count of the CLEANED capture (the card's own
+// exclusion rules applied, like the saved copy). The first version counted the raw block, and raw lied in both
+// directions: breadcrumb <li> hid an empty capture, an excluded rules list made a thin one look complete.
+// The cleaning pipeline only runs in the extension page, so this loop runs there too; the tab only scrolls
+// and extracts (see StructureSettleIO).
 export const MIN_SAVED_STRUCTURE = 3
 
 export interface StructureSettleResult {
   triggered: boolean
   before: number
   peak: number
-  count: number // raw li/tr/article left in the block when the settle ended
+  count: number // cleaned li/tr/article of the last extraction
   steps: number
   elapsedMs: number
   aborted: boolean
   capped: boolean
+  html: string | null // the last extraction (null if none succeeded)
 }
 
-export function countStructure(root: Element): number {
-  return root.querySelectorAll(STRUCTURAL_SELECTOR).length
+export interface StructureSettleIO {
+  /** Install the user-input abort listeners; where to start and how far to move per step. */
+  begin(): Promise<{ y: number; step: number }>
+  /** Scroll to y; reports whether the user took over meanwhile. */
+  scroll(y: number): Promise<{ aborted: boolean }>
+  /** The full existing extraction of the selected block (hidden marking, lazy images, shadow flatten), plus the page
+   *  bottom as it is NOW (read after the step wait: the page grows as sections mount, so a bottom read at scroll time is stale). */
+  extract(): Promise<{ html: string; pageBottom: number } | null>
+  /** The cleaned li/tr/article count of an extraction: the same measure the trigger and the accept check use. */
+  measure(html: string): number
+  /** Remove the listeners (always runs). */
+  end(): Promise<void>
 }
 
-/** Only a block with NO structure against a structured saved copy is settled; anything else is left alone. */
+/** Only a capture with NO structure against a structured saved copy is settled; anything else is left alone. */
 export function needsStructureSettle(count: number, expected: number): boolean {
   return expected >= MIN_SAVED_STRUCTURE && count === 0
 }
@@ -85,71 +101,75 @@ export function structureRecovered(count: number, expected: number): boolean {
 }
 
 /**
- * Bounded scroll that stops when the block's structure stops growing. Runs only when
- * needsStructureSettle(); steps down the page by 0.6 x viewport, stops after 2 flat steps (no new
- * structure) once it has grown or as soon as it holds as much structure as the saved copy, plus one short
- * final settle, or at the step / time / page-bottom caps
- * (a block that never grows is walked once down the page, then given up on). Does NOT restore the
- * scroll position: the only caller is the refresh popup, which is discarded after extraction, and scrolling
- * back risks unmounting what was just mounted. Aborts if the user takes over (trusted input).
+ * Bounded scroll that stops when the CLEANED structure stops growing. Runs only when needsStructureSettle()
+ * (the caller passes the first extraction's cleaned count as `before`); steps down the page by 0.6 x viewport,
+ * stops after 2 flat steps (no new structure) once it has grown or as soon as the capture holds as much
+ * structure as the saved copy, plus one short final settle and a last extraction, or at the step / time /
+ * page-bottom caps (a page that never grows is walked once down, then given up on). The time cap includes the
+ * extraction and cleaning time of every step. Does NOT restore the scroll position: the only caller is the
+ * refresh popup, which is discarded afterwards, and scrolling back risks unmounting what was just mounted.
+ * Aborts if the user takes over (trusted input, reported by io.scroll). Errors from io propagate: the caller
+ * treats a failed walk as settled-but-unproven and lets the accept check judge the capture.
  */
-export async function settleStructure(block: Element, expected: number, opts: LazyLoadOptions & { finalSettleMs?: number; resolve?: () => Element | null } = {}): Promise<StructureSettleResult> {
+export async function settleStructure(expected: number, before: number, io: StructureSettleIO, opts: LazyLoadOptions & { finalSettleMs?: number } = {}): Promise<StructureSettleResult> {
   const maxSteps = opts.maxSteps ?? 30
   const maxMs = opts.maxMs ?? 10000
   const stepWaitMs = opts.stepWaitMs ?? 350
   const finalSettleMs = opts.finalSettleMs ?? 500
 
   const started = Date.now()
-  const before = countStructure(block)
-  const result: StructureSettleResult = { triggered: false, before, peak: before, count: before, steps: 0, elapsedMs: 0, aborted: false, capped: false }
+  const result: StructureSettleResult = { triggered: false, before, peak: before, count: before, steps: 0, elapsedMs: 0, aborted: false, capped: false, html: null }
   if (!needsStructureSettle(before, expected)) return result
   result.triggered = true
 
-  // The site may replace the block while mounting; a detached node would read 0 for the rest of the walk.
-  let current = block
-  const cur = () => { if (!current.isConnected && opts.resolve) current = opts.resolve() || current; return current }
   const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
-  const onUserInput = (e: Event) => { if (e.isTrusted) result.aborted = true }
-  const inputEvents = ['wheel', 'keydown', 'touchstart', 'mousedown']
-  inputEvents.forEach(t => window.addEventListener(t, onUserInput, { capture: true, passive: true }))
+  let pageBottom = Infinity
+  const take = async (): Promise<boolean> => {
+    const got = await io.extract()
+    if (got == null) return false
+    result.html = got.html
+    pageBottom = got.pageBottom
+    result.count = io.measure(got.html)
+    result.peak = Math.max(result.peak, result.count)
+    return true
+  }
 
   try {
-    const viewportH = window.innerHeight
-    const step = Math.max(300, Math.floor(viewportH * 0.6))
-    let y = Math.max(0, block.getBoundingClientRect().top + window.scrollY - Math.floor(viewportH * 0.25))
+    const start = await io.begin()
+    let y = start.y
     // Flat steps only count once the structure has started to grow: a lazy section mounts when its trigger
-    // comes into range, which on Kalshi is the 4th step down the page (0, 0, 0, then 22 items, 15 Oct), so
+    // comes into range, which on Kalshi is the 4th-8th step down the page (0, 0, 0, then the lists), so
     // before the first growth the walk simply continues down the page (bounded by the caps and the page bottom).
     let grew = false
     let flat = 0
+    let misses = 0
     while (!result.aborted) {
       if (result.steps >= maxSteps || Date.now() - started >= maxMs) {
         result.capped = true
         break
       }
-      window.scrollTo({ left: window.scrollX, top: y, behavior: 'instant' as ScrollBehavior })
+      const moved = await io.scroll(y)
       result.steps++
+      if (moved.aborted) { result.aborted = true; break }
       await sleep(stepWaitMs)
-      const now = countStructure(cur())
-      if (now > result.peak) { grew = true; flat = 0 } else if (grew) flat++
-      result.peak = Math.max(result.peak, now)
+      const peakBefore = result.peak
+      // The block is gone (two extractions in a row found nothing): scrolling on blind would only burn the budget.
+      if (await take()) misses = 0
+      else if (++misses >= 2) break
+      if (result.peak > peakBefore) { grew = true; flat = 0 } else if (grew) flat++
       if (grew && flat >= 2) break
       // Comparable to the saved copy is enough: do not keep scrolling to load an endless comments feed (15 Oct:
-      // Kalshi grew 22 -> 68 items, a card 7x the saved text). The raw count here is >= the cleaned one, so the
-      // extension still checks the cleaned capture afterwards.
-      if (now >= expected) break
-      // The page grows as sections mount, so the bottom is re-read every step.
-      const pageBottom = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)
-      y += step
+      // Kalshi grew 22 -> 68 items, a card 7x the saved text).
+      if (result.count >= expected) break
+      y += start.step
       if (y > pageBottom) break
     }
     if (!result.aborted) {
       await sleep(finalSettleMs) // a late async burst after the last step
-      result.peak = Math.max(result.peak, countStructure(cur()))
+      await take()
     }
   } finally {
-    inputEvents.forEach(t => window.removeEventListener(t, onUserInput, { capture: true }))
-    result.count = countStructure(cur())
+    try { await io.end() } catch { /* the popup may already be gone */ }
     result.elapsedMs = Date.now() - started
   }
   return result

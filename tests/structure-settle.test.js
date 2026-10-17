@@ -1,43 +1,66 @@
-// #202: Kalshi mounts its Breaking News + comments only after a scroll in the 300px refresh popup, so the selected
-// block arrives with no list items while the saved copy has some. tryActiveTab runs ONE bounded, structure-driven
+// #202 / #208: Kalshi mounts its Breaking News + comments only after a scroll in the 300px refresh popup, so the
+// capture arrives with no list items while the saved copy has some. tryActiveTab runs ONE bounded, structure-driven
 // settle in that case (no site constants) and accepts the result only if the cleaned capture is comparable to the
-// saved copy. jsdom has no layout and no site, so the site is simulated: it mounts a batch of <li> per scrollTo like
-// Kalshi (15 Oct: 0, 0, 0, then 22 -> 31 -> 36). jsdom != Chrome: the real-site proof is the e2e, these pin the rules.
+// saved copy. #208: every number in that decision (trigger, early stop, accept) is the CLEANED capture's count, one
+// measure, because the raw block lied in both directions (breadcrumb <li> hid an empty capture; an excluded rules
+// list made a thin one look complete). The loop lives in the extension page; the tab only scrolls and extracts.
+// jsdom has no layout and no site, so the site is simulated. jsdom != Chrome: the real-site proof is the e2e,
+// these pin the rules.
+//
+// Behaviour map from the #202 version of this file (invariant 6: rewritten because the loop moved, nothing weakened):
+//   predicate / recovery rule / Kalshi growth shape / stop at saved count / healthy untouched / truly gone / 30-step cap /
+//   partial mount / virtualised peak / trusted-input abort / time cap / endless-feed cap / page bottom
+//     -> same tests below, now against the io-driven loop.
+//   countStructure (raw, in-tab) -> removed with the raw loop; the cleaned measure is covered by the wiring tests.
+//   tryActiveTab wiring (recovered / stalled / zero / shrunken healthy / widen retry / saved-structure count) -> kept,
+//     rebuilt on the walk ops. New: raw-lie both directions, one-measure drift, failed walk is fail-closed.
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { loadRefreshEngine } from './helpers/refresh-engine-env.js'
 
 const g = await loadRefreshEngine()
 const LL = await import('../.test-build/utils/lazy-load.js')
-const { settleStructure, needsStructureSettle, structureRecovered, countStructure } = LL
-window.LazyLoad = LL // loaded by dashboard.html in production; _tabRefreshForComponent's recovery check reads it
+const { settleStructure, needsStructureSettle, structureRecovered } = LL
+window.LazyLoad = LL // loaded by dashboard.html in production; tryActiveTab and the recovery check read it
 
-let block, scrollCalls
+// The measure: cleaned li (the card's own exclusions strip <li class="x">, which stands for breadcrumb / rules-list items).
+const cleanedCount = html => (html.match(/<li>/g) || []).length
 
-// mounts[i] = items present after the i-th scrollTo (the last value repeats). Dropping values model a virtualised
-// list that unmounts what scrolled away.
-function setup(mounts, { head = '<p>page head only</p>', pageHeight = 20000 } = {}) {
-  document.body.innerHTML = `<div id="b">${head}<ul id="l"></ul></div>`
-  block = document.getElementById('b')
-  scrollCalls = []
-  Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, get: () => pageHeight })
-  Object.defineProperty(window, 'scrollY', { configurable: true, get: () => 0 })
-  Object.defineProperty(window, 'scrollX', { configurable: true, get: () => 0 })
-  block.getBoundingClientRect = () => ({ top: 100, bottom: 400, height: 300 })
-  window.scrollTo = (arg) => {
-    const n = mounts[Math.min(scrollCalls.length, mounts.length - 1)]
-    scrollCalls.push(arg.top)
-    document.getElementById('l').innerHTML = '<li>item</li>'.repeat(n)
+// A simulated page for the loop. mounts[i] = cleaned items after the i-th scroll (last value repeats); a dropping value
+// models a virtualised list. raws[i] = excluded (raw-only) items present after the i-th scroll.
+function fakeIO(mounts, { pageHeight = 20000, abortAt = null, raws = [0], failExtractAt = null } = {}) {
+  const calls = { begin: 0, scroll: [], extract: 0, end: 0 }
+  let cleaned = 0
+  let raw = raws[0]
+  return {
+    calls,
+    io: {
+      begin: async () => { calls.begin++; return { y: 100, step: 540 } },
+      scroll: async y => {
+        calls.scroll.push(y)
+        const i = Math.min(calls.scroll.length - 1, mounts.length - 1)
+        cleaned = mounts[i]
+        raw = raws[Math.min(calls.scroll.length - 1, raws.length - 1)]
+        return { aborted: abortAt === calls.scroll.length }
+      },
+      extract: async () => {
+        calls.extract++
+        if (failExtractAt === calls.extract) return null
+        return { html: '<ul>' + '<li class="x">raw</li>'.repeat(raw) + '<li>item</li>'.repeat(cleaned) + '</ul>', pageBottom: pageHeight }
+      },
+      measure: cleanedCount,
+      end: async () => { calls.end++ }
+    }
   }
 }
 const fast = { stepWaitMs: 1, finalSettleMs: 1 }
 
-test('predicate: only a block with NO structure against a structured saved copy is settled', () => {
+test('predicate: only a capture with NO cleaned structure against a structured saved copy is settled', () => {
   assert.equal(needsStructureSettle(0, 36), true)
   assert.equal(needsStructureSettle(0, 3), true)
   assert.equal(needsStructureSettle(0, 2), false, 'saved copy without real structure: nothing to recover')
   assert.equal(needsStructureSettle(0, 0), false, 'no saved structure at all (e.g. a price card)')
-  assert.equal(needsStructureSettle(1, 36), false, 'a partial block is NOT settled (known limit)')
+  assert.equal(needsStructureSettle(1, 36), false, 'a partial capture is NOT settled (known limit)')
   assert.equal(needsStructureSettle(36, 36), false, 'healthy card')
 })
 
@@ -50,37 +73,39 @@ test('recovery rule: at least half of the saved structure, never below the floor
 })
 
 test('Kalshi shape (15 Oct): flat steps only count once it has grown, then stops after 2; no scroll-back', async () => {
-  setup([0, 0, 0, 22, 31, 31, 31, 31])
-  const r = await settleStructure(block, 36, fast)
+  const { io, calls } = fakeIO([0, 0, 0, 22, 31, 31, 31, 31])
+  const r = await settleStructure(36, 0, io, fast)
   assert.equal(r.triggered, true)
   assert.equal(r.before, 0)
   assert.equal(r.peak, 31)
   assert.equal(r.count, 31)
   assert.equal(r.steps, 7, '3 steps before the first mount + 2 growing + exactly 2 flat')
-  assert.equal(scrollCalls.length, 7, 'no scroll-back after the settle')
+  assert.equal(calls.scroll.length, 7, 'no scroll-back after the settle')
+  assert.equal(calls.extract, 8, 'one extraction per step + the final one after the short settle')
+  assert.equal(calls.end, 1, 'listeners removed')
   assert.equal(r.capped, false)
+  assert.equal(cleanedCount(r.html), 31, 'the returned capture is the last extraction')
 })
 
-test('stops as soon as the block holds as much structure as the saved copy (no chasing an endless comments feed)', async () => {
-  setup([0, 0, 0, 22, 31, 36, 68, 99])
-  const r = await settleStructure(block, 4, fast)
+test('stops as soon as the cleaned capture holds as much structure as the saved copy (no chasing an endless comments feed)', async () => {
+  const { io } = fakeIO([0, 0, 0, 22, 31, 36, 68, 99])
+  const r = await settleStructure(4, 0, io, fast)
   assert.equal(r.steps, 4)
   assert.equal(r.count, 22)
   assert.equal(r.capped, false)
 })
 
-test('healthy block (already has structure) is left alone: zero scroll calls', async () => {
-  setup([5])
-  document.getElementById('l').innerHTML = '<li>a</li><li>b</li><li>c</li>'
-  const r = await settleStructure(block, 36, fast)
+test('healthy capture (already has structure) is left alone: no begin, no scroll, no extraction', async () => {
+  const { io, calls } = fakeIO([5])
+  const r = await settleStructure(36, 3, io, fast)
   assert.equal(r.triggered, false)
   assert.equal(r.steps, 0)
-  assert.deepEqual(scrollCalls, [])
+  assert.deepEqual([calls.begin, calls.scroll.length, calls.extract, calls.end], [0, 0, 0, 0])
 })
 
 test('negative: the list is truly gone -> one walk down the page (bounded by the page bottom), nothing mounted', async () => {
-  setup([0], { pageHeight: 3000 })
-  const r = await settleStructure(block, 36, fast)
+  const { io } = fakeIO([0], { pageHeight: 3000 })
+  const r = await settleStructure(36, 0, io, fast)
   assert.equal(r.triggered, true)
   assert.ok(r.steps >= 2 && r.steps <= 8, 'steps=' + r.steps)
   assert.equal(r.count, 0)
@@ -88,90 +113,127 @@ test('negative: the list is truly gone -> one walk down the page (bounded by the
 })
 
 test('negative on a very long page: the 30-step cap ends the walk', async () => {
-  setup([0], { pageHeight: 1000000 })
-  const r = await settleStructure(block, 36, fast)
+  const { io } = fakeIO([0], { pageHeight: 1000000 })
+  const r = await settleStructure(36, 0, io, fast)
   assert.equal(r.steps, 30)
   assert.equal(r.capped, true)
 })
 
-test('partial mount that stalls at 2 of 36: the settle just reports what is left (the verdict is the extension\'s)', async () => {
-  setup([2])
-  const r = await settleStructure(block, 36, fast)
+test('partial mount that stalls at 2 of 36: the settle just reports what is left (the verdict is the accept check)', async () => {
+  const { io } = fakeIO([2])
+  const r = await settleStructure(36, 0, io, fast)
   assert.equal(r.count, 2)
   assert.equal(r.steps, 3, 'grew once, then 2 flat steps')
 })
 
-test('virtualised list: peak is tracked, and count is what is LEFT for extraction', async () => {
-  setup([20, 30, 12, 12, 12])
-  const r = await settleStructure(block, 36, fast)
+test('virtualised list: peak is tracked, and count is what is LEFT for the capture', async () => {
+  const { io } = fakeIO([20, 30, 12, 12, 12])
+  const r = await settleStructure(36, 0, io, fast)
   assert.equal(r.peak, 30)
   assert.equal(r.count, 12)
 })
 
-test('trusted user input aborts the walk (their scroll or typing wins); untrusted events are ignored', async () => {
-  setup([0])
-  const handlers = []
-  const realAdd = window.addEventListener
-  window.addEventListener = (type, fn, ...rest) => { if (type === 'wheel') handlers.push(fn); return realAdd.call(window, type, fn, ...rest) }
-  const origScrollTo = window.scrollTo
-  window.scrollTo = (arg) => {
-    origScrollTo(arg)
-    if (scrollCalls.length === 1) handlers.forEach(h => h({ isTrusted: false })) // our own synthetic event: ignored
-    if (scrollCalls.length === 2) handlers.forEach(h => h({ isTrusted: true }))
-  }
-  try {
-    const r = await settleStructure(block, 36, fast)
-    assert.equal(r.aborted, true)
-    assert.equal(r.steps, 2, 'no further scroll after the user took over')
-  } finally { window.addEventListener = realAdd }
+test('trusted user input aborts the walk (their scroll or typing wins): no further scroll, listeners removed', async () => {
+  const { io, calls } = fakeIO([0], { abortAt: 2 })
+  const r = await settleStructure(36, 0, io, fast)
+  assert.equal(r.aborted, true)
+  assert.equal(r.steps, 2, 'no further scroll after the user took over')
+  assert.equal(calls.end, 1)
 })
 
-test('the time cap ends the walk', async () => {
-  setup([0], { pageHeight: 1000000 })
-  const r = await settleStructure(block, 36, { stepWaitMs: 5, finalSettleMs: 1, maxMs: 20 })
+test('the time cap ends the walk (and counts extraction time, not just the waits)', async () => {
+  const { io } = fakeIO([0], { pageHeight: 1000000 })
+  const r = await settleStructure(36, 0, io, { stepWaitMs: 5, finalSettleMs: 1, maxMs: 20 })
   assert.equal(r.capped, true)
   assert.ok(r.steps < 30)
 })
 
 test('endless feed is bounded by the step cap', async () => {
-  setup(Array.from({ length: 100 }, (_, i) => (i + 1) * 5))
-  const r = await settleStructure(block, 36, { ...fast, maxSteps: 6 })
+  const { io } = fakeIO(Array.from({ length: 100 }, (_, i) => (i + 1) * 5))
+  const r = await settleStructure(36, 0, io, { ...fast, maxSteps: 6 })
   assert.equal(r.steps, 6)
   assert.equal(r.capped, true)
 })
 
 test('page bottom stops the walk even when nothing mounted', async () => {
-  setup([0], { pageHeight: 400 })
-  const r = await settleStructure(block, 36, fast)
+  const { io } = fakeIO([0], { pageHeight: 400 })
+  const r = await settleStructure(36, 0, io, fast)
   assert.ok(r.steps <= 2)
 })
 
-test('countStructure counts li, tr and article only', () => {
-  document.body.innerHTML = '<div id="r"><ul><li>a</li></ul><table><tbody><tr><td>x</td></tr></tbody></table><article>z</article><p>no</p></div>'
-  assert.equal(countStructure(document.getElementById('r')), 3)
+test('#208 raw lies, thin side: 25 excluded rules-list items must NOT end the walk at the saved count', async () => {
+  // fresh Senate shape: saved 22; the block holds 25+ raw items that the card strips. Cleaned 0, 0, 0, 8, 16, 16, 16.
+  const { io } = fakeIO([0, 0, 0, 8, 16, 16, 16, 16], { raws: [0, 0, 0, 25, 25, 25, 25, 25] })
+  const r = await settleStructure(22, 0, io, fast)
+  assert.equal(r.count, 16, 'walked past the raw count (>= 22) to the cleaned plateau')
+  assert.equal(r.steps, 7, 'stops on flat-after-growth, not on the raw count')
+  assert.equal(structureRecovered(r.count, 22), true, '16 >= max(3, 11): accepted by the unchanged floor')
+})
+
+test('#208 raw lies, thin side with a cleaned stall: a plateau below the floor is reported, not hidden', async () => {
+  const { io } = fakeIO([0, 0, 0, 8, 8, 8], { raws: [0, 0, 0, 25] })
+  const r = await settleStructure(22, 0, io, fast)
+  assert.equal(r.count, 8)
+  assert.equal(structureRecovered(r.count, 22), false, 'the accept check still rejects it')
+})
+
+test('an extraction that returns nothing at one step keeps the previous capture and the walk goes on', async () => {
+  const { io } = fakeIO([0, 22, 22, 22], { failExtractAt: 1 })
+  const r = await settleStructure(36, 0, io, fast)
+  assert.equal(r.count, 22)
+  assert.equal(cleanedCount(r.html), 22)
+})
+
+test('the block is gone for good (every extraction returns nothing): the walk gives up after two misses instead of scrolling blind to the cap', async () => {
+  const { io } = fakeIO([0], { pageHeight: 1000000 })
+  io.extract = async () => null
+  const r = await settleStructure(36, 0, io, fast)
+  assert.equal(r.steps, 2)
+  assert.equal(r.html, null)
+  assert.equal(r.capped, false)
+})
+
+test('a throwing step propagates (the caller fails closed) and the listeners are still removed', async () => {
+  const { io, calls } = fakeIO([0])
+  io.extract = async () => { throw new Error('popup closed') }
+  await assert.rejects(settleStructure(36, 0, io, fast), /popup closed/)
+  assert.equal(calls.end, 1)
 })
 
 // ── tryActiveTab / _tabRefreshForComponent wiring ─────────────────────────────────────────────────
 const realSetTimeout = globalThis.setTimeout
-const THIN = '<div id="list"><p>page head only</p></div>'
-const FULL = `<div id="list">${'<li>item</li>'.repeat(36)}</div>`
-const STUB = '<div id="list"><li>item</li><li>item</li></div>'
-const SETTLED = { triggered: true, count: 36, peak: 36, steps: 8 }
-let extractArgs, extractResults
+const ONE_DIV = inner => `<div id="list">${inner}</div>`
+const li = n => '<li>item</li>'.repeat(n)
+const xli = n => '<li class="x">raw</li>'.repeat(n)
+let execCalls, site
 
+// site.first = capture before any scroll; site.after(scrollCount) = capture after that many scrolls (default: unchanged).
 beforeEach(() => {
-  extractArgs = []
-  extractResults = []
-  globalThis.setTimeout = (fn, ms, ...a) => (ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, ms, ...a)
+  execCalls = []
+  site = { first: ONE_DIV(''), after: () => null, scrolls: 0, hasEmptyImageSlots: false, failScroll: false, widened: false, wide: null, scrollsAtWiden: 0, retryOpts: null, retryIdx: -1 }
+  globalThis.setTimeout = (fn, ms, ...a) => (ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, (ms === 350 || ms === 500) ? 1 : ms, ...a)
   globalThis.screen = { availLeft: 0, availWidth: 1920, availTop: 0, availHeight: 1040 }
   globalThis.chrome = {
-    windows: { create: async () => ({ id: 1, tabs: [{ id: 7 }] }), getLastFocused: async () => ({ id: 99 }), update: async () => {}, remove: async () => {} },
+    windows: { create: async () => ({ id: 1, tabs: [{ id: 7 }] }), getLastFocused: async () => ({ id: 99 }), update: async (id, info) => { if (info && info.width) { site.widened = true; site.scrollsAtWiden = site.scrolls } }, remove: async () => {} },
     scripting: {
       executeScript: async (opts) => {
         if (opts.files) return []
         if (Array.isArray(opts.args)) {
-          extractArgs.push(opts.args)
-          return [{ result: extractResults[Math.min(extractArgs.length - 1, extractResults.length - 1)] }]
+          const o = opts.args[2] || {}
+          execCalls.push(o)
+          if (site.widened && !o.walk && site.retryOpts === null) { site.retryOpts = o; site.retryIdx = execCalls.length - 1 }
+          if (o.walk) {
+            if (o.walk.op === 'begin') return [{ result: { y: 100, step: 540 } }]
+            if (o.walk.op === 'scroll') {
+              if (site.failScroll) throw new Error('popup closed')
+              site.scrolls++
+              return [{ result: { aborted: false } }]
+            }
+            return [{ result: { ended: true } }]
+          }
+          const base = site.widened && site.wide != null ? site.wide : site.first
+          const html = site.scrolls > (site.widened ? site.scrollsAtWiden : 0) ? (site.after(site.scrolls) ?? base) : base
+          return [{ result: { html, hasEmptyImageSlots: site.hasEmptyImageSlots, pageBottom: 20000 } }]
         }
         if (opts.world === 'MAIN') return /visibilityState/.test(String(opts.func)) ? [{ result: true }] : []
         return [{ result: { found: false } }]
@@ -182,62 +244,162 @@ beforeEach(() => {
 const run = async (meta) => {
   try { return await g.tryActiveTab('https://example.com/', '#list', null, meta) } finally { globalThis.setTimeout = realSetTimeout }
 }
-const result = (html, structure) => ({ html, hasEmptyImageSlots: false, structure })
 // the check _tabRefreshForComponent builds: counts the CLEANED capture against the saved copy
-const checkFor = expected => html => { const count = g._countStructure(html); return { count, ok: structureRecovered(count, expected) } }
+const checkFor = expected => html => { const count = cleanedCount(html); return { count, ok: structureRecovered(count, expected) } }
+const walkOps = () => execCalls.filter(o => o.walk).map(o => o.walk.op)
 
-test('tryActiveTab hands the saved structure count to the extraction', async () => {
-  extractResults = [result(FULL, null)]
-  await run({ expectedStructure: 36 })
-  assert.deepEqual(extractArgs[0], ['#list', null, 36])
+test('healthy card (cleaned structure on the first extraction): no walk, one extraction, no skipLazy', async () => {
+  site.first = ONE_DIV(li(5))
+  const html = await run({ expectedStructure: 36, structureCheck: checkFor(36) })
+  assert.equal(html, site.first)
+  assert.deepEqual(execCalls, [{ skipLazy: true }], 'one extraction (the #72 pass is held back until it is known whether a settle runs) and nothing else')
 })
 
-test('no saved structure (expectedStructure absent) -> 0 is passed, so the extraction never settles', async () => {
-  extractResults = [result(FULL, null)]
-  await run({})
-  assert.equal(extractArgs[0][2], 0)
+test('card without saved structure (expectedStructure absent/0/2, e.g. a price card): never settles even when empty', async () => {
+  for (const meta of [{}, { expectedStructure: 0, structureCheck: checkFor(0) }, { expectedStructure: 2, structureCheck: checkFor(2) }]) {
+    execCalls = []
+    await run(meta)
+    assert.deepEqual(execCalls, [{}])
+  }
 })
 
-test('settle recovered the list -> the capture is returned', async () => {
-  extractResults = [result(FULL, SETTLED)]
-  assert.equal(await run({ expectedStructure: 36, structureCheck: checkFor(36) }), FULL)
+test('old Kalshi card (#208 case A): 3 breadcrumb items that the card strips are NOT structure -> the settle starts', async () => {
+  site.first = ONE_DIV(xli(3))
+  site.after = n => n >= 3 ? ONE_DIV(xli(3) + li(16)) : null
+  const meta = { expectedStructure: 4, structureCheck: checkFor(4) }
+  const html = await run(meta)
+  assert.equal(meta.structureSettle.triggered, true)
+  assert.equal(cleanedCount(html), 16)
+  assert.equal(meta.structureSettle.cleanedCount, 16)
 })
 
-test('settle stalled at a partial count -> rejected (null), last good copy kept by the caller', async () => {
-  extractResults = [result(STUB, { ...SETTLED, count: 2 })]
-  const meta = { expectedStructure: 36, structureCheck: checkFor(36) }
+test('fresh Senate (#208 case B): the excluded rules list does not end the walk; the cleaned plateau (16 of 22) is accepted', async () => {
+  site.first = ONE_DIV('')
+  site.after = n => n < 3 ? null : n === 3 ? ONE_DIV(xli(25) + li(8)) : ONE_DIV(xli(25) + li(16))
+  const meta = { expectedStructure: 22, structureCheck: checkFor(22) }
+  const html = await run(meta)
+  assert.equal(cleanedCount(html), 16)
+  assert.ok(site.scrolls >= 5, 'walked past the step where raw reached 28 >= 22')
+})
+
+test('settle stalled at a partial cleaned count -> rejected (null), last good copy kept by the caller', async () => {
+  site.first = ONE_DIV('')
+  site.after = n => n >= 2 ? ONE_DIV(xli(25) + li(8)) : null
+  const meta = { expectedStructure: 22, structureCheck: checkFor(22) }
   assert.equal(await run(meta), null)
-  assert.equal(meta.structureSettle.cleanedCount, 2, 'the cleaned count is reported for diagnostics')
+  assert.equal(meta.structureSettle.cleanedCount, 8, 'the cleaned count is reported for diagnostics')
 })
 
-test('settle ran but the cleaned capture is still at zero -> html returned, so the existing isContentLost gate fails it as before', async () => {
-  extractResults = [result(THIN, { ...SETTLED, count: 0 })]
-  assert.equal(await run({ expectedStructure: 36, structureCheck: checkFor(36) }), THIN)
+test('negative: the list is truly gone -> walk ends, capture still at zero -> returned for the existing gates to fail it as before', async () => {
+  site.first = ONE_DIV(xli(3))
+  const meta = { expectedStructure: 36, structureCheck: checkFor(36) }
+  const html = await run(meta)
+  assert.equal(html, ONE_DIV(xli(3)))
+  assert.equal(meta.structureSettle.triggered, true)
+  assert.equal(meta.structureSettle.count, 0)
 })
 
-test('a shrunken healthy card (no settle ran, 10 of 36) is NOT touched by the recovery rule', async () => {
-  const ten = '<div id="list">' + '<li>i</li>'.repeat(10) + '</div>'
-  extractResults = [result(ten, null)]
-  assert.equal(await run({ expectedStructure: 36, structureCheck: checkFor(36) }), ten)
+test('a shrunken healthy card (10 of 36 on the first extraction) is NOT touched: no walk, accepted as today', async () => {
+  site.first = ONE_DIV(li(10))
+  assert.equal(await run({ expectedStructure: 36, structureCheck: checkFor(36) }), site.first)
+  assert.deepEqual(walkOps(), [])
 })
 
-test('widen retry after a settle: the FINAL capture is the one checked', async () => {
-  extractResults = [
-    { html: STUB, hasEmptyImageSlots: true, structure: { ...SETTLED, count: 2 } },
-    result(FULL, null)
-  ]
-  assert.equal(await run({ expectedStructure: 36, structureCheck: checkFor(36) }), FULL)
-  assert.equal(extractArgs.length, 2)
-  assert.equal(extractArgs[1][2], 0, 'the retry must not pay a second settle')
+test('walk steps extract with skipLazy (the #72 image scroll never stacks with the settle) and the walk is bracketed by begin/end', async () => {
+  site.first = ONE_DIV('')
+  site.after = n => n >= 2 ? ONE_DIV(li(30)) : null
+  await run({ expectedStructure: 36, structureCheck: checkFor(36) })
+  assert.deepEqual(walkOps().filter(op => op !== 'scroll'), ['begin', 'end'])
+  const stepExtractions = execCalls.filter(o => !o.walk).slice(1)
+  assert.ok(stepExtractions.length >= 2)
+  assert.ok(stepExtractions.every(o => o.skipLazy === true))
+  assert.deepEqual(execCalls[0], { skipLazy: true }, 'the first extraction holds the #72 pass back')
+  assert.ok(execCalls.filter(o => !o.walk).every(o => o.skipLazy === true), 'no extraction of a settled card pays the #72 scroll')
 })
 
-test('widen retry after a settle that left a stub: a retry capture still far below the saved copy is rejected too', async () => {
-  const ten = '<div id="list">' + '<li>i</li>'.repeat(10) + '</div>'
-  extractResults = [
-    { html: STUB, hasEmptyImageSlots: true, structure: { ...SETTLED, count: 2 } },
-    result(ten, null)
-  ]
+test('widen retry after a settle: the FINAL capture is the one checked, and the retry pays neither a second #72 scroll nor a second settle', async () => {
+  site.first = ONE_DIV('')
+  site.hasEmptyImageSlots = true // every extraction reports empty image slots, so the popup is widened after the settle
+  site.after = n => n >= 2 ? ONE_DIV(xli(25) + li(2)) : null // the settle leaves a stub at 300px
+  site.wide = ONE_DIV(li(36)) // the widened capture holds the full list
+  const meta = { expectedStructure: 36, structureCheck: checkFor(36) }
+  const html = await run(meta)
+  assert.equal(site.widened, true, 'the widen retry really ran')
+  assert.equal(cleanedCount(html), 36)
+  assert.deepEqual(site.retryOpts, { skipLazy: true })
+  assert.equal(walkOps().filter(op => op === 'begin').length, 1, 'one settle per popup')
+})
+
+test('widen retry after a settle that left a stub: a widened capture still far below the saved copy is rejected too', async () => {
+  site.first = ONE_DIV('')
+  site.hasEmptyImageSlots = true
+  site.after = n => n >= 2 ? ONE_DIV(li(2)) : null
+  site.wide = ONE_DIV(li(10))
   assert.equal(await run({ expectedStructure: 36, structureCheck: checkFor(36) }), null)
+  assert.equal(site.widened, true)
+})
+
+test('healthy at 300px but the stored rules do not fit (widen) and the widened capture is empty: the settle runs AFTER the retry, once', async () => {
+  site.first = ONE_DIV(li(5))
+  site.wide = ONE_DIV('')
+  site.after = n => n >= 2 ? ONE_DIV(li(30)) : null
+  const meta = { expectedStructure: 36, structureCheck: checkFor(36), layoutOk: () => false }
+  const html = await run(meta)
+  assert.equal(site.widened, true)
+  assert.equal(meta.structureSettle.triggered, true)
+  assert.equal(cleanedCount(html), 30)
+  assert.equal(walkOps().filter(op => op === 'begin').length, 1)
+})
+
+test('#72 no-stack on the widen retry: empty image slots + a widened capture judged empty -> ONE settle, no #72 pass anywhere after the first look', async () => {
+  site.first = ONE_DIV(li(5))
+  site.hasEmptyImageSlots = true // every extraction reports empty image slots
+  site.wide = ONE_DIV('')
+  site.after = n => n >= 2 ? ONE_DIV(li(30)) : null
+  const meta = { expectedStructure: 36, structureCheck: checkFor(36), layoutOk: () => false }
+  const html = await run(meta)
+  assert.equal(cleanedCount(html), 30)
+  assert.equal(meta.structureSettle.triggered, true)
+  assert.deepEqual(site.retryOpts, { skipLazy: true }, 'the retry holds #72 back')
+  assert.ok(execCalls.slice(site.retryIdx).filter(o => !o.walk).every(o => o.skipLazy === true), 'no #72 pass after the widen, settle steps included')
+})
+
+test('#72 no-stack on the widen retry: a widened capture that is fine and shows empty slots still gets the held-back #72 pass, once', async () => {
+  site.first = ONE_DIV(li(5))
+  site.hasEmptyImageSlots = true
+  site.wide = ONE_DIV(li(5))
+  await run({ expectedStructure: 36, structureCheck: checkFor(36), layoutOk: () => false })
+  assert.deepEqual(site.retryOpts, { skipLazy: true })
+  const afterWiden = execCalls.slice(site.retryIdx)
+  assert.deepEqual(afterWiden, [{ skipLazy: true }, {}], 'retry without the scroll, then the held-back pass')
+})
+
+test('#72 no-stack: a card with saved structure holds the image scroll back; it runs afterwards only when no settle did', async () => {
+  site.first = ONE_DIV(li(5)) // healthy, so no settle
+  site.hasEmptyImageSlots = true
+  await run({ expectedStructure: 36, structureCheck: checkFor(36) })
+  assert.deepEqual(execCalls.slice(0, 2), [{ skipLazy: true }, {}], 'first look without the scroll, then the held-back #72 pass')
+})
+
+test('a failed walk (popup closed mid-way) is fail-closed: it still counts as settled, so a partial capture is judged, not slipped through', async () => {
+  site.first = ONE_DIV('')
+  site.failScroll = true
+  const meta = { expectedStructure: 36, structureCheck: checkFor(36) }
+  const html = await run(meta)
+  assert.equal(meta.structureSettle.error, true)
+  assert.equal(html, ONE_DIV(''), 'still at zero: left to the existing isContentLost gate, like before')
+})
+
+test('#208 one measure: the trigger, every walk step and the final accept call the SAME structureCheck', async () => {
+  site.first = ONE_DIV(xli(3))
+  site.after = n => n >= 2 ? ONE_DIV(xli(3) + li(30)) : null
+  const seen = []
+  const meta = { expectedStructure: 4, structureCheck: html => { seen.push(html); return checkFor(4)(html) } }
+  await run(meta)
+  assert.equal(seen[0], ONE_DIV(xli(3)), 'trigger measured the first extraction')
+  assert.ok(seen.some(h => cleanedCount(h) === 30), 'steps were measured')
+  assert.equal(seen[seen.length - 1], ONE_DIV(xli(3) + li(30)), 'accept measured the final capture')
+  assert.ok(seen.length >= 4)
 })
 
 test('wiring: _tabRefreshForComponent counts the saved copy and builds a check on the cleaned capture', async () => {
