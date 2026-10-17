@@ -165,3 +165,77 @@ test('wiring: tabBasedRefresh hands its layoutOk to the focused popup on both ro
     }
   } finally { g.tryBackgroundWithSpoof = realBg; g.tryOffscreenWindow = realOff; restore() }
 })
+
+// ── review round 1 (cold review of #186): the keep-better rule judges against the SAVED copy and the card's own rules ──
+const better = (narrow, wide, meta = {}) => g._wideCaptureBetter(narrow, wide, { structureCheck, ...meta })
+
+test('keep-better, direct: empty wide is never better (so the empty-capture tests really exercise the rule)', () => {
+  assert.equal(better(LIST(20), null), false)
+  assert.equal(better(LIST(20), ''), false)
+  assert.equal(better(null, LIST(5)), true)
+})
+
+test('keep-better vs the saved copy: a narrow capture that passes the saved-copy test is only replaced by one at least as complete', () => {
+  const meta = { expectedStructure: 36 }
+  assert.equal(better(LIST(30), LIST(15), meta), false, 'settled narrow 30 of 36, wide 15: the accept check would fail the wide one')
+  assert.equal(better(LIST(36), LIST(18), meta), false, 'unsettled narrow 36 of 36, wide only half')
+  assert.equal(better(LIST(30), LIST(30), meta), true)
+  assert.equal(better(LIST(30), LIST(36), meta), true)
+  assert.equal(better(LIST(10), LIST(30), meta), true, 'a narrow capture that is itself a stub is replaced by a better wide one')
+  assert.equal(better(LIST(40), LIST(36), meta), true, 'narrow-only list items (a mobile block) must not make the correct wide capture look smaller than the narrow one')
+  assert.equal(better(LIST(40), LIST(30), meta), false, 'wide below the saved copy')
+})
+
+test('keep-better without a saved list: collapse vs the narrow list decides; a structure-less narrow capture is replaced', () => {
+  assert.equal(better(LIST(20), LIST(9)), false)
+  assert.equal(better(LIST(20), LIST(10)), true)
+  assert.equal(better(LIST(2), '<p>wide</p>'), true)
+})
+
+test('keep-better: a throwing structure check keeps the narrow capture', () => {
+  assert.equal(g._wideCaptureBetter(LIST(20), LIST(20), { structureCheck: () => { throw new Error('cleaning failed') } }), false)
+})
+
+test('keep-better: the wide capture that breaks stored rules the narrow one fits keeps the narrow one; the reverse takes the wide one', () => {
+  const fits = html => html.includes('R3')
+  assert.equal(g._wideCaptureBetter('<p>R3 narrow</p>', '<p>wide, no rule target</p>', { layoutOk: fits }), false)
+  assert.equal(g._wideCaptureBetter('<p>narrow, no rule target</p>', '<p>R3 wide</p>', { layoutOk: fits }), true)
+})
+
+test('tryActiveTab: a settled-narrow-looking capture is not replaced by a wide capture that fails the saved-copy test', async () => {
+  extractResults = [{ html: LIST(30) }, { html: LIST(15) }]
+  const meta = { structureCheck, expectedStructure: 36 }
+  const html = await g.tryActiveTab('https://example.com/', '#list', null, meta).finally(restore)
+  assert.equal((html.match(/<li/g) || []).length, 30)
+  assert.equal(meta.widenPass.kept, 'narrow')
+})
+
+test('older signalled retries keep their unconditional rule: signalled + inner width 640 still re-extracts, and a collapsed wide capture still replaces the narrow one', async () => {
+  const prev = globalThis.chrome.scripting.executeScript
+  globalThis.chrome.scripting.executeScript = async (opts) => (!opts.world && !opts.files && !Array.isArray(opts.args) && /innerWidth/.test(String(opts.func))) ? [{ result: 640 }] : prev(opts)
+  extractResults = [{ html: NARROW, hasEmptyImageSlots: true }, { html: WIDE, hasEmptyImageSlots: false }]
+  const html = await g.tryActiveTab('https://example.com/', '#list', null, {}).finally(restore)
+  assert.equal(extractions, 2)
+  assert.match(html, /rule three target/)
+  extractions = 0
+  extractResults = [{ html: LIST(20), hasEmptyImageSlots: true }, { html: LIST(2) }]
+  const html2 = await g.tryActiveTab('https://example.com/', '#list', null, { structureCheck }).finally(restore)
+  assert.equal((html2.match(/<li/g) || []).length, 2, 'signalled retry: replaced like before #186')
+})
+
+test('#101 input: meta.pageVisible is the visibility read for the capture that was kept', async () => {
+  const prev = globalThis.chrome.scripting.executeScript
+  let reads = 0
+  globalThis.chrome.scripting.executeScript = async (opts) => (opts.world === 'MAIN' && /visibilityState/.test(String(opts.func))) ? [{ result: (reads++ === 0) }] : prev(opts) // narrow visible, wide hidden
+  extractResults = [{ html: NARROW }, { html: WIDE }]
+  let meta = {}
+  await g.tryActiveTab('https://example.com/', '#list', null, meta).finally(restore)
+  assert.equal(meta.widenPass.kept, 'wide')
+  assert.equal(meta.pageVisible, false, 'wide kept -> the wide read')
+  reads = 0; extractions = 0
+  extractResults = [{ html: NARROW }, { html: null }]
+  meta = {}
+  await g.tryActiveTab('https://example.com/', '#list', null, meta).finally(restore)
+  assert.equal(meta.widenPass.kept, 'narrow')
+  assert.equal(meta.pageVisible, true, 'narrow kept -> the narrow read')
+})

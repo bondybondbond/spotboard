@@ -113,7 +113,7 @@ test('#186: no first capture (element not found) -> no widen at all', async () =
   assert.deepEqual(updates, [])
 })
 
-test('wiring: tabBasedRefresh hands its structureCheck to the offscreen window', async () => {
+test('wiring: tabBasedRefresh hands its structureCheck, layoutOk and expectedStructure to the offscreen window', async () => {
   const realBg = g.tryBackgroundWithSpoof, realOff = g.tryOffscreenWindow, realAct = g.tryActiveTab
   let seen = null
   const check = () => ({ count: 1, ok: true })
@@ -121,7 +121,30 @@ test('wiring: tabBasedRefresh hands its structureCheck to the offscreen window',
     g.tryBackgroundWithSpoof = async () => null
     g.tryOffscreenWindow = async (url, sel, fp, meta) => { seen = meta; return null }
     g.tryActiveTab = async () => null
-    await g.tabBasedRefresh('https://example.com/', '#list', null, 0, 0, false, false, { structureCheck: check })
+    const lay = () => true
+    await g.tabBasedRefresh('https://example.com/', '#list', null, 0, 0, false, false, { structureCheck: check, layoutOk: lay, expectedStructure: 36 })
     assert.equal(seen.structureCheck, check)
+    assert.equal(seen.layoutOk, lay)
+    assert.equal(seen.expectedStructure, 36)
   } finally { g.tryBackgroundWithSpoof = realBg; g.tryOffscreenWindow = realOff; g.tryActiveTab = realAct }
+})
+
+test('review round 1: the offscreen pass honours the saved-copy test and the stored rules, and keeps the visibility read of the kept capture', async () => {
+  extractResults = [LIST(30), LIST(15)]
+  let r = await run({ structureCheck, expectedStructure: 36 })
+  assert.equal((r.html.match(/<li/g) || []).length, 30)
+  assert.equal(r.meta.widenPass.kept, 'narrow')
+  extractions = 0
+  const fits = html => html.includes('R3')
+  extractResults = ['<p>R3 narrow</p>', '<p>wide without the rule target</p>']
+  r = await run({ layoutOk: fits })
+  assert.match(r.html, /R3 narrow/)
+  extractions = 0
+  const prev = globalThis.chrome.scripting.executeScript
+  let reads = 0
+  globalThis.chrome.scripting.executeScript = async (opts) => (opts.world === 'MAIN' && /visibilityState/.test(String(opts.func))) ? [{ result: (reads++ === 0) }] : prev(opts)
+  extractResults = [NARROW, WIDE]
+  r = await run()
+  assert.equal(r.meta.widenPass.kept, 'wide')
+  assert.equal(r.meta.pageVisible, false)
 })

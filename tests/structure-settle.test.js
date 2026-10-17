@@ -7,10 +7,9 @@
 // jsdom has no layout and no site, so the site is simulated. jsdom != Chrome: the real-site proof is the e2e,
 // these pin the rules.
 //
-// #186 (invariant 6, declared in the issue record): the popup now takes one unconditional wide pass, so three tests that
-// counted extractions for a healthy card gain that one extra extraction, and the two "widened capture is empty" tests start
-// from a 2-item narrow capture because an empty wide capture over a 5-item narrow one is now REJECTED (kept narrow), which is
-// new behaviour with its own tests in active-tab-layout-widen.test.js. Nothing was loosened.
+// #186 (invariant 6, declared in the issue record): the popup now takes one unconditional wide pass, so the tests that
+// counted extractions for a healthy card gain that one extra extraction. The signalled-retry tests (layoutOk false / empty
+// image slots) are untouched: that path keeps its old rule. Nothing was loosened.
 //
 // Behaviour map from the #202 version of this file (invariant 6: rewritten because the loop moved, nothing weakened):
 //   predicate / recovery rule / Kalshi growth shape / stop at saved count / healthy untouched / truly gone / 30-step cap /
@@ -348,7 +347,7 @@ test('widen retry after a settle that left a stub: a widened capture still far b
 })
 
 test('healthy at 300px but the stored rules do not fit (widen) and the widened capture is empty: the settle runs AFTER the retry, once', async () => {
-  site.first = ONE_DIV(li(2)) // #186: below MIN_SAVED_STRUCTURE the narrow capture has nothing a wide capture could collapse; with 5 items an empty wide capture is rejected and narrow is kept (active-tab-layout-widen.test.js)
+  site.first = ONE_DIV(li(5))
   site.wide = ONE_DIV('')
   site.after = n => n >= 2 ? ONE_DIV(li(30)) : null
   const meta = { expectedStructure: 36, structureCheck: checkFor(36), layoutOk: () => false }
@@ -360,7 +359,7 @@ test('healthy at 300px but the stored rules do not fit (widen) and the widened c
 })
 
 test('#72 no-stack on the widen retry: empty image slots + a widened capture judged empty -> ONE settle, no #72 pass anywhere after the first look', async () => {
-  site.first = ONE_DIV(li(2)) // #186: see the test above
+  site.first = ONE_DIV(li(5))
   site.hasEmptyImageSlots = true // every extraction reports empty image slots
   site.wide = ONE_DIV('')
   site.after = n => n >= 2 ? ONE_DIV(li(30)) : null

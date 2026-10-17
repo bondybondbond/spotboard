@@ -1297,7 +1297,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     // Works for sites where IO-gated images load without a compositor focus frame (e.g. Zoopla).
     // Does NOT work for sites where Vue child components require a focused compositor frame
     // to mount (e.g. HotUKDeals box--contents). Gate falls through in that case.
-    const offMeta = { structureCheck }; // #186: the wide pass judges its capture with the same cleaned-structure measure
+    const offMeta = { structureCheck, layoutOk, expectedStructure }; // #186: the wide pass judges its capture with the same layout / cleaned-structure measures as the focused popup
     const offscreenHtml = await tryOffscreenWindow(url, selector, fingerprint, offMeta);
     if (offscreenHtml) {
       const offImgCount = (offscreenHtml.match(/<img/gi) || []).length;
@@ -1654,18 +1654,32 @@ async function _readInnerWidth(tabId) {
   } catch (_) { return null; }
 }
 
-// #186: take the wide capture unless it is worse than the narrow one: empty, or it collapsed the card's list structure
-// (li/tr/article after the card's own cleaning, same measure and same "recovered" rule as the #202 settle accept check,
-// so no new number). Image counts are NOT compared: the mobile-only block is itself an image only the narrow render has.
-// A card whose narrow capture has no list structure (< MIN_SAVED_STRUCTURE) has nothing to collapse: wide wins if non-empty.
-function _wideCaptureBetter(narrowHtml, wideHtml, structureCheck) {
+// #186: take the wide capture unless it is demonstrably worse than the narrow one. Worse =
+//  - empty;
+//  - it breaks the card's stored "exclude all like this" rules where the narrow capture fit them (meta.layoutOk, #132): the
+//    narrow capture is what would have been taken before #186;
+//  - it fails the #202/#208 accept test against the SAVED copy where the narrow capture passes it (meta.expectedStructure, the
+//    same cleaned li/tr/article measure and structureRecovered rule), or it has fewer list items than the smaller of the narrow capture and the saved copy;
+//  - with no saved list to judge against, it collapsed the narrow list (structureRecovered(wide, narrow)).
+// Image counts are NOT compared: the mobile-only block is itself an image only the narrow render has. A narrow capture with fewer
+// than MIN_SAVED_STRUCTURE items has nothing to collapse: wide wins if non-empty. If the judgement itself throws, keep the narrow
+// capture (what was taken before #186).
+function _wideCaptureBetter(narrowHtml, wideHtml, meta = {}) {
   if (!wideHtml) return false;
-  if (!narrowHtml || typeof structureCheck !== 'function' || !window.LazyLoad) return true;
+  if (!narrowHtml) return true;
   try {
-    const narrow = structureCheck(narrowHtml).count;
-    if (narrow < window.LazyLoad.MIN_SAVED_STRUCTURE) return true;
-    return window.LazyLoad.structureRecovered(structureCheck(wideHtml).count, narrow);
-  } catch (_) { return false; } // cannot judge it: keep the capture that would have been taken before #186
+    if (typeof meta.layoutOk === 'function' && meta.layoutOk(_tagSentimentHtml(narrowHtml)) && !meta.layoutOk(_tagSentimentHtml(wideHtml))) return false;
+    if (typeof meta.structureCheck !== 'function' || !window.LazyLoad) return true;
+    const LL = window.LazyLoad;
+    const narrow = meta.structureCheck(narrowHtml).count;
+    if (narrow < LL.MIN_SAVED_STRUCTURE) return true;
+    const wide = meta.structureCheck(wideHtml).count;
+    const expected = meta.expectedStructure || 0;
+    if (expected >= LL.MIN_SAVED_STRUCTURE && LL.structureRecovered(narrow, expected)) {
+      return LL.structureRecovered(wide, expected) && wide >= Math.min(narrow, expected); // a narrow capture that already passes is only replaced by one at least as complete as the saved copy (narrow-only list items must not make the correct wide capture look smaller)
+    }
+    return LL.structureRecovered(wide, narrow);
+  } catch (_) { return false; }
 }
 
 /**
@@ -2227,7 +2241,7 @@ async function tryOffscreenWindow(url, selector, fingerprint = null, meta = {}) 
         if (typeof meta.widenPass.innerWidth === 'number' && meta.widenPass.innerWidth < WIDE_MIN_INNER_W) throw new Error('popup not wide');
         const wideVisible = await readPageVisible(tabId); // #101: visibility of the wide capture
         const wideHtml = (await runExtraction())?.[0]?.result ?? null;
-        if (wideHtml && _wideCaptureBetter(html, wideHtml, meta.structureCheck)) {
+        if (wideHtml && _wideCaptureBetter(html, wideHtml, meta)) {
           meta.widenPass.kept = 'wide';
           html = wideHtml;
           meta.pageVisible = wideVisible;
@@ -2603,7 +2617,8 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
     // ~2s when the signal is actually detected; most sites never hit this path.
     // #201: also when the narrow capture no longer fits the card's own "exclude all like this" rules
     // (meta.layoutOk, #132). HotUKDeals hides one rule's targets (hide--toW3) below its W3 breakpoint and the
-    // extraction strips hidden elements, so the rule matches 0 at popup width but 30 at 1400px. Cards without
+    // extraction strips hidden elements, so the rule matches 0 at popup width but 30 at 1400px.
+    //
     // #186: and for EVERY capture the popup makes. The card was saved in the user's wide window; this popup renders the
     // narrow layout, which can add modules that never existed in the capture (Kalshi's mobile-only Combo / Live chat /
     // ballot block), and no exclusion could have been made for them. Neither signal above sees that, and no detector
@@ -2629,7 +2644,7 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
         // with saved structure it is held back here too, because the widened capture may be the first judged empty.
         const retryResults = await exec({ skipLazy: deferLazy || structureSettled });
         const retryHtml = retryResults[0]?.result?.html;
-        if (retryHtml && _wideCaptureBetter(html, retryHtml, meta.structureCheck)) {
+        if (retryHtml && (widenSignalled || _wideCaptureBetter(html, retryHtml, meta))) { // the #72 / #201 signalled retry keeps its old rule: any non-empty retry replaces the narrow capture
           meta.widenPass.kept = 'wide';
           html = retryHtml;
           meta.pageVisible = retryVisible;
