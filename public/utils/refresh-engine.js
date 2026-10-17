@@ -1297,7 +1297,7 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     // Works for sites where IO-gated images load without a compositor focus frame (e.g. Zoopla).
     // Does NOT work for sites where Vue child components require a focused compositor frame
     // to mount (e.g. HotUKDeals box--contents). Gate falls through in that case.
-    const offMeta = {};
+    const offMeta = { structureCheck }; // #186: the wide pass judges its capture with the same cleaned-structure measure
     const offscreenHtml = await tryOffscreenWindow(url, selector, fingerprint, offMeta);
     if (offscreenHtml) {
       const offImgCount = (offscreenHtml.match(/<img/gi) || []).length;
@@ -2215,7 +2215,25 @@ async function tryOffscreenWindow(url, selector, fingerprint = null, meta = {}) 
     const runExtraction = () => chrome.scripting.executeScript({ target: { tabId }, args: [selector, fingerprint], func: extractFromTab });
     const results = await runExtraction();
 
-    const html = results?.[0]?.result ?? null;
+    // #186: the wide pass of tryActiveTab, for the unfocused window. This popup renders the narrow layout too, and a narrow-only
+    // module (Kalshi Combo / Live chat / ballot block) would be captured and accepted here, so the focused popup never ran.
+    // Same helper, same keep-better rule, same 1024px guard; the #101 / #152 gates then judge the ONE capture chosen here.
+    let html = results?.[0]?.result ?? null;
+    meta.widenPass = { kept: 'narrow' };
+    if (html) {
+      try {
+        await _widenPopup(win, tabId, _screenRight, WIDE_PASS_SETTLE_MS);
+        meta.widenPass.innerWidth = await _readInnerWidth(tabId);
+        if (typeof meta.widenPass.innerWidth === 'number' && meta.widenPass.innerWidth < WIDE_MIN_INNER_W) throw new Error('popup not wide');
+        const wideVisible = await readPageVisible(tabId); // #101: visibility of the wide capture
+        const wideHtml = (await runExtraction())?.[0]?.result ?? null;
+        if (wideHtml && _wideCaptureBetter(html, wideHtml, meta.structureCheck)) {
+          meta.widenPass.kept = 'wide';
+          html = wideHtml;
+          meta.pageVisible = wideVisible;
+        }
+      } catch (_) { /* best-effort: the narrow capture is what was taken before #186 */ }
+    }
     if (DEBUG && html) {
       const imgCount = (html.match(/<img/gi) || []).length;
       const largeCount = (html.match(LARGE_IMG_RE) || []).length;
