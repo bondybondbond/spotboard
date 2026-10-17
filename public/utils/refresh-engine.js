@@ -2069,10 +2069,9 @@ async function tryOffscreenWindow(url, selector, fingerprint = null, meta = {}) 
     // Inject DomSnapshot into tab context (needed — executeScript funcs run in tab's isolated world)
     await chrome.scripting.executeScript({ target: { tabId }, files: ['utils/dom-snapshot.js'] });
     meta.pageVisible = await readPageVisible(tabId); // #101
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      args: [selector, fingerprint],
-      func: (sel, fp) => {
+    // Named (not inline) so the #186 wide pass below can re-run the identical extraction after widening, like tryActiveTab's
+    // extractFromTab. The body is unchanged.
+    const extractFromTab = (sel, fp) => {
         // Find the correct element (by fingerprint if provided)
         let element = null;
 
@@ -2212,8 +2211,9 @@ async function tryOffscreenWindow(url, selector, fingerprint = null, meta = {}) 
         }
 
         return clone.outerHTML;
-      }
-    });
+      };
+    const runExtraction = () => chrome.scripting.executeScript({ target: { tabId }, args: [selector, fingerprint], func: extractFromTab });
+    const results = await runExtraction();
 
     const html = results?.[0]?.result ?? null;
     if (DEBUG && html) {
