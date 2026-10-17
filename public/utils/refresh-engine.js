@@ -1618,6 +1618,27 @@ async function closeWindowSafely(windowId, timeoutMs = CLOSE_TIMEOUT_MS) {
   }
 }
 
+// #186: the ONE place a refresh popup is widened (#72 image slots, #201 stored rules, and the wide pass of every popup
+// capture). Popups open at 300px so Chrome gives them a real compositor frame; a responsive site then renders its
+// narrow layout, which can differ from the wide window the card was captured in. 1400 is not tuned per site: it is the
+// width #72 measured to match a normal desktop browser (CNBC serves a different image variant below its 1340px
+// breakpoint; 1400 = that breakpoint + ~60px margin, and window chrome eats ~16px before content width).
+const WIDE_POPUP_W = 1400;
+
+// Must reposition `left` too: the popup is pinned 55%-visible at the screen's right edge, so widening in place alone
+// pushes it past Chrome's ">=50% on-screen" bounds constraint (chrome.windows.update throws "Invalid value for bounds").
+async function _widenPopup(win, tabId, screenRight, settleMs) {
+  await chrome.windows.update(win.id, { width: WIDE_POPUP_W, left: Math.round(screenRight - WIDE_POPUP_W * 0.55) });
+  // Explicit resize/scroll nudge: some lazy-mount libraries only re-check on these events, not on a debounced
+  // viewport-size poll.
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: () => { window.dispatchEvent(new Event('resize')); window.dispatchEvent(new Event('scroll')); }
+  }).catch(() => {});
+  await new Promise(r => setTimeout(r, settleMs));
+}
+
 /**
  * Try background tab refresh with visibility spoof
  * Seamless refresh (no tab flash) but may fail for sites detecting background tabs
@@ -2541,35 +2562,9 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
     if (hasEmptyImageSlots || layoutMismatch) {
       if (DEBUG) console.log('[SB-REFRESH] tryActiveTab:', layoutMismatch ? 'stored rules do not fit the narrow layout' : 'empty image slots', ', widening + retrying');
       try {
-        // Must reposition `left` too: the popup is pinned 55%-visible at the screen's right
-        // edge, so widening in place alone pushes it past Chrome's "≥50% on-screen" bounds
-        // constraint (chrome.windows.update throws "Invalid value for bounds" otherwise).
-        //
-        // Width is NOT tuned to the minimum needed to unstick the lazy-mount — re-verified via
-        // live viewport bisection during #77's follow-up (CDP viewport emulation, not a stale
-        // estimate): it's a hard cutoff at exactly 1020px content width (0 images at 1000px, 7
-        // at 1020px) matching CNBC's own confirmed `min-width:1020px` breakpoint exactly, well
-        // below its largest breakpoint. 1400 is instead chosen to match the responsive tier a
-        // real, normal-width user browser would render in, which matters more: CNBC serves a
-        // *different, smaller* image variant (224×180 vs 240×180) below its 1340px breakpoint,
-        // so a refresh popup that only clears the mount threshold would silently capture a
-        // lower-resolution/differently-cropped image than the user's own original capture did.
-        // Confirmed live: a genuinely wide browser tab (1920px) and this 1400px popup both
-        // resolve to the identical `w=240&h=180` CDN image URL. 1400 = 1340px breakpoint + ~60px
-        // margin (window chrome eats ~16px of that before it reaches content width).
-        const _wideW = 1400;
-        const _wideLeft = Math.round(_screenRight - _wideW * 0.55);
-        await chrome.windows.update(win.id, { width: _wideW, left: _wideLeft });
-        // Explicit resize/scroll nudge — some lazy-mount libraries only re-check on these
-        // events firing, not purely on a debounced viewport-size poll.
-        await chrome.scripting.executeScript({
-          target: { tabId: atTabId },
-          world: 'MAIN',
-          func: () => { window.dispatchEvent(new Event('resize')); window.dispatchEvent(new Event('scroll')); }
-        }).catch(() => {});
         // 4s (not 2s): live testing against CNBC showed its lazy-mount re-check is debounced
         // longer than 2s after a width change — 2s consistently left the placeholder unresolved.
-        await new Promise(r => setTimeout(r, 4000));
+        await _widenPopup(win, atTabId, _screenRight, 4000);
         const retryVisible = await readPageVisible(atTabId); // #101: visibility of the retry capture
         // The #72 scroll must not stack with a settle (one popup, one ~10 s budget): it is skipped after a settle, and for a card
         // with saved structure it is held back here too, because the widened capture may be the first judged empty.
