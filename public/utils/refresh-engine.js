@@ -1639,6 +1639,35 @@ async function _widenPopup(win, tabId, screenRight, settleMs) {
   await new Promise(r => setTimeout(r, settleMs));
 }
 
+// #186 wide pass: settle after widening when no #72 / #201 signal asks for the longer wait (Kalshi measured: clean at 1 s),
+// and the narrowest content width still counted as a desktop layout (the common lg breakpoint; below it the wide pass
+// would only re-extract the narrow layout, e.g. when Chrome clamps the window on a small screen).
+const WIDE_PASS_SETTLE_MS = 1000;
+const WIDE_MIN_INNER_W = 1024;
+
+// The popup's layout viewport after the widen. null = unreadable (never blocks anything: the keep-better rule still judges).
+async function _readInnerWidth(tabId) {
+  try {
+    const r = await chrome.scripting.executeScript({ target: { tabId }, func: () => window.innerWidth });
+    const w = r && r[0] ? r[0].result : null;
+    return typeof w === 'number' ? w : null;
+  } catch (_) { return null; }
+}
+
+// #186: take the wide capture unless it is worse than the narrow one: empty, or it collapsed the card's list structure
+// (li/tr/article after the card's own cleaning, same measure and same "recovered" rule as the #202 settle accept check,
+// so no new number). Image counts are NOT compared: the mobile-only block is itself an image only the narrow render has.
+// A card whose narrow capture has no list structure (< MIN_SAVED_STRUCTURE) has nothing to collapse: wide wins if non-empty.
+function _wideCaptureBetter(narrowHtml, wideHtml, structureCheck) {
+  if (!wideHtml) return false;
+  if (!narrowHtml || typeof structureCheck !== 'function' || !window.LazyLoad) return true;
+  try {
+    const narrow = structureCheck(narrowHtml).count;
+    if (narrow < window.LazyLoad.MIN_SAVED_STRUCTURE) return true;
+    return window.LazyLoad.structureRecovered(structureCheck(wideHtml).count, narrow);
+  } catch (_) { return false; } // cannot judge it: keep the capture that would have been taken before #186
+}
+
 /**
  * Try background tab refresh with visibility spoof
  * Seamless refresh (no tab flash) but may fail for sites detecting background tabs
@@ -2557,20 +2586,33 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
     // #201: also when the narrow capture no longer fits the card's own "exclude all like this" rules
     // (meta.layoutOk, #132). HotUKDeals hides one rule's targets (hide--toW3) below its W3 breakpoint and the
     // extraction strips hidden elements, so the rule matches 0 at popup width but 30 at 1400px. Cards without
-    // rules (layoutOk null) and cards whose narrow capture already fits never pay this.
+    // #186: and for EVERY capture the popup makes. The card was saved in the user's wide window; this popup renders the
+    // narrow layout, which can add modules that never existed in the capture (Kalshi's mobile-only Combo / Live chat /
+    // ballot block), and no exclusion could have been made for them. Neither signal above sees that, and no detector
+    // separates it from ordinary page drift (measured: Kalshi 0.09-0.19 new-structure vs 0.15 on other cards), so the
+    // wide pass is unconditional here: narrow extract + settle first (the content must mount at the narrow size, widening
+    // before it is mounted captured nothing), then widen, then re-extract. ~1 s on top of the popup's ~10 s; the 4 s wait
+    // stays only for the two signals that need it. Fetch and background-tab refreshes never reach this code.
     const layoutMismatch = !!html && typeof meta.layoutOk === 'function' && !meta.layoutOk(_tagSentimentHtml(html));
-    if (hasEmptyImageSlots || layoutMismatch) {
-      if (DEBUG) console.log('[SB-REFRESH] tryActiveTab:', layoutMismatch ? 'stored rules do not fit the narrow layout' : 'empty image slots', ', widening + retrying');
+    const widenSignalled = hasEmptyImageSlots || layoutMismatch;
+    if (html) {
+      if (DEBUG) console.log('[SB-REFRESH] tryActiveTab:', layoutMismatch ? 'stored rules do not fit the narrow layout' : hasEmptyImageSlots ? 'empty image slots' : 'wide pass', ', widening + retrying');
+      meta.widenPass = { signalled: widenSignalled, kept: 'narrow' };
       try {
         // 4s (not 2s): live testing against CNBC showed its lazy-mount re-check is debounced
         // longer than 2s after a width change — 2s consistently left the placeholder unresolved.
-        await _widenPopup(win, atTabId, _screenRight, 4000);
+        await _widenPopup(win, atTabId, _screenRight, widenSignalled ? 4000 : WIDE_PASS_SETTLE_MS);
+        // Chrome can clamp the window (small screen, window chrome): a wide pass that did not get a desktop-width layout
+        // would only re-extract the narrow one. The two older signals keep their unconditional retry.
+        meta.widenPass.innerWidth = await _readInnerWidth(atTabId);
+        if (!widenSignalled && typeof meta.widenPass.innerWidth === 'number' && meta.widenPass.innerWidth < WIDE_MIN_INNER_W) throw new Error('popup not wide');
         const retryVisible = await readPageVisible(atTabId); // #101: visibility of the retry capture
         // The #72 scroll must not stack with a settle (one popup, one ~10 s budget): it is skipped after a settle, and for a card
         // with saved structure it is held back here too, because the widened capture may be the first judged empty.
         const retryResults = await exec({ skipLazy: deferLazy || structureSettled });
         const retryHtml = retryResults[0]?.result?.html;
-        if (retryHtml) {
+        if (retryHtml && _wideCaptureBetter(html, retryHtml, meta.structureCheck)) {
+          meta.widenPass.kept = 'wide';
           html = retryHtml;
           meta.pageVisible = retryVisible;
           // The widened capture may be the first to be judged empty (or the first extraction to be): settle then.

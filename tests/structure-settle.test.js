@@ -7,6 +7,11 @@
 // jsdom has no layout and no site, so the site is simulated. jsdom != Chrome: the real-site proof is the e2e,
 // these pin the rules.
 //
+// #186 (invariant 6, declared in the issue record): the popup now takes one unconditional wide pass, so three tests that
+// counted extractions for a healthy card gain that one extra extraction, and the two "widened capture is empty" tests start
+// from a 2-item narrow capture because an empty wide capture over a 5-item narrow one is now REJECTED (kept narrow), which is
+// new behaviour with its own tests in active-tab-layout-widen.test.js. Nothing was loosened.
+//
 // Behaviour map from the #202 version of this file (invariant 6: rewritten because the loop moved, nothing weakened):
 //   predicate / recovery rule / Kalshi growth shape / stop at saved count / healthy untouched / truly gone / 30-step cap /
 //   partial mount / virtualised peak / trusted-input abort / time cap / endless-feed cap / page bottom
@@ -211,7 +216,7 @@ let execCalls, site
 beforeEach(() => {
   execCalls = []
   site = { first: ONE_DIV(''), after: () => null, scrolls: 0, hasEmptyImageSlots: false, failScroll: false, widened: false, wide: null, scrollsAtWiden: 0, retryOpts: null, retryIdx: -1 }
-  globalThis.setTimeout = (fn, ms, ...a) => (ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, (ms === 350 || ms === 500) ? 1 : ms, ...a)
+  globalThis.setTimeout = (fn, ms, ...a) => (ms === 1000 || ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, (ms === 350 || ms === 500) ? 1 : ms, ...a)
   globalThis.screen = { availLeft: 0, availWidth: 1920, availTop: 0, availHeight: 1040 }
   globalThis.chrome = {
     windows: { create: async () => ({ id: 1, tabs: [{ id: 7 }] }), getLastFocused: async () => ({ id: 99 }), update: async (id, info) => { if (info && info.width) { site.widened = true; site.scrollsAtWiden = site.scrolls } }, remove: async () => {} },
@@ -248,18 +253,21 @@ const run = async (meta) => {
 const checkFor = expected => html => { const count = cleanedCount(html); return { count, ok: structureRecovered(count, expected) } }
 const walkOps = () => execCalls.filter(o => o.walk).map(o => o.walk.op)
 
-test('healthy card (cleaned structure on the first extraction): no walk, one extraction, no skipLazy', async () => {
+test('healthy card (cleaned structure on the first extraction): no settle walk, only the first extraction and the #186 wide pass, both without the #72 scroll', async () => {
   site.first = ONE_DIV(li(5))
   const html = await run({ expectedStructure: 36, structureCheck: checkFor(36) })
   assert.equal(html, site.first)
-  assert.deepEqual(execCalls, [{ skipLazy: true }], 'one extraction (the #72 pass is held back until it is known whether a settle runs) and nothing else')
+  // #186: the popup now also takes ONE wide pass after the first extraction; the settle itself still never starts for a healthy card
+  assert.deepEqual(walkOps(), [], 'no settle walk')
+  assert.deepEqual(execCalls, [{ skipLazy: true }, { skipLazy: true }], 'first extraction (the #72 pass is held back) + the #186 wide pass, nothing else')
 })
 
 test('card without saved structure (expectedStructure absent/0/2, e.g. a price card): never settles even when empty', async () => {
   for (const meta of [{}, { expectedStructure: 0, structureCheck: checkFor(0) }, { expectedStructure: 2, structureCheck: checkFor(2) }]) {
     execCalls = []
     await run(meta)
-    assert.deepEqual(execCalls, [{}])
+    assert.deepEqual(walkOps(), [], 'never settles') // #186: plus the one wide pass
+    assert.deepEqual(execCalls, [{}, { skipLazy: false }])
   }
 })
 
@@ -340,7 +348,7 @@ test('widen retry after a settle that left a stub: a widened capture still far b
 })
 
 test('healthy at 300px but the stored rules do not fit (widen) and the widened capture is empty: the settle runs AFTER the retry, once', async () => {
-  site.first = ONE_DIV(li(5))
+  site.first = ONE_DIV(li(2)) // #186: below MIN_SAVED_STRUCTURE the narrow capture has nothing a wide capture could collapse; with 5 items an empty wide capture is rejected and narrow is kept (active-tab-layout-widen.test.js)
   site.wide = ONE_DIV('')
   site.after = n => n >= 2 ? ONE_DIV(li(30)) : null
   const meta = { expectedStructure: 36, structureCheck: checkFor(36), layoutOk: () => false }
@@ -352,7 +360,7 @@ test('healthy at 300px but the stored rules do not fit (widen) and the widened c
 })
 
 test('#72 no-stack on the widen retry: empty image slots + a widened capture judged empty -> ONE settle, no #72 pass anywhere after the first look', async () => {
-  site.first = ONE_DIV(li(5))
+  site.first = ONE_DIV(li(2)) // #186: see the test above
   site.hasEmptyImageSlots = true // every extraction reports empty image slots
   site.wide = ONE_DIV('')
   site.after = n => n >= 2 ? ONE_DIV(li(30)) : null

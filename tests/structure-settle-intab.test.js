@@ -27,7 +27,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'scrollX', { configurable: true, get: () => 0 })
   window.scrollTo = (arg) => { scrollCalls++; scrollTops.push(arg && arg.top); onScroll(scrollCalls) }
   // the fixed 2s/3s/4s popup waits are not under test; the settle's own 350 ms / 500 ms waits shrink to 1 ms
-  globalThis.setTimeout = (fn, ms, ...a) => (ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, ms === 350 || ms === 500 ? 1 : ms, ...a)
+  globalThis.setTimeout = (fn, ms, ...a) => (ms === 1000 || ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, ms === 350 || ms === 500 ? 1 : ms, ...a)
   globalThis.screen = { availLeft: 0, availWidth: 1920, availTop: 0, availHeight: 1040 }
   globalThis.chrome = {
     windows: { create: async () => ({ id: 1, tabs: [{ id: 7 }] }), getLastFocused: async () => ({ id: 99 }), update: async () => {}, remove: async () => {} },
@@ -103,7 +103,7 @@ test('#72 image scroll never stacks with the settle: a settled card pays none, a
   await run({ expectedStructure: 4, structureCheck: check(4) })
   assert.equal(ensureCalls, 0, 'saved structure + empty block: the first extraction holds #72 back, the settle steps and the widen retry skip it')
   ensureCalls = 0
-  globalThis.setTimeout = (fn, ms, ...a) => (ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, ms === 350 || ms === 500 ? 1 : ms, ...a)
+  globalThis.setTimeout = (fn, ms, ...a) => (ms === 1000 || ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, ms === 350 || ms === 500 ? 1 : ms, ...a)
   onScroll = () => {}
   page(lis(3))
   document.getElementById('b').insertAdjacentHTML('beforeend', slots)
