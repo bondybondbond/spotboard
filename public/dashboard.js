@@ -1462,7 +1462,7 @@ function renderExampleBoard() {
     return `
       <div class="sb-example-card">
         <div class="sb-example-card-title">
-          <img src="https://www.google.com/s2/favicons?sz=32&domain=${card.domain}" alt="" />
+          <img data-sb-favicon="https://www.google.com/s2/favicons?sz=32&domain=${card.domain}" alt="" />
           <span class="sb-example-card-name">${card.title}</span>
           <span class="sb-example-card-ago">2m ago</span>
         </div>
@@ -1607,7 +1607,7 @@ function renderSubsequentEmptyState(container) {
       chip.className = 'favicon-chip';
 
       const img = document.createElement('img');
-      img.src = 'https://www.google.com/s2/favicons?domain=' + domain + '&sz=48';
+      img.setAttribute('data-sb-favicon', 'https://www.google.com/s2/favicons?domain=' + domain + '&sz=48');
       img.width = 48;
       img.height = 48;
       img.alt = domain.replace(/\..*$/, '');
@@ -1887,7 +1887,7 @@ function showAddCardModal(cardCount = 0) {
       chip.addEventListener('mouseleave', () => { chip.style.borderColor = '#e5e7eb'; chip.style.background = 'white'; });
 
       const img = document.createElement('img');
-      img.src = 'https://www.google.com/s2/favicons?domain=' + domain + '&sz=48';
+      img.setAttribute('data-sb-favicon', 'https://www.google.com/s2/favicons?domain=' + domain + '&sz=48');
       img.width = 32; img.height = 32;
       img.alt = domain.replace(/\..*$/, '');
       img.addEventListener('error', function() { this.style.display = 'none'; });
@@ -2225,7 +2225,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           <div class="component-card size-1x1" style="opacity: 1; transition: opacity 0.5s ease;">
             <div class="component-header">
               <div class="component-header-left">
-                <img src="${pg.favicon || ''}" class="component-favicon" width="16" height="16" alt="">
+                <img data-sb-favicon="${pg.favicon || ''}" class="component-favicon" width="16" height="16" alt="">
                 <span class="component-title"></span>
               </div>
             </div>
@@ -2454,7 +2454,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
       card.innerHTML = `
         <div class="card-header">
           <div class="card-header-meta">
-            ${component.favicon ? `<img src="${component.favicon}" alt="" style="width: 24px; height: 24px; flex-shrink: 0;" />` : ''}
+            ${component.favicon ? `<img data-sb-favicon="${component.favicon}" alt="" style="width: 24px; height: 24px; flex-shrink: 0;" />` : ''}
             <span class="editable-title" title="Click to edit label"></span>
             ${component.isPrePopulated ? '<span class="template-badge">Template</span>' : ''}
           </div>

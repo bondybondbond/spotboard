@@ -3,7 +3,7 @@
 // Test-only — never referenced by the real extension build (build-shared.js / vite build).
 import * as esbuild from 'esbuild'
 
-const entries = ['src/content.ts', 'src/utils/dom-cleanup.ts', 'src/utils/recapture.ts', 'src/utils/dom-snapshot.ts', 'src/utils/lazy-load.ts']
+const entries = ['src/content.ts', 'src/utils/dom-cleanup.ts', 'src/utils/recapture.ts', 'src/utils/dom-snapshot.ts', 'src/utils/lazy-load.ts', 'src/utils/favicon.ts']
 
 await esbuild.build({
   entryPoints: entries,

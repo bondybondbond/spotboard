@@ -94,3 +94,18 @@ await build({
 });
 fs.copyFileSync('public/utils/list-format.js', 'dist/utils/list-format.js');
 console.log('✅ Built public/utils/list-format.js from src/utils/list-format.ts');
+
+// favicon (#207)
+await build({
+  entryPoints: ['src/utils/favicon.ts'],
+  outfile: 'public/utils/favicon.js',
+  bundle: true,
+  format: 'iife',
+  globalName: 'Favicon',
+  // the observer starts on load: dashboard.html needs no call site after each render
+  footer: { js: 'window.Favicon = Favicon; Favicon.observeFavicons(document);' },
+  target: 'chrome120',
+  banner: { js: '// AUTO-GENERATED from src/utils/favicon.ts — DO NOT EDIT' },
+});
+fs.copyFileSync('public/utils/favicon.js', 'dist/utils/favicon.js');
+console.log('✅ Built public/utils/favicon.js from src/utils/favicon.ts');

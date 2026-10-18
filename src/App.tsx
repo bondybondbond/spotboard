@@ -1,6 +1,7 @@
 /// <reference types="chrome" />
 import { useState, useEffect } from 'react';
 import './App.css';
+import { loadFavicon } from './utils/favicon';
 
 // A page where SpotBoard's content script can never run — capture is impossible here.
 function isRestrictedUrl(url?: string): boolean {
@@ -24,6 +25,18 @@ function TabIcon({ src, alt = '' }: { src?: string; alt?: string }) {
   const [failedSrc, setFailedSrc] = useState('')
   if (!src || failedSrc === src) return <span className="sb-icon-fallback" aria-hidden="true" />
   return <img src={src} alt={alt} onError={() => setFailedSrc(src)} />
+}
+
+// A saved card's icon, loaded without cookies (#207). Same neutral chip as TabIcon until it arrives or if it can't load.
+function CardIcon({ stored }: { stored?: string }) {
+  const [loaded, setLoaded] = useState<{ stored?: string; src: string | null }>({ src: null })
+  useEffect(() => {
+    let live = true
+    loadFavicon(stored).then(src => { if (live) setLoaded({ stored, src }) })
+    return () => { live = false }
+  }, [stored])
+  if (loaded.stored !== stored || !loaded.src) return <span className="sb-icon-fallback" aria-hidden="true" />
+  return <img src={loaded.src} alt="" onError={() => setLoaded({ stored, src: null })} />
 }
 
 interface Component {
@@ -243,7 +256,7 @@ function App() {
             <div key={index} className="sb-card">
               <div className="sb-card-head">
                 {component.favicon ? (
-                  <img src={component.favicon} alt="" />
+                  <CardIcon stored={component.favicon} />
                 ) : (
                   <TabIcon src={tabIconUrl} />
                 )}

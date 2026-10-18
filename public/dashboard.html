@@ -2748,19 +2748,19 @@
           <p style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin: 0 0 10px;">Need practice?</p>
           <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
             <a href="https://bondybondbond.github.io/spotboard/sandbox.html" target="_blank" rel="noopener noreferrer" class="practice-pill">
-              <img src="https://www.google.com/s2/favicons?sz=32&domain=bondybondbond.github.io" width="16" height="16" alt="Sandbox" style="border-radius:2px;" />
+              <img data-sb-favicon="https://www.google.com/s2/favicons?sz=32&domain=bondybondbond.github.io" width="16" height="16" alt="Sandbox" style="border-radius:2px;" />
               Interactive Sandbox
             </a>
             <button class="practice-pill" data-onboarding-url="https://www.npr.org">
-              <img src="https://www.google.com/s2/favicons?sz=32&domain=npr.org" width="16" height="16" alt="NPR" style="border-radius:2px;" />
+              <img data-sb-favicon="https://www.google.com/s2/favicons?sz=32&domain=npr.org" width="16" height="16" alt="NPR" style="border-radius:2px;" />
               NPR
             </button>
             <button class="practice-pill" data-onboarding-url="https://www.bbc.co.uk/news">
-              <img src="https://www.google.com/s2/favicons?sz=32&domain=bbc.co.uk" width="16" height="16" alt="BBC" style="border-radius:2px;" />
+              <img data-sb-favicon="https://www.google.com/s2/favicons?sz=32&domain=bbc.co.uk" width="16" height="16" alt="BBC" style="border-radius:2px;" />
               BBC News
             </button>
             <button class="practice-pill" data-onboarding-url="https://en.wikipedia.org/wiki/Main_Page">
-              <img src="https://www.google.com/s2/favicons?sz=32&domain=wikipedia.org" width="16" height="16" alt="Wikipedia" style="border-radius:2px;" />
+              <img data-sb-favicon="https://www.google.com/s2/favicons?sz=32&domain=wikipedia.org" width="16" height="16" alt="Wikipedia" style="border-radius:2px;" />
               Wikipedia
             </button>
           </div>
@@ -2826,6 +2826,8 @@
   <script src="utils/dom-cleanup.js"></script>
   <script src="utils/dom-snapshot.js"></script>
   <script src="utils/lazy-load.js"></script>
+  <!-- Credential-free site icons: fills img[data-sb-favicon] (#207) -->
+  <script src="utils/favicon.js"></script>
   <script src="utils/confetti.js"></script>
   <script src="utils/fingerprint.js"></script>
   <script src="utils/exclusion-storage.js"></script>

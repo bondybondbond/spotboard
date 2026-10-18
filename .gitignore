@@ -60,3 +60,6 @@ public/utils/exclusion-storage.js
 
 # Auto-generated from src/utils/list-format.ts (esbuild pre-build)
 public/utils/list-format.js
+
+# Auto-generated from src/utils/favicon.ts (esbuild pre-build)
+public/utils/favicon.js
