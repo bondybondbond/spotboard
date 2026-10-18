@@ -715,6 +715,92 @@ export function isContentLost(newHtml: string, cachedHtml?: string): boolean {
   return false;
 }
 
+// ─── Section identity (#212) ─────────────────────────────────────────────────
+
+// A class segment that is a build hash, not a name: CSS-in-JS / CSS-module output such as `dcr-17m0c6q`,
+// `ssrcss-1lj0qhb-PromoGroupWrapper`, `jsx-3547261442`. These change on a site deploy while the section stays the
+// same (the owner's Guardian card scored 0.62 on a rotation alone), so they fold to `#`. The readable parts of the
+// token are kept, so `ssrcss-#-NavList` and `ssrcss-#-PromoList` still differ.
+const HASH_CLASS_SEGMENT_RE = /^(?=.*\d)(?=.*[a-z])[a-z0-9]{5,}$|^\d{4,}$/i;
+// styled-components hashes are letters only (`bdVaJa`, `kGfFJb`): mixed case, but not readable words -- split at the
+// capitals, some piece is shorter than 3 letters (`bd|Va|Ja`), where `NavList` splits into `Nav|List`. Readable
+// names with a 1-2 letter first word (`isOpen`, `xLarge`) fold too; that errs toward "same section", the safe side.
+const LETTER_HASH_SEGMENT_RE = /^(?=[a-zA-Z]{5,8}$)(?=.*[a-z])[a-zA-Z][a-z]*[A-Z]/;
+// CSS-module suffix `[name]__[hash]` (`Card_title__a-B3x`): the hash may itself hold `-`/`_`, so it is matched whole
+// before the token is split. Needs a digit or a capital, so BEM elements (`river__more-link`) are left alone.
+const MODULE_HASH_SUFFIX_RE = /__(?=[\w-]*[\dA-Z])[\w-]{5}$/;
+
+function isHashSegment(seg: string): boolean {
+  if (HASH_CLASS_SEGMENT_RE.test(seg)) return true;
+  if (!LETTER_HASH_SEGMENT_RE.test(seg)) return false;
+  return (seg.match(/[A-Z]?[a-z]*/g) || []).filter(Boolean).some(part => part.length < 3);
+}
+
+function foldClassToken(tok: string): string {
+  return tok.replace(MODULE_HASH_SUFFIX_RE, '__#')
+    .split(/([-_]+)/).map(seg => isHashSegment(seg) ? '#' : seg).join('');
+}
+// Classes SpotBoard itself adds while cleaning a capture; they say nothing about which section it is.
+const OWN_CLASS_RE = /^(sb-|spotboard|canvas-link$)/;
+// Below this many distinct element shapes a card is too small to judge by shape (a bare price or score).
+const SECTION_MIN_SHAPES = 8;
+// Two questions, two bars (#212, measured). Margins sit on the legit side on purpose: a false failure leaves a stale
+// card, a missed wrong block is the old behaviour. Do not move either without a fixture showing why
+// (tests/section-identity-guard.test.js).
+// 1. Is the card still there? Share of the saved copy's shapes found in the result. Legit refreshes of the owner's
+//    30-card board: >= 0.62 (28 live refreshes, every tier), >= 0.82 (42 day-to-day changes across 5 snapshots). Wrong
+//    blocks: 0.13-0.21 (the Kalshi header block a refresh stored), 0.02-0.03 (Cricbuzz news column vs scoreline, #181).
+const SECTION_KEPT_MIN = 0.5;
+// 2. Is the result mostly something else? Share of the result's shapes that the saved copy has. Legit: >= 0.60 across
+//    55 judged real refreshes / snapshot changes; a first refresh after a fresh Kalshi capture kept the whole card and
+//    gained a section the page mounts while loading (#202): 0.56, so growth is normal. Page-scale containers that hold the card: 0.17 (page wrapper), 0.32 (header + card). Below a
+//    third = more than three times as many kinds of element as the card has.
+const SECTION_OWN_MIN = 1 / 3;
+
+function elementShapes(html: string): Set<string> {
+  // <template>: inert (no image loads) and keeps a <tbody>/<tr>-rooted region's table tags (#171)
+  const t = document.createElement('template');
+  t.innerHTML = html;
+  const shapes = new Set<string>();
+  for (const el of Array.from(t.content.querySelectorAll('*'))) {
+    const tokens = (el.getAttribute('class') || '').split(/\s+/)
+      .filter(tok => tok && !OWN_CLASS_RE.test(tok))
+      .map(foldClassToken)
+      .sort();
+    shapes.add(el.tagName.toLowerCase() + (tokens.length ? '.' + tokens.join('.') : ''));
+  }
+  return shapes;
+}
+
+/**
+ * How a refresh candidate compares with the saved copy by element shape (tag + class tokens), never by text: a feed
+ * whose every headline changed is still the same section.
+ * - kept: share of the saved copy's shapes found in the candidate (low = the card is not there)
+ * - own: share of the candidate's shapes that the saved copy has (low = the candidate is mostly other parts of the page;
+ *   the "largest match containing the fingerprint" tiebreakers lean toward exactly those containers)
+ *
+ * @returns null when there is nothing to judge: no saved copy, or fewer than SECTION_MIN_SHAPES shapes in it
+ */
+export function sectionMatch(newHtml: string, cachedHtml?: string): { kept: number; own: number } | null {
+  if (!cachedHtml) return null;
+  const saved = elementShapes(cachedHtml);
+  if (saved.size < SECTION_MIN_SHAPES) return null;
+  const fresh = elementShapes(newHtml || '');
+  let shared = 0;
+  for (const shape of saved) if (fresh.has(shape)) shared++;
+  return { kept: shared / saved.size, own: fresh.size ? shared / fresh.size : 0 };
+}
+
+/**
+ * #212: is a refresh candidate a different section of the page from the saved copy? A selector that matches many
+ * elements (Kalshi's `div.flex.flex-col` matched 67) can hand refresh the wrong one, and the wrong one can even contain
+ * the card's fingerprint text, so neither the fingerprint nor isContentLost catches it.
+ */
+export function isDifferentSection(newHtml: string, cachedHtml?: string): boolean {
+  const m = sectionMatch(newHtml, cachedHtml);
+  return m !== null && (m.kept < SECTION_KEPT_MIN || m.own < SECTION_OWN_MIN);
+}
+
 // ─── Responsive Card Dedup Helpers ───────────────────────────────────────────
 
 /** Resolve the lead image URL from a DOM subtree.

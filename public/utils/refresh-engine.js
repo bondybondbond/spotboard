@@ -683,8 +683,9 @@ function requiresVisibleTab(url) {
  * Sole constructor of a successful refresh result within refreshComponent. Runs the
  * output-side content-loss guard (isContentLost, from dom-cleanup.ts / window global) before
  * ever building a success object -- a card that came back effectively empty is rejected here
- * rather than silently stored. On rejection, no rawCaptureLength is attached, so a bad
- * extract can never poison the drift baseline.
+ * rather than silently stored -- and the #212 section-identity guard (isDifferentSection), which
+ * rejects a result that is a different part of the page. On rejection, no rawCaptureLength is
+ * attached, so a bad extract can never poison the drift baseline.
  *
  * All success paths in refreshComponent MUST go through this function -- see
  * `_buildTabSuccessResult` (thin wrapper for the 9 tab-refresh call sites) and the two
@@ -701,6 +702,19 @@ function _finalizeSuccess(sanitizedHtml, component, extras = {}) {
     return {
       success: false,
       error: 'Refresh returned empty content',
+      keepOriginal: true
+    };
+  }
+  // #212 section-identity gate: a selector that matches many elements can hand any tier the wrong one -- one that may
+  // even contain the fingerprint text -- and storing it would silently swap the card for another part of the page.
+  // Fails this attempt like any other gate here (no new escalation; Refresh All's quiet-probe lane re-queues any failed
+  // probe to the focused lane, as before): "layout_changed" + Re-capture, last good copy kept.
+  if (typeof isDifferentSection === 'function' && component && isDifferentSection(sanitizedHtml, component.html_cache)) {
+    const _sm = sectionMatch(sanitizedHtml, component.html_cache);
+    console.warn(`[SB-REFRESH] Section-identity guard rejected refresh for ${component.name}: kept ${_sm.kept.toFixed(2)} of the saved card's shapes, own ${_sm.own.toFixed(2)} of the result's`);
+    return {
+      success: false,
+      error: 'Refresh found a different element on the page',
       keepOriginal: true
     };
   }
@@ -1073,8 +1087,9 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
       }
       return { success: false, error: 'No-baseline proxy check failed and tab refresh failed', keepOriginal: true };
     }
-    // Proxy check passed — record raw length for future refreshes
-    component.rawCaptureLength = extractedHtml.length;
+    // Proxy check passed. The raw length becomes the baseline only if this refresh is accepted: the direct-fetch
+    // return hands it to _finalizeSuccess, which drops it on a rejection (#212 -- writing it onto the card here
+    // let a rejected wrong block become the next refresh's baseline).
   } else if (driftBaseline > 500 && (extractedHtml.length > driftBaseline * 1.5 || extractedHtml.length < driftBaseline * 0.3)) {
     console.log(`[SB-REFRESH] Content drift detected: raw=${extractedHtml.length} vs rawBaseline=${driftBaseline} (ratio=${(extractedHtml.length / driftBaseline).toFixed(2)}x, ${extractedHtml.length > driftBaseline ? 'expanded' : 'shrunk'}) → falling back to tab-based refresh`);
     const driftFingerprint = component.headingFingerprint || extractFingerprint(component.html_cache);
@@ -1117,7 +1132,8 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
       }
       const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
       const _driftTabResult = _buildTabSuccessResult(sanitizedHtml, component, driftActiveFocusNeeded);
-      _driftTabResult.rawCaptureLength = tabHtml.length;
+      // a rejected result never carries a baseline (see _finalizeSuccess)
+      if (_driftTabResult.success) _driftTabResult.rawCaptureLength = tabHtml.length;
       return _driftTabResult;
     }
     // Tab fallback failed — check if direct-fetch content is substantial AND structurally
