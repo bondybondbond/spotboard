@@ -3034,6 +3034,10 @@ function getPreviewCSS(): string {
     :has(> svg[data-sb-svg="chart"]) {
       min-height: 0 !important;
     }
+    /* #137: clamp a site-pinned pixel-width chart wrapper to the card. Keep in sync with dashboard.html. */
+    [data-sb-fit-wrap] {
+      max-width: 100% !important;
+    }
 
     /* Font normalization */
     body, li, li span, li p, div, p {

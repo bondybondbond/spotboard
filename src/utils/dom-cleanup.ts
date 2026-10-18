@@ -1430,6 +1430,7 @@ export function cleanupDuplicates(html: string, savedHtml?: string): string {
     if (!svgEl.ownerSVGElement && isChartSVG(svgEl)) {
       svgEl.setAttribute('data-sb-svg', 'chart');
       synthesizeChartViewBox(svgEl);
+      fitWideChartSVG(svgEl);
     }
   });
   
@@ -1796,6 +1797,45 @@ function synthesizeChartViewBox(svg: SVGSVGElement): void {
   svg.setAttribute('width', '100%');
   svg.removeAttribute('height');
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+}
+
+// A chart wider than any card's content well (the widest 2x card is ~720px) that the site pinned
+// to its capture-time pixel width (#137).
+const WIDE_CHART_MIN_PX = 600;
+const WIDE_CHART_MIN_HEIGHT_PX = 100;
+
+/**
+ * #137: a site that sizes its chart from the render width (Kalshi) ships a wrapper with an inline
+ * `width: 912px` around a `width="100%"` svg, so the svg can never shrink to the card and the card
+ * scrolls sideways. Stamps the svg and that wrapper so the dashboard CSS can clamp the wrapper to
+ * the card and squeeze the chart horizontally at its own height (uniform scaling gave ~4px axis
+ * text). Fires only on that signature — a fluid chart svg with a wide viewBox inside an ancestor
+ * with an inline pixel width >= WIDE_CHART_MIN_PX — so charts that already fit are untouched.
+ * Idempotent: a stored copy re-run through the sanitizer lands on the same attributes.
+ *
+ * @param svg - Chart-classified top-level SVG, after synthesizeChartViewBox
+ */
+function fitWideChartSVG(svg: SVGSVGElement): void {
+  if ((svg.getAttribute('width') || '').trim() !== '100%') return;
+  const parts = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+  if (parts.length !== 4 || !parts.every(Number.isFinite)) return;
+  const [, , vbWidth, vbHeight] = parts;
+  if (vbWidth < WIDE_CHART_MIN_PX || vbHeight < WIDE_CHART_MIN_HEIGHT_PX) return;
+
+  // Every pinned ancestor within reach, not just the nearest: an inner 650px box inside an outer
+  // 912px box would otherwise be clamped while the outer one still forces the sideways scroll.
+  const wrappers: HTMLElement[] = [];
+  let ancestor = svg.parentElement;
+  for (let depth = 0; ancestor && depth < 3; depth++, ancestor = ancestor.parentElement) {
+    const inlineWidth = ancestor.style?.width || '';
+    if (inlineWidth.endsWith('px') && parseFloat(inlineWidth) >= WIDE_CHART_MIN_PX) wrappers.push(ancestor);
+  }
+  if (wrappers.length === 0) return;
+
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('data-sb-fit', 'wide');
+  svg.style.setProperty('height', `${vbHeight}px`, 'important');
+  wrappers.forEach(w => w.setAttribute('data-sb-fit-wrap', ''));
 }
 
 /**

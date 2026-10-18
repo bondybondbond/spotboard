@@ -1107,6 +1107,13 @@
     .component-content :has(> svg[data-sb-svg="chart"]) {
       min-height: 0 !important;
     }
+    /* #137: a chart wrapper the site pinned to its capture width (inline `width: 912px`, stamped
+       data-sb-fit-wrap by the sanitizer) is clamped to the card; the chart svg keeps its own height
+       and squeezes horizontally (preserveAspectRatio="none", inline height). Wider cards leave the
+       wrapper at its pixel width, so no distortion. Keep in sync with content.ts. */
+    .component-content [data-sb-fit-wrap] {
+      max-width: 100% !important;
+    }
     /* Only show pointer on actual links */
     .component-content a.canvas-link {
       cursor: pointer !important;
