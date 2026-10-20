@@ -3245,3 +3245,41 @@ export function applySanitizationPipeline(inputHtml: string, component: Sanitiza
   recordExclusionCheck(component, { ...findLeakedExclusions(finalHtml, unresolved, component.exclusionSignatures, component.html_cache), patternFaults }, finalHtml);
   return finalHtml;
 }
+
+/**
+ * #96: is this selector match a real candidate rather than an empty loading shell? Kalshi's server HTML had
+ * 2 empty skeleton blocks matching a card selector before the real one. Direct-fetch refresh drops text-less,
+ * media-less candidates before choosing (only when that leaves at least one); the capture-time check in
+ * content.ts (#213) applies the same filter.
+ */
+export function hasCardContent(el: Element): boolean {
+  return (el.textContent || '').trim().length > 0 ||
+    !!el.querySelector('img, picture, svg, canvas, video, iframe, input, select, textarea') ||
+    /background(-image)?\s*:/i.test(el.outerHTML.slice(0, 4000)); // inline background art
+}
+
+/**
+ * #181: which of several elements matching a card's selector is the card, by heading fingerprint.
+ * Pass 1: a heading-like element whose text equals the fingerprint. Pass 2 (fingerprint is not a heading,
+ * e.g. a card name): every candidate whose text contains it -- one -> take it; several -> take the LARGEST,
+ * not the first (a scoreline carousel that merely mentions "Australia tour of South Africa" sits before the
+ * real news column on Cricbuzz and used to win).
+ * Shared (#213): direct-fetch refresh (refresh-engine.js _pickByHeadingFingerprint) and the capture-time check
+ * in content.ts call this one function. The three tab-tier copies inside tabBasedRefresh run inside
+ * executeScript and cannot: change all four together.
+ * @returns null = fingerprint resolved nothing; the caller falls through to its later steps
+ */
+export function pickByHeadingFingerprint(matches: ArrayLike<Element>, fingerprint: string): Element | null {
+  const norm = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase();
+  const fp = norm(fingerprint);
+  for (const candidate of Array.from(matches)) {
+    for (const h of Array.from(candidate.querySelectorAll(
+      'h1,h2,h3,h4,caption,[class*="heading"],[class*="title"],[class*="header"]'
+    ))) {
+      if (norm(h.textContent || '') === fp) return candidate;
+    }
+  }
+  const containing = Array.from(matches).filter(c => norm(c.textContent || '').includes(fp));
+  if (containing.length <= 1) return containing[0] || null;
+  return containing.reduce((a, b) => a.outerHTML.length >= b.outerHTML.length ? a : b);
+}

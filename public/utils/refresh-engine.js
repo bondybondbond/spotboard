@@ -150,26 +150,13 @@ function _queryHeadingCandidates(root) {
 
 /**
  * #181: direct-fetch choice among several elements matching a card's selector, by heading fingerprint.
- * Pass 1: a heading-like element whose text equals the fingerprint. Pass 2 (fingerprint is not a heading,
- * e.g. a card name): every candidate whose text contains it -- one -> take it; several -> take the LARGEST,
- * not the first (a scoreline carousel that merely mentions "Australia tour of South Africa" sits before the
- * real news column on Cricbuzz and used to win). Same pass-2 rule as the three tab-tier copies inside
- * tabBasedRefresh (they run inside executeScript and cannot share this function): change all four together.
+ * The rule lives in dom-cleanup's pickByHeadingFingerprint (#213: the capture-time check in content.ts runs
+ * the same function, so capture and refresh cannot disagree on it). The three tab-tier copies inside
+ * tabBasedRefresh (they run inside executeScript and cannot share it) follow the same rule: change all four together.
  * @returns {Element|null} null = fingerprint resolved nothing; the caller falls through to its later steps
  */
 function _pickByHeadingFingerprint(matches, fingerprint) {
-  const norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
-  const fp = norm(fingerprint);
-  for (const candidate of matches) {
-    for (const h of candidate.querySelectorAll(
-      'h1,h2,h3,h4,caption,[class*="heading"],[class*="title"],[class*="header"]'
-    )) {
-      if (norm(h.textContent || '') === fp) return candidate;
-    }
-  }
-  const containing = Array.from(matches).filter(c => norm(c.textContent || '').includes(fp));
-  if (containing.length <= 1) return containing[0] || null;
-  return containing.reduce((a, b) => a.outerHTML.length >= b.outerHTML.length ? a : b);
+  return pickByHeadingFingerprint(matches, fingerprint);
 }
 
 /**
@@ -2885,10 +2872,8 @@ async function refreshComponent(component) {
         // tiebreakers below fell through to matches[0] (a shell), every exclusion then matched
         // nothing and the refresh was rejected as empty. Drop text-less, media-less candidates
         // first -- but only when that leaves at least one real candidate.
-        const _hasContent = (el) => (el.textContent || '').trim().length > 0 ||
-          !!el.querySelector('img, picture, svg, canvas, video, iframe, input, select, textarea') ||
-          /background(-image)?\s*:/i.test(el.outerHTML.slice(0, 4000)); // inline background art
-        const _contentful = Array.from(matches).filter(_hasContent);
+        // hasCardContent lives in dom-cleanup (#213: the capture-time check applies the same filter).
+        const _contentful = Array.from(matches).filter(hasCardContent);
         if (_contentful.length > 0 && _contentful.length < matches.length) matches = _contentful;
         
         // If multiple matches, use fingerprint to find the right one

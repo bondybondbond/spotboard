@@ -1,5 +1,5 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
-import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset, deriveCrossParentPattern, deriveTwinAlternate, patternsResolveOnMarkup, PATTERN_MIN_MATCHES, PATTERN_MAX_RULES } from './utils/dom-cleanup';
+import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset, deriveCrossParentPattern, deriveTwinAlternate, patternsResolveOnMarkup, PATTERN_MIN_MATCHES, PATTERN_MAX_RULES, pickByHeadingFingerprint, hasCardContent } from './utils/dom-cleanup';
 import type { ExclusionPattern } from './utils/dom-cleanup';
 import { ensureLazyContentLoaded } from './utils/lazy-load';
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, promoteVideoPosters, classifyImages, markHiddenElements, HIDDEN_MARK_ATTR } from './utils/dom-snapshot';
@@ -437,6 +437,35 @@ export function selectorFindsElement(sel: string, el: Element): boolean {
   } catch {
     return false; // invalid selector
   }
+}
+
+// #213: would refresh pick `el` again? Including `el` (#178) is not enough when the selector matches several
+// elements: refresh then tie-breaks by the heading fingerprint (pickByHeadingFingerprint, the same function
+// direct-fetch refresh calls). Kalshi `div.flex.flex-col`: 67 matches, the card name "Democrat" is in 36 of
+// them and the largest is a page wrapper around the locked block, so every refresh took the wrapper.
+// When the fingerprint resolves nothing, the tab tiers take the first match and direct fetch the first one
+// with content (hasCardContent, #96) -- either landing on `el` passes, so only a capture both would miss stops.
+// (Direct fetch's html_cache step is unreachable here: a capture with a heading has it inside `el`, so pass 1
+// always resolves.) Judged on the live page; refresh loads a fresh one, so a pass is necessary, not
+// sufficient. Shadow-root elements are not judged, as in selectorFindsElement.
+export function refreshPicksElement(sel: string, fingerprint: string | null, el: Element): boolean {
+  if (el.getRootNode() !== el.ownerDocument) return true;
+  let matches: Element[];
+  try {
+    matches = Array.from(el.ownerDocument.querySelectorAll(sel));
+  } catch {
+    return false; // invalid selector
+  }
+  if (matches.length <= 1) return matches[0] === el;
+  const byFingerprint = fingerprint ? pickByHeadingFingerprint(matches, fingerprint) : null;
+  if (byFingerprint) return byFingerprint === el;
+  return matches[0] === el || matches.find(hasCardContent) === el;
+}
+
+// The headingFingerprint a capture stores: the first visible, non-volatile heading's text, else the card name
+// (null for the generic "Spot from <host>" name). 100 chars max (sync quota). Lock-time check and save share it.
+function captureFingerprint(headingText: string | null, name: string | null): string | null {
+  return headingText ? headingText.substring(0, 100) : (name ? name.substring(0, 100) : null);
 }
 
 // First candidate that finds `el`, or null. Candidates are lazy so the normal path (the first one
@@ -2901,17 +2930,20 @@ function proceedToPreviewer(captureTarget: HTMLElement, clickTarget: HTMLElement
     log('📝 Name fallback:', name);
   }
   
-  const selector = generateCaptureSelector(captureTarget);
-  if (selector === null) {
-    // #178: nothing we can write down would find this element again -- stop before the user spends
-    // time in the modal on a card that could never refresh. Same recovery as an empty re-capture.
-    console.warn('⚠️ No selector found the captured element -- capture stopped:', captureTarget.tagName, captureTarget.className);
+  // #178 / #213: stop before the user spends time in the modal on a card that could never refresh.
+  // Same recovery as an empty re-capture.
+  const stopUnfindable = (why: string) => {
+    console.warn(`⚠️ ${why} -- capture stopped:`, captureTarget.tagName, captureTarget.className);
     captureTarget.style.outline = '';
     captureTarget.style.cursor = '';
     lockedElement = null;
     resetExclusions();
     toggleCapture(true);
     showCaptureHint('Couldn’t lock onto that section — pick a slightly bigger or different one. Your board is unchanged.');
+  };
+  const selector = generateCaptureSelector(captureTarget);
+  if (selector === null) {
+    stopUnfindable('No selector found the captured element'); // #178: nothing we can write down finds it
     return;
   }
   log('🎯 Final selector:', selector);
@@ -2937,6 +2969,13 @@ function proceedToPreviewer(captureTarget: HTMLElement, clickTarget: HTMLElement
   const hasStableHeading = !!rawHeading;
   const positionBased = !hasStableHeading;
   log('📍 Pre-modal capture mode:', positionBased ? 'Position-based (no heading)' : 'Header-based (has heading)');
+
+  // #213: the fingerprint saved at Confirm is computed the same way (minus headings the user excludes there).
+  const lockFingerprint = captureFingerprint(rawHeading, name !== `Spot from ${window.location.hostname}` ? name : null);
+  if (!refreshPicksElement(selector, lockFingerprint, captureTarget)) {
+    stopUnfindable(`Refresh would pick a different element for "${selector}"`);
+    return;
+  }
 
   // Show top-right confirmation modal
   log('📞 About to call showCaptureConfirmation...');
@@ -3656,7 +3695,7 @@ function showCaptureConfirmation(target: HTMLElement, name: string, selector: st
           .find(h => truncateLikeName((h.textContent || '').trim()) === name);
         const nameMatchesExcludedHeading = !!nameSourceHeading && isExcludedOrInsideExcluded(nameSourceHeading);
         const fallbackName = (name !== `Spot from ${window.location.hostname}` && !nameMatchesExcludedHeading) ? name : null;
-        const headingFingerprint = fpText ? fpText.substring(0, 100) : (fallbackName ? fallbackName.substring(0, 100) : null);
+        const headingFingerprint = captureFingerprint(fpText, fallbackName);
 
         // Structural-identity marker (issue #77): a capture-time data-testid/data-test value,
         // kept only if it's globally unique on the page right now. Lets refresh's feed-rotation
