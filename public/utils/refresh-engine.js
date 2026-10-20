@@ -795,6 +795,22 @@ function _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded = fa
 }
 
 /**
+ * Tab result for the two rescues that accept a heading-fingerprint mismatch (structure marker matched, or feed rotation).
+ * The card moves to the new heading only if the result is accepted: _finalizeSuccess may still reject it (content lost,
+ * different section, exclusion leak, pattern fault), and a rejected block must not become what the next refresh of this
+ * in-memory card is judged against (#214). The one place for that rule -- do not set component.headingFingerprint from a
+ * candidate anywhere else.
+ */
+function _buildRotatedTabResult(sanitizedHtml, component, activeFocusNeeded = false) {
+  const result = _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded);
+  if (result.success) {
+    const newFingerprint = extractFingerprint(sanitizedHtml);
+    if (newFingerprint) component.headingFingerprint = newFingerprint;
+  }
+  return result;
+}
+
+/**
  * Minimum plausible length for a non-empty refreshed card. Single shared constant so every
  * apply path uses the same floor (previously an ad-hoc `< 50` in dashboard.js and `< 50` /
  * `< 100` literals here). This is NOT a content-loss classifier -- `_finalizeSuccess()` /
@@ -1095,9 +1111,7 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
         if (_structureMarkerMatches(component, _driftTabDoc)) {
           console.log(`[SB-REFRESH] Structural marker matched (${component.structureMarker.attr}="${component.structureMarker.value}") — accepting refresh despite fingerprint rotation`);
           const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-          const newFingerprint = extractFingerprint(sanitizedHtml);
-          if (newFingerprint) component.headingFingerprint = newFingerprint;
-          return _buildTabSuccessResult(sanitizedHtml, component, driftActiveFocusNeeded);
+          return _buildRotatedTabResult(sanitizedHtml, component, driftActiveFocusNeeded);
         }
         // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
         const dominantTag = getDominantTag(component.html_cache);
@@ -1106,9 +1120,7 @@ async function _runDriftGuard(extractedHtml, component, originalImgCount, origin
           if (newCount >= 3) {
             console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-            const newFingerprint = extractFingerprint(sanitizedHtml);
-            if (newFingerprint) component.headingFingerprint = newFingerprint;
-            return _buildTabSuccessResult(sanitizedHtml, component, driftActiveFocusNeeded);
+            return _buildRotatedTabResult(sanitizedHtml, component, driftActiveFocusNeeded);
           }
         }
         return {
@@ -2797,9 +2809,7 @@ async function refreshComponent(component) {
           if (_structureMarkerMatches(component, _fetchFailTabDoc)) {
             console.log(`[SB-REFRESH] Structural marker matched (${component.structureMarker.attr}="${component.structureMarker.value}") — accepting refresh despite fingerprint rotation`);
             const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-            const newFingerprint = extractFingerprint(sanitizedHtml);
-            if (newFingerprint) component.headingFingerprint = newFingerprint;
-            return _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded);
+            return _buildRotatedTabResult(sanitizedHtml, component, activeFocusNeeded);
           }
           // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
           const dominantTag = getDominantTag(component.html_cache);
@@ -2808,9 +2818,7 @@ async function refreshComponent(component) {
             if (newCount >= 3) {
               console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
               const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-              const newFingerprint = extractFingerprint(sanitizedHtml);
-              if (newFingerprint) component.headingFingerprint = newFingerprint;
-              return _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded);
+              return _buildRotatedTabResult(sanitizedHtml, component, activeFocusNeeded);
             }
           }
           return {
@@ -3053,9 +3061,7 @@ async function refreshComponent(component) {
               if (_structureMarkerMatches(component, _skeletonTabDoc)) {
                 console.log(`[SB-REFRESH] Structural marker matched (${component.structureMarker.attr}="${component.structureMarker.value}") — accepting refresh despite fingerprint rotation`);
                 const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-                const newFingerprint = extractFingerprint(sanitizedHtml);
-                if (newFingerprint) component.headingFingerprint = newFingerprint;
-                return _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded);
+                return _buildRotatedTabResult(sanitizedHtml, component, activeFocusNeeded);
               }
               // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
               const dominantTag = getDominantTag(component.html_cache);
@@ -3064,9 +3070,7 @@ async function refreshComponent(component) {
                 if (newCount >= 3) {
                   console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
                   const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-                  const newFingerprint = extractFingerprint(sanitizedHtml);
-                  if (newFingerprint) component.headingFingerprint = newFingerprint;
-                  return _buildTabSuccessResult(sanitizedHtml, component, activeFocusNeeded);
+                  return _buildRotatedTabResult(sanitizedHtml, component, activeFocusNeeded);
                 }
               }
               return {
@@ -3280,9 +3284,7 @@ async function refreshComponent(component) {
               if (_structureMarkerMatches(component, _selectorTabDoc)) {
                 console.log(`[SB-REFRESH] Structural marker matched (${component.structureMarker.attr}="${component.structureMarker.value}") — accepting refresh despite fingerprint rotation`);
                 const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-                const newFingerprint = extractFingerprint(sanitizedHtml);
-                if (newFingerprint) component.headingFingerprint = newFingerprint;
-                return _buildTabSuccessResult(sanitizedHtml, component, selectorTabActiveFocus);
+                return _buildRotatedTabResult(sanitizedHtml, component, selectorTabActiveFocus);
               }
               // Guard: skip for <a>-dominant feeds — any news section has links, proving nothing
               const dominantTag = getDominantTag(component.html_cache);
@@ -3291,9 +3293,7 @@ async function refreshComponent(component) {
                 if (newCount >= 3) {
                   console.log(`[SB-REFRESH] Feed rotation detected (${dominantTag.tag}: cache=${dominantTag.count}, tab=${newCount}) — accepting refresh`);
                   const sanitizedHtml = applySanitizationPipeline(tabHtml, component);
-                  const newFingerprint = extractFingerprint(sanitizedHtml);
-                  if (newFingerprint) component.headingFingerprint = newFingerprint;
-                  return _buildTabSuccessResult(sanitizedHtml, component, selectorTabActiveFocus);
+                  return _buildRotatedTabResult(sanitizedHtml, component, selectorTabActiveFocus);
                 }
               }
               return {

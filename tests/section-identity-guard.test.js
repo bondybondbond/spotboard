@@ -223,3 +223,37 @@ test('#212 no saved copy yet: nothing to compare, not judged', () => {
   assert.equal(isDifferentSection(feed(5), ''), false)
   assert.equal(isDifferentSection(feed(5), undefined), false)
 })
+
+// #214: the rescues that accept a tab result despite a fingerprint mismatch (structure marker, feed rotation) used to
+// overwrite component.headingFingerprint BEFORE the final gate ran, so a rejected candidate still changed what the next
+// refresh of the same in-memory card was judged against. The fingerprint now moves only with an accepted result.
+const RESCUE_WRONG = `<h2>Wrong block heading</h2><div data-sb-marker="m1">${WRONG}</div>`
+const driftCard = () => ({ name: 'Kalshi', url: 'https://kalshi.com/x', selector: 'div.flex.flex-col', positionBased: false, excludedSelectors: [], html_cache: SAVED, rawCaptureLength: 1000, headingFingerprint: 'Original saved heading', structureMarker: { attr: 'data-sb-marker', value: 'm1' } })
+
+test('#214 a structure-marker rescue that the final gate rejects leaves the card fingerprint as it was, and the retry judges against it', async () => {
+  const realTab = g._tabRefreshForComponent
+  const seen = []
+  g._tabRefreshForComponent = async (c, fingerprint) => { seen.push(fingerprint); return { html: RESCUE_WRONG, activeFocusNeeded: false, renderDegraded: false } }
+  try {
+    const component = driftCard()
+    const r1 = await g._runDriftGuard('<div>' + 'x'.repeat(2000) + '</div>', component, 0, 0)
+    assert.equal(r1.success, false, 'the wrong block is rejected by the final gate')
+    assert.equal(r1.error, 'Refresh found a different element on the page', 'reached the rescue, then failed the final gate')
+    assert.equal(component.headingFingerprint, 'Original saved heading')
+    await g._runDriftGuard('<div>' + 'x'.repeat(2000) + '</div>', component, 0, 0)
+    assert.deepEqual(seen, ['Original saved heading', 'Original saved heading'], 'the second refresh starts from the saved fingerprint, as on a freshly loaded dashboard')
+  } finally { g._tabRefreshForComponent = realTab }
+})
+
+test('#214 a structure-marker rescue that is accepted still moves the card fingerprint to the new heading', async () => {
+  const realTab = g._tabRefreshForComponent
+  const accepted = `<h2>Rotated heading</h2><div data-sb-marker="m1">${SAVED}</div>`
+  g._tabRefreshForComponent = async () => ({ html: accepted, activeFocusNeeded: false, renderDegraded: false })
+  try {
+    const component = driftCard()
+    const r = await g._runDriftGuard('<div>' + 'x'.repeat(2000) + '</div>', component, 0, 0)
+    assert.equal(r.success, true)
+    assert.equal(component.headingFingerprint, g.extractFingerprint(r.html_cache))
+    assert.notEqual(component.headingFingerprint, 'Original saved heading')
+  } finally { g._tabRefreshForComponent = realTab }
+})
