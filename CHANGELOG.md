@@ -12,6 +12,10 @@
 - **SpotBoard now stops a capture it could not find again, before you save it** (#213): when the section you pick is a plain layout box that the page repeats many times (for example a Kalshi box repeated 67 times), a refresh would later pick a different copy of it (on Kalshi, a box holding most of the page) and your card would never update. SpotBoard now runs the same choice a refresh makes, on the page in front of you, as soon as you press Continue. If that choice would not land on the section you picked, nothing is saved and you see "Couldn’t lock onto that section — pick a slightly bigger or different one. Your board is unchanged." This also applies when you re-capture a card, and the re-capture carries on after the message. Sections SpotBoard can find again save exactly as before (none of the 28 cards that could be checked on a real 31-card test board would have been stopped), and the check takes a few hundredths of a second on the slowest page tried. It checks the page you are looking at, so a site that later loads differently can still make a card fail its refresh.
 - **The privacy policy names the UK storage rules in full instead of by their abbreviation** (#211): the policy's note on browser storage and the ICO's guidance now spells out "the Privacy and Electronic Communications Regulations"; the meaning is unchanged, and the release check that bans legal-compliance claims no longer trips on the abbreviation.
 
+### Known limits
+
+- **Some Kalshi cards that include a chart may not refresh** (#215): SpotBoard refreshes such a card in a hidden background tab, and Kalshi does not draw its chart there, so the copy SpotBoard gets is missing most of the card. SpotBoard now refuses that copy and keeps your last good card, with a "Site layout changed" message; before 1.4.6 it replaced your card with the chart-less copy without telling you. For these cards, refreshing again or Re-capture does not help yet. Cards that refresh today are not affected (checked on a 30-card board).
+
 ## [1.4.5] - 2026-10-16
 
 ### Fixed
