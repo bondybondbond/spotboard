@@ -106,6 +106,60 @@ test('#212 a real partial restyle (about 4 in 10 element shapes changed) is stil
   assert.equal(isDifferentSection(card('--v2'), card('')), false)
 })
 
+test('#212 each hash family on its own must fold: a rotation of only that family is the same section', () => {
+  // Every element's only class is one family's hash, so without that family's fold nothing matches (kept 0) and the
+  // rotation would fail as a different section. Tags differ per element to keep >= 8 distinct shapes.
+  const TAGS = ['div', 'ul', 'li', 'a', 'span', 'time', 'img', 'footer', 'p']
+  const card = cls => TAGS.map(t => `<${t} class="${cls(t)}"></${t}>`).join('')
+  const families = {
+    'digits + letters (Emotion)': [t => `dcr-17m0c6q`, t => `dcr-1qhf2b0`],
+    'all digits (styled-jsx)': [t => `jsx-3547261442`, t => `jsx-1180044521`],
+    'letters only (styled-components)': [t => `sc-bdVaJa`, t => `sc-kGfFJb`],
+    'CSS-module suffix with - and _': [t => `Card_${t}__a-B3x`, t => `Card_${t}__Q_9zt`],
+  }
+  for (const [name, [before, after]] of Object.entries(families)) {
+    const m = sectionMatch(card(after), card(before))
+    assert.notEqual(m, null, name)
+    assert.equal(m.kept, 1, `${name}: kept ${m.kept}`)
+    assert.equal(isDifferentSection(card(after), card(before)), false, name)
+  }
+})
+
+test('#212 the "card still there" bar sits at 0.5: a result keeping 6 of 10 saved shapes passes', () => {
+  // Pins the bar below the lowest legit kept measured on the owner's board (0.64): raising it past 0.6 fails here.
+  const saved = Array.from({ length: 10 }, (_, i) => `<div class="part-${'abcdefghij'[i]}"></div>`).join('')
+  const result = Array.from({ length: 10 }, (_, i) => `<div class="part-${'abcdefklmn'[i]}"></div>`).join('')
+  const m = sectionMatch(result, saved)
+  assert.equal(m.kept, 0.6)
+  assert.equal(isDifferentSection(result, saved), false)
+})
+
+test('#212 grow then shrink back: the real Kalshi card refreshed without its late-loaded block passes the section check', () => {
+  // Saved copy = the grown refresh (card + the news block Kalshi mounts while loading, #202); the next refresh does not
+  // get the block. kept = S/(S+N) = 0.56 on this real pair, so the section check passes, by about 0.06.
+  const grown = fixture('kalshi-202-first-refresh-grown.html'), card = fixture('kalshi-202-fresh-capture.html')
+  const m = sectionMatch(card, grown)
+  assert.equal(m.own, 1)
+  assert.ok(m.kept > 0.5 && m.kept < 0.6, `kept ${m.kept}`)
+  assert.equal(isDifferentSection(card, grown), false)
+  // That block is a 25-item list, so the older content-loss guard (list rows 25 -> 0) already rejects this shrink-back,
+  // before and after #212: it reports content_lost, never #212's layout_changed. #202's scroll settle exists to mount it.
+  const r = _finalizeSuccess(card, { name: 'Kalshi', html_cache: grown })
+  assert.equal(r.success, false)
+  assert.equal(classifyError(r.error), 'content_lost')
+})
+
+test('#212 KNOWN LIMIT: grow then shrink back fails when the late-loaded block has more kinds of element than the card', () => {
+  // Accepted 20 Oct 2026 (owner): growth is accepted while N <= 2S, but a later refresh without the block keeps only
+  // S/(S+N) < 0.5 once N > S -> "Site layout changed", last good copy kept, recovers when the block loads again.
+  // Revisit trigger on #212. If a redesign fixes this, flip the expectation here deliberately.
+  const shapes = (prefix, n) => Array.from({ length: n }, (_, i) => `<div class="${prefix}-${'abcdefghijklmnop'[i]}"></div>`).join('')
+  const card = shapes('card', 8), grown = card + shapes('lazy', 9)
+  assert.equal(isDifferentSection(grown, card), false, 'the growth itself is accepted (own 8/17)')
+  assert.equal(isDifferentSection(card, grown), true, 'the shrink-back is the stated false failure')
+  assert.equal(isDifferentSection(card, card + shapes('lazy', 8)), false, 'N = S still passes (kept 0.5)')
+})
+
 test('#212 the direct-fetch drift check does not write a baseline onto the card before the result is judged', async () => {
   const component = { name: 'Kalshi', html_cache: SAVED }
   assert.equal(await g._runDriftGuard('<div>' + 'x'.repeat(SAVED.length) + '</div>', component, 0, 0), null)
