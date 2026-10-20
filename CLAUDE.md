@@ -2,6 +2,8 @@
 
 > **Dev/bug work runs the ai-dev-kit loop.** For any code change or bug: read `AGENTS.md` first, use `/plan` then `/deliver`. **GitHub Issues is the change record — not `BUGS.md`.** Non-dev routines (metrics, tester feedback, CWS submission prep) still use the skills in `spotboard-private/.claude/` from that folder.
 
+> **Autonomy and stop rule.** Ordinary tasks: run `/plan` through implementation and verification to a build ready for the owner's approval; don't ask permission for routine engineering choices. Stop earlier only if the owner limits scope ("diagnosis only", "approval required", "stop before implementation", in their message or a brief they relay: then no source edits, builds, commits, branches, issue/board updates or release actions, and an approved diagnosis or plan is not approval to implement) or a genuine owner-level decision (strategy, product taste, material risk) blocks progress. Push, publish and release always need explicit approval. Work on `main`; no branches or PRs unless the owner approves a concrete exception. If scope is unclear, ask one concise question.
+
 Chrome extension that captures live website sections (news, deals, scores) into a personal dashboard. Manual refresh model — designed for 2-3 daily check-ins.
 
 **Private docs** (PRD, backlog, learnings, metrics): `C:\apps\spotboard-private\` — read CONTEXT.md there first every session. (Reference only for dev work — read by absolute path, don't run dev sessions from there.)
