@@ -719,37 +719,57 @@
       min-width: 0;
     }
 
-    .card-error-banner .error-retry-btn,
-    .card-error-banner .error-open-btn {
+    /* #118: message + icon on their own full-width row; the three actions share the row below,
+       equal width, identical 1px border so all heights match. Outlined = secondary. */
+    .card-error-banner .error-actions {
+      flex: 1 0 100%;
+      display: flex;
+      gap: 8px;
+    }
+
+    .card-error-banner .error-actions > * {
+      flex: 1 1 0;
+      min-width: 0;
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       padding: 4px 10px;
       font-size: 12px;
+      line-height: 1.4;
       border-radius: 4px;
       text-decoration: none;
       white-space: nowrap;
-    }
-
-    .card-error-banner .error-retry-btn {
-      background: var(--warn-accent);
-      color: var(--warn-accent-text);
-      border: none;
       cursor: pointer;
     }
 
-    .card-error-banner .error-retry-btn:hover {
+    /* Primary = the action that resolves the failure: Retry by default, Re-capture when offered
+       (retrying can't fix those, #168). Reuses the existing warn tokens only. */
+    .card-error-banner .error-retry-btn,
+    .card-error-banner.has-recapture .error-recapture-btn {
+      background: var(--warn-accent);
+      color: var(--warn-accent-text);
+      border: 1px solid var(--warn-accent);
+    }
+
+    .card-error-banner .error-retry-btn:hover,
+    .card-error-banner.has-recapture .error-recapture-btn:hover {
       background: var(--warn-accent-hover);
     }
 
-    .card-error-banner .error-open-btn {
+    .card-error-banner .error-open-btn,
+    .card-error-banner.has-recapture .error-retry-btn {
       background: var(--surface-card);
       color: var(--warn-accent);
       border: 1px solid var(--warn-accent);
     }
 
-    .card-error-banner .error-open-btn:hover {
+    .card-error-banner .error-open-btn:hover,
+    .card-error-banner.has-recapture .error-retry-btn:hover {
       background: var(--warn-open-bg);
     }
 
-    /* #52: Re-capture — same outlined look as "Open site"; also used in the empty placeholder */
+    /* #52: Re-capture outside the banner (empty placeholder) keeps the outlined look */
     .error-recapture-btn {
       padding: 4px 10px;
       font-size: 12px;

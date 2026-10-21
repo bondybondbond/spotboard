@@ -16,6 +16,28 @@
 // ══════════════════════════════════════════════
 const RECAPTURE_BUTTON_HTML = '<button type="button" class="error-recapture-btn" title="Pick the section again on the original page. ' + RECAPTURE_NOTE + '">Re-capture</button>';
 
+// #118: one template for the failure banner (first render + live failure). Message row on top,
+// action row below; `has-recapture` makes Re-capture the primary button (Retry can't fix those failures).
+function buildErrorBannerHTML(component, errorCode) {
+  const offerRecapture = shouldOfferRecapture(component)
+  return `
+    <div class="card-error-banner${offerRecapture ? ' has-recapture' : ''}">
+      <span class="error-icon">⚠️</span>
+      <span class="error-message">
+        Refresh failed: <strong>${getErrorLabel(errorCode)}</strong>
+      </span>
+      <div class="error-actions">
+        <button class="error-retry-btn" data-component-id="${component.id}">
+          Retry
+        </button>
+        <a href="${component.url}" target="_blank" class="error-open-btn">
+          Open site
+        </a>
+        ${offerRecapture ? RECAPTURE_BUTTON_HTML : ''}
+      </div>
+    </div>`
+}
+
 function startRecapture(component) {
   const label = component.customLabel || component.name || 'this card';
   chrome.tabs.create({ url: component.url }, (tab) => {
@@ -2482,21 +2504,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             </div>
           </div>
         </div>
-        ${component.lastOutcome === 'failed' ? `
-          <div class="card-error-banner">
-            <span class="error-icon">⚠️</span>
-            <span class="error-message">
-              Refresh failed: <strong>${getErrorLabel(component.lastErrorCode)}</strong>
-            </span>
-            <button class="error-retry-btn" data-component-id="${component.id}">
-              Retry
-            </button>
-            <a href="${component.url}" target="_blank" class="error-open-btn">
-              Open site
-            </a>
-            ${component.lastOutcome === 'failed' && shouldOfferRecapture(component) ? RECAPTURE_BUTTON_HTML : ''}
-          </div>
-        ` : ''}
+        ${component.lastOutcome === 'failed' ? buildErrorBannerHTML(component, component.lastErrorCode) : ''}
         ${window.ExclusionStorage.exclusionsAreUnknown(component) ? `
           <div class="card-exclusions-note" style="padding: 6px 12px; font-size: 12px; color: inherit; opacity: 0.75;">
             Your exclusions for this card are saved on another device. Re-exclude here if hidden content reappears.
@@ -2630,24 +2638,9 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
               const cardHeader = card.querySelector('.card-header');
               const existingBanner = card.querySelector('.card-error-banner');
               if (!existingBanner && cardHeader) {
-                const errorBanner = document.createElement('div');
-                errorBanner.className = 'card-error-banner';
-                errorBanner.innerHTML = `
-                  <span class="error-icon">⚠️</span>
-                  <span class="error-message">
-                    Refresh failed: <strong>${getErrorLabel(errorCode)}</strong>
-                  </span>
-                  <button class="error-retry-btn" data-component-id="${component.id}">
-                    Retry
-                  </button>
-                  <a href="${component.url}" target="_blank" class="error-open-btn">
-                    Open site
-                  </a>
-                  ${shouldOfferRecapture(component) ? RECAPTURE_BUTTON_HTML : ''}
-                `;
-
                 // Insert after card header
-                cardHeader.insertAdjacentElement('afterend', errorBanner);
+                cardHeader.insertAdjacentHTML('afterend', buildErrorBannerHTML(component, errorCode));
+                const errorBanner = cardHeader.nextElementSibling;
 
                 // Wire up retry button
                 const retryBtn = errorBanner.querySelector('.error-retry-btn');
@@ -2664,11 +2657,12 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 if (label) label.textContent = getErrorLabel(errorCode);
                 const existingRecapture = existingBanner.querySelector('.error-recapture-btn');
                 if (shouldOfferRecapture(component) && !existingRecapture) {
-                  existingBanner.insertAdjacentHTML('beforeend', RECAPTURE_BUTTON_HTML);
+                  existingBanner.querySelector('.error-actions')?.insertAdjacentHTML('beforeend', RECAPTURE_BUTTON_HTML);
                   wireRecaptureButtons(existingBanner, component);
                 } else if (!shouldOfferRecapture(component) && existingRecapture) {
                   existingRecapture.remove();
                 }
+                existingBanner.classList.toggle('has-recapture', shouldOfferRecapture(component));
               }
 
               // Improved toast with error details (4-second auto-dismiss, non-actionable)

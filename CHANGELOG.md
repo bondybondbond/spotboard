@@ -1,5 +1,11 @@
 # SpotBoard Changelog
 
+## [1.4.7] - Unreleased
+
+### Changed
+
+- **The "refresh failed" message on a card is now easy to read, with its buttons on their own row** (#118): the message used to share one line with the Retry, Open site and Re-capture buttons, so on a normal-sized card it was squeezed into a column about 70 pixels wide and ran down the card line by line. The message now uses the full width of the card, and the three buttons sit side by side underneath, the same width and height. The main button is Re-capture when it is offered (retrying cannot fix those failures) and Retry when it is not; the others are outlined. The wording and what each button does are unchanged.
+
 ## [1.4.6] - Unreleased
 
 ### Fixed
