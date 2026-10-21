@@ -239,7 +239,7 @@ test('#205 banner labels: only the two exclusion failures tell the user re-captu
   for (const code of ['exclusions_unapplied', 'pattern_unapplied']) {
     assert.ok(g.getErrorLabel(code).endsWith('re-capture (resets its exclusions)'), code)
   }
-  for (const code of ['network', 'skeleton', 'layout_changed', 'content_drift', 'content_lost', 'render_degraded', 'unknown']) {
+  for (const code of ['network', 'skeleton', 'layout_changed', 'content_drift', 'content_lost', 'render_degraded', 'content_shrunk', 'unknown']) {
     assert.ok(!/exclusion/i.test(g.getErrorLabel(code)), code)
   }
 })
@@ -247,7 +247,7 @@ test('#205 banner labels: only the two exclusion failures tell the user re-captu
 test('#205 Re-capture offering is unchanged', () => {
   const offers = (code) => g.shouldOfferRecapture({ lastOutcome: 'failed', lastErrorCode: code })
   for (const code of ['layout_changed', 'content_lost', 'exclusions_unapplied', 'pattern_unapplied']) assert.equal(offers(code), true, code)
-  for (const code of ['network', 'skeleton', 'content_drift', 'render_degraded', 'unknown']) assert.equal(offers(code), false, code)
+  for (const code of ['network', 'skeleton', 'content_drift', 'render_degraded', 'content_shrunk', 'unknown']) assert.equal(offers(code), false, code)
 })
 
 test('#168 every failure needs Re-capture: no Retry button at all', async () => {

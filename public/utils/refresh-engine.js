@@ -62,6 +62,9 @@ const FLAGGED_PROBE_MIN_RATIO = 0.85;
 // The large-image rule only applies when the saved copy has at least this many large images (fewer is noise).
 const FLAGGED_PROBE_MIN_SAVED_LARGE = 5;
 const RENDER_DEGRADED_ERROR = 'Page did not fully load';
+// #218: the focused popup's list-size check rejected a capture (cleaned list below half of the saved copy's). The page loaded; it
+// shows much less than the saved card. Last good copy kept. Must match no earlier classifyError branch.
+const CONTENT_SHRUNK_ERROR = 'Page shows much less content than your saved card';
 
 /**
  * Should a browser capture be trusted? Rejects only a capture that BOTH collapsed vs the saved
@@ -177,6 +180,9 @@ function classifyError(errorString) {
   if (errorLower.includes(RENDER_DEGRADED_ERROR.toLowerCase())) {
     return 'render_degraded';  // #101: every browser capture was hidden + collapsed; last good copy kept
   }
+  if (errorLower.includes(CONTENT_SHRUNK_ERROR.toLowerCase())) {
+    return 'content_shrunk';  // #218: the page shows much less than the saved card; last good copy kept
+  }
   if (errorLower.includes('skeleton') || errorLower.includes('empty container')) {
     return 'skeleton';  // Site didn't load completely
   }
@@ -213,6 +219,7 @@ function getErrorLabel(errorCode) {
     'exclusions_unapplied': "Excluded content came back" + RECAPTURE_LABEL_TAIL,
     'pattern_unapplied': "An “exclude all like this” rule no longer fits this page" + RECAPTURE_LABEL_TAIL,
     'render_degraded': "Page didn't fully load — kept your last good copy",
+    'content_shrunk': "Page shows much less content than your saved card. Kept your last good copy",
     'unknown': "Refresh failed"
   };
   return labels[errorCode] || "Refresh failed";
@@ -1011,6 +1018,7 @@ const _GA4_ERROR_LABEL = {
   exclusions_unapplied: 'exclusions_unapplied', // #96
   pattern_unapplied: 'pattern_unapplied', // #128
   render_degraded: 'render_degraded', // #101
+  content_shrunk: 'skeleton_content', // #218: the one path that produces it used to be 'skeleton' -> the same GA4 value as before; a label of its own is a separate decision
   unknown: 'unknown'
 };
 
@@ -1258,6 +1266,8 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
       if (result && !passesQualityGate(result, meta, 'active')) {
         return { html: null, activeFocusNeeded: false, renderDegraded: true };
       }
+      // #218: the popup's list-size check threw the capture away -> say so (same failure, same kept copy, other words)
+      if (!result && meta.structureStub) return { html: null, activeFocusNeeded: false, shrunk: true };
       return { html: result || null, activeFocusNeeded: false };
     }
 
@@ -1359,7 +1369,9 @@ async function tabBasedRefresh(url, selector, fingerprint = null, expectedImgCou
     }
     if (fallbackResult) return { html: fallbackResult, activeFocusNeeded: true };
 
-    return settle() || { html: null, activeFocusNeeded: false };
+    return settle() || (activeMeta.structureStub
+      ? { html: null, activeFocusNeeded: false, shrunk: true } // #218: the popup's list-size check rejected the capture (html stays null: every caller handles a null as before)
+      : { html: null, activeFocusNeeded: false });
   } catch (error) {
     console.error('Tab refresh failed:', error);
     return { html: null, activeFocusNeeded: false };
@@ -1487,6 +1499,11 @@ async function _withUrlGate(url, fn) {
 
 function _renderDegradedResult() {
   return { success: false, error: RENDER_DEGRADED_ERROR, keepOriginal: true };
+}
+
+// #218: only the shell-page path reads this (it used to end as "Page returned skeleton content"); every other path keeps its own wording.
+function _contentShrunkResult() {
+  return { success: false, error: CONTENT_SHRUNK_ERROR, keepOriginal: true };
 }
 
 /**
@@ -2680,7 +2697,7 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
     if (html && structureSettled && typeof meta.structureCheck === 'function') {
       const check = meta.structureCheck(html);
       if (meta.structureSettle) meta.structureSettle.cleanedCount = check.count;
-      if (!check.ok && check.count > 0) html = null;
+      if (!check.ok && check.count > 0) { html = null; meta.structureStub = { count: check.count, expected: expectedStructure }; } // #218: remembered per call so the failure can say why
     }
 
     // Close popup and restore focus to user's window
@@ -3047,8 +3064,9 @@ async function refreshComponent(component) {
           const originalFingerprint = extractFingerprint(component.html_cache);
 
           // Try tab-based refresh as fallback
-          const { html: tabHtml, activeFocusNeeded, renderDegraded } = await _tabRefreshForComponent(component, originalFingerprint, originalImgCount, originalLargeImgCount);
+          const { html: tabHtml, activeFocusNeeded, renderDegraded, shrunk } = await _tabRefreshForComponent(component, originalFingerprint, originalImgCount, originalLargeImgCount);
           if (renderDegraded) return _renderDegradedResult(); // #101: hidden + collapsed on every tier
+          if (shrunk) return _contentShrunkResult(); // #218: the popup's list-size check rejected the capture (this path used to say "skeleton content")
           if (tabHtml) {
             // Verify we got the right element by checking fingerprint
             // 🎯 BATCH 3: Skip fingerprint check for position-based captures

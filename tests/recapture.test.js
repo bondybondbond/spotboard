@@ -71,7 +71,7 @@ test('button: shown for layout_changed / content_lost / exclusions_unapplied fai
 })
 
 test('button: NOT shown for network / skeleton / render_degraded / drift / unknown failures', () => {
-  for (const code of ['network', 'skeleton', 'render_degraded', 'content_drift', 'unknown', null]) {
+  for (const code of ['network', 'skeleton', 'render_degraded', 'content_shrunk', 'content_drift', 'unknown', null]) {
     assert.equal(g.shouldOfferRecapture({ lastOutcome: 'failed', lastErrorCode: code, html_cache: '' }), false, String(code))
   }
 })

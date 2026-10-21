@@ -62,6 +62,30 @@ test('0 cleaned structure vs a structured saved copy: the real extraction settle
   assert.equal(cleaned(html), 30)
 })
 
+test('#218 a settled capture below half of the saved list is thrown away AND the reason is remembered on the call meta', async () => {
+  page()
+  onScroll = mountOnScroll(3) // 3 of a saved 8: floor is 4
+  const meta = { expectedStructure: 8, structureCheck: check(8) }
+  const html = await run(meta)
+  assert.equal(html, null)
+  assert.deepEqual(meta.structureStub, { count: 3, expected: 8 })
+})
+
+test('#218 no reason is recorded when the capture passes, or when the page stayed at zero (the old messages keep those)', async () => {
+  page()
+  onScroll = mountOnScroll(30)
+  let meta = { expectedStructure: 8, structureCheck: check(8) }
+  assert.ok(await run(meta))
+  assert.equal(meta.structureStub, undefined, 'passed the floor')
+
+  globalThis.setTimeout = (fn, ms, ...a) => (ms === 1000 || ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, ms === 350 || ms === 500 ? 1 : ms, ...a)
+  page()
+  onScroll = () => {} // nothing ever mounts: count stays 0
+  meta = { expectedStructure: 8, structureCheck: check(8) }
+  await run(meta)
+  assert.equal(meta.structureStub, undefined, 'zero is left to the existing gates (isContentLost / skeleton)')
+})
+
 test('healthy card (block already has list items): zero scroll calls, no settle', async () => {
   page(lis(5))
   const meta = { expectedStructure: 36, structureCheck: check(36) }

@@ -25,7 +25,7 @@ for (const code of ['layout_changed', 'content_lost', 'exclusions_unapplied', 'p
   })
 }
 
-for (const code of ['network', 'skeleton', 'render_degraded', 'unknown']) {
+for (const code of ['network', 'skeleton', 'render_degraded', 'content_shrunk', 'unknown']) {
   test(`${code} (negative): no Re-capture, no has-recapture, Retry stays the only primary`, () => {
     const html = build(comp(code), code)
     assert.doesNotMatch(html, /has-recapture/)
