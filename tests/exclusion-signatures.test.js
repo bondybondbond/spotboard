@@ -281,3 +281,90 @@ test('#145 evidence (HotUKDeals regression): 39 positional exclusions sharing `s
   assert.deepEqual(check.leaked, [])
   assert.equal(check.unverified.length, 39)
 })
+
+// ---------- #220: letters-only probe for signatures the exact test cannot match ----------
+
+const { exclusionProbeOf, signatureText } = await import('../.test-build/utils/dom-cleanup.js')
+
+// Real strings from the Kalshi House-winner card (stored signature, 80 chars, digits already stripped). The page
+// reads "win.%" where the capture had "win%", and the sanitiser drops the Yes/No price buttons.
+const KALSHI_SEL = 'div:nth-child(1) > div:nth-child(1) > section:nth-child(1) > div:nth-child(1) > div:nth-child(4) > div:nth-child(2) > div:nth-child(2)'
+const KALSHI_SIG = 'eventsbalance of powermargin of victorysearch republicans win%▼ .yes .¢no .¢repu'
+const KALSHI_SIGS = [{ sel: KALSHI_SEL, sig: KALSHI_SIG, keep: 0 }]
+const KALSHI_BACK = '<div><h3>Democratic Party</h3><div><div>Events</div><div>Balance of Power</div><div>Margin of Victory</div><div>Search</div><div>Republicans win 46.5%▼ 1.2 <span>+</span> Democrats, to 51.2%</div></div></div>'
+const KALSHI_SAVED = '<div><h3>Democratic Party</h3><div>Chance 52%</div></div>'
+
+test('#220 probe: the first 40 letters of a signature, nothing else', () => {
+  assert.equal(exclusionProbeOf(KALSHI_SIG), 'eventsbalanceofpowermarginofvictorysearch'.slice(0, 40))
+  assert.equal(exclusionProbeOf('Yes 90¢ No 11¢'), null)                       // too short to probe: exact test only
+  assert.equal(exclusionProbeOf('a'.repeat(39) + ' 1 2 3'), null)              // 39 letters, digits and spaces do not count
+  assert.equal(exclusionProbeOf('a'.repeat(40) + '!'), 'a'.repeat(40))
+})
+
+test('#220 leak: Kalshi strip back with decimal churn and no Yes/No text -> the exact test misses, the probe catches it', () => {
+  const out = signatureText(KALSHI_BACK)
+  assert.ok(!out.includes(KALSHI_SIG), 'the exact signature really does not occur (the bug)')
+  assert.deepEqual(findLeakedExclusions(KALSHI_BACK, [KALSHI_SEL], KALSHI_SIGS, KALSHI_SAVED).leaked, [KALSHI_SEL])
+  // no saved card at all (nothing to compare): keep alone is the baseline, still caught
+  assert.deepEqual(findLeakedExclusions(KALSHI_BACK, [KALSHI_SEL], KALSHI_SIGS, undefined).leaked, [KALSHI_SEL])
+})
+
+test('#220 leak: non-Kalshi positive from a real Product Hunt signature (curly apostrophe churn)', () => {
+  const sel = 'div.mb-6.text-sm.font-normal'
+  const sig = "for the first hours of the day, we're hiding upvotes to help every product get a"
+  const refreshed = '<div><h2>Today</h2><div class="mb-6">For the first 4 hours of the day, we’re hiding upvotes to help every product get a fair shot.</div></div>'
+  assert.ok(!signatureText(refreshed).includes(sig))
+  const check = findLeakedExclusions(refreshed, [sel], [{ sel, sig, keep: 0 }], '<div><h2>Today</h2></div>')
+  assert.deepEqual(check.leaked, [sel])
+})
+
+test('#220 no leak: the block is genuinely gone from the page', () => {
+  const gone = '<div><h3>Democratic Party</h3><div>Chance 53%</div><div>Search the news</div></div>'
+  assert.deepEqual(findLeakedExclusions(gone, [KALSHI_SEL], KALSHI_SIGS, KALSHI_SAVED).leaked, [])
+})
+
+test('#220 no leak: a kept sibling row shares the first 40 letters, the saved card already holds it (probe baseline)', () => {
+  const sel = 'ul:nth-child(2) > li:nth-child(5)'
+  const sig = 'top stories of the day in politics and world news headlines from our desk'
+  const sigs = [{ sel, sig, keep: 0 }] // keep counts the FULL signature: the kept row differs in its tail
+  const saved = '<ul><li>Top stories of the day in politics and world news, evening edition</li></ul>'
+  assert.deepEqual(findLeakedExclusions(saved, [sel], sigs, saved).leaked, [])
+  // but a SECOND row with that prefix beyond the saved baseline is evidence
+  const grown = '<ul><li>Top stories of the day in politics and world news, evening edition</li><li>Top stories of the day in politics and world news headlines</li></ul>'
+  assert.deepEqual(findLeakedExclusions(grown, [sel], sigs, saved).leaked, [sel])
+})
+
+test('#220 known edge: a saved card that already holds the block passes (the probe stops the first leak, it does not heal one)', () => {
+  assert.deepEqual(findLeakedExclusions(KALSHI_BACK, [KALSHI_SEL], KALSHI_SIGS, KALSHI_BACK).leaked, [])
+})
+
+test('#220 keep is still honoured: the probe appears exactly keep times -> fine, keep + 1 -> leak', () => {
+  const sel = 'p.promo'
+  const sig = 'sign up for our newsletter to get the latest stories delivered straight to you'
+  const one = '<div><p>Sign up for our newsletter to get the latest stories, daily</p></div>'
+  assert.deepEqual(findLeakedExclusions(one, [sel], [{ sel, sig, keep: 1 }]).leaked, [])
+  const two = one.replace('</div>', '<p>Sign up for our newsletter to get the latest stories, weekly</p></div>')
+  assert.deepEqual(findLeakedExclusions(two, [sel], [{ sel, sig, keep: 1 }]).leaked, [sel])
+})
+
+test('#220 signatures under 40 letters are unchanged: exact test only, churn still passes', () => {
+  const sel = 'div.pills'
+  const sigs = [{ sel, sig: 'republicans win%▼ .yes .¢no .¢', keep: 0 }]
+  assert.deepEqual(findLeakedExclusions('<div>Republicans win 46.5%▼ back</div>', [sel], sigs, '<div>x</div>').leaked, [])
+})
+
+test('#220 the probe only judges selectors that did not apply (an applied exclusion is never checked)', () => {
+  assert.deepEqual(findLeakedExclusions(KALSHI_BACK, [], KALSHI_SIGS, KALSHI_SAVED).leaked, [])
+})
+
+test('#220 pipeline: a position chain that matches nothing while the block is back leaves a leak verdict', () => {
+  const component = {
+    selector: 'div.card',
+    html_cache: '<div class="card"><h3>Democratic Party</h3><p>Chance 52% and some more words to keep the card long</p></div>',
+    excludedSelectors: [KALSHI_SEL],
+    exclusionSignatures: KALSHI_SIGS,
+  }
+  const html = applySanitizationPipeline('<div class="card"><h3>Democratic Party</h3><p>Chance 53% and some more words to keep the card long</p><div><div>Events</div><div>Balance of Power</div><div>Margin of Victory</div><div>Search</div><div>Republicans win 46.5%▼</div></div></div>', component)
+  assert.ok(html.includes('Margin of Victory'))
+  assert.deepEqual(component.__exclusionCheck.leaked, [KALSHI_SEL])
+})

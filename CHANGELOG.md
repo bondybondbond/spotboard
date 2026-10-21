@@ -1,5 +1,11 @@
 # SpotBoard Changelog
 
+## [1.4.7] - Unreleased
+
+### Fixed
+
+- **A refresh no longer quietly puts back a part of the page you removed and calls it a success** (#220): when a page was shown in a different layout during a refresh (Kalshi does this in SpotBoard's small refresh window), a removal rule that pointed at a spot by its position could find nothing, and the removed part stayed in the card. SpotBoard checks for that by looking for the removed part's text, but the saved text no longer matched exactly (a number written "46.5%" instead of "46%", or price buttons SpotBoard strips), so the check saw nothing wrong and the refresh was marked a success. The check now also looks for the first part of the removed text, ignoring numbers and punctuation. When the removed part is back, the refresh is refused, your last good copy stays, and the card says excluded content came back so you can re-capture it. Only removals that saved enough text to compare (about 40 letters) are covered, and a card that already shows a removed part from an earlier refresh is not repaired by this.
+
 ## [1.4.6] - Unreleased
 
 ### Fixed

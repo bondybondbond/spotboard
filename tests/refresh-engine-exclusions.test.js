@@ -199,3 +199,27 @@ test('#145 gate: unsigned exclusion that is legitimately absent (nothing of its 
   assert.deepEqual(c.__exclusionCheck.unverified, ['button.modal__close'])
   assert.equal(g._finalizeSuccess(html, c, {}).success, true)
 })
+
+// ---------- #220: a position-only exclusion whose block is back (text the exact signature cannot match) ----------
+
+test('#220 gate: block back with churned text fails closed, keeps the last good copy, offers Re-capture', () => {
+  const sel = 'div:nth-child(1) > div:nth-child(1) > section:nth-child(1) > div:nth-child(4) > div:nth-child(2) > div:nth-child(2)'
+  const sig = 'eventsbalance of powermargin of victorysearch republicans win%▼ .yes .¢no .¢repu'
+  const c = comp({ excludedSelectors: [sel], exclusionSignatures: [{ sel, sig, keep: 0 }] })
+  const html = g.applySanitizationPipeline('<div class="card"><h2>T</h2><p>Body text here for the card</p><ul><li>a</li><li>b</li><li>c</li></ul><div><div>Events</div><div>Balance of Power</div><div>Margin of Victory</div><div>Search</div><div>Republicans win 46.5%▼</div></div></div>', c)
+  assert.ok(html.includes('Margin of Victory'))
+  const r = g._finalizeSuccess(html, c, {})
+  assert.equal(r.success, false)
+  assert.equal(r.exclusionLeak, true)
+  assert.equal(r.keepOriginal, true)
+  assert.equal(g.classifyError(r.error), 'exclusions_unapplied')
+})
+
+test('#220 gate: same card on a layout where the chain does not miss (block removed) still refreshes', () => {
+  const sel = 'div.strip'
+  const sig = 'eventsbalance of powermargin of victorysearch republicans win%▼ .yes .¢no .¢repu'
+  const c = comp({ excludedSelectors: [sel], exclusionSignatures: [{ sel, sig, keep: 0 }] })
+  const html = g.applySanitizationPipeline('<div class="card"><h2>T</h2><p>Body text here for the card, long enough</p><ul><li>a</li><li>b</li><li>c</li></ul><div class="strip"><div>Events</div><div>Balance of Power</div><div>Margin of Victory</div><div>Search</div><div>Republicans win 46.5%▼</div></div></div>', c)
+  assert.ok(!html.includes('Margin of Victory'))
+  assert.equal(g._finalizeSuccess(html, c, {}).success, true)
+})

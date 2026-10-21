@@ -3024,6 +3024,24 @@ export function exclusionSignatureOf(elementHtml: string): string | null {
   return letters >= SIGNATURE_MIN_LETTERS ? text : null;
 }
 
+// #220: the full signature is an exact substring test, and it is brittle in two ways seen on Kalshi: digit
+// stripping leaves a "." for a decimal ("win%" saved, "win.%" today), and the sanitiser drops text inside the
+// 80 chars (the Yes/No price buttons). Either way an excluded block that is plainly back never matched, and
+// the refresh was accepted. The probe is the first SIGNATURE_PROBE_LETTERS letters of the signature with every
+// non-letter removed: the part that sits before the churn. Tuned heuristic (the shortest length with no false
+// alarm across the 17 stored signatures that long on the owner's board); shorter signatures get no probe.
+const SIGNATURE_PROBE_LETTERS = 40;
+
+function lettersOnly(text: string): string {
+  return text.replace(/[^\p{L}]+/gu, '');
+}
+
+/** Letters-only prefix of a stored signature, or null when the signature is too short to probe safely. */
+export function exclusionProbeOf(sig: string): string | null {
+  const letters = lettersOnly(sig);
+  return letters.length >= SIGNATURE_PROBE_LETTERS ? letters.slice(0, SIGNATURE_PROBE_LETTERS) : null;
+}
+
 function countOccurrences(haystack: string, needle: string): number {
   if (!needle) return 0;
   let count = 0;
@@ -3170,13 +3188,29 @@ export function findLeakedExclusions(outputHtml: string, unresolved: string[], s
     // evidence only for a kind the saved card has none of; a shared tail is ambiguous (see above)
     try { return savedDoc.querySelectorAll(tail).length === 0 && outDoc.querySelectorAll(tail).length > 0; } catch { return false; }
   };
+  // #220: letters-only probe. Its baseline is the saved card as well as `keep` (which counts the FULL signature,
+  // so a kept sibling row sharing the first letters would otherwise read as a leak). A saved card that already
+  // holds the block therefore passes, like the #145 edge above: this stops the first leak, it does not heal one.
+  // Known edge the other way: a card that GREW a row sharing the first letters of an unresolved excluded signature
+  // reads as a leak (fails closed, Re-capture). Tested as the second half of the "kept sibling" case.
+  let outLetters: string | null = null;
+  let savedLetters: string | null = null;
+  const probeCameBack = (entry: ExclusionSignature): boolean => {
+    const probe = exclusionProbeOf(entry.sig);
+    if (!probe) return false;
+    if (outLetters === null) outLetters = lettersOnly(outputText);
+    const found = countOccurrences(outLetters, probe);
+    if (found <= entry.keep) return false; // the common case: no need to parse the saved card
+    if (savedLetters === null) savedLetters = savedHtml ? lettersOnly(signatureText(savedHtml)) : '';
+    return found > Math.max(entry.keep, countOccurrences(savedLetters, probe));
+  };
   const seen = new Set<string>();
   unresolved.forEach(sel => {
     if (seen.has(sel)) return;
     seen.add(sel);
     const entry = sigBySel.get(sel);
     if (!entry) { (tailCameBack(sel) ? check.leaked : check.unverified).push(sel); return; }
-    if (countOccurrences(outputText, entry.sig) > entry.keep) check.leaked.push(sel);
+    if (countOccurrences(outputText, entry.sig) > entry.keep || probeCameBack(entry)) check.leaked.push(sel);
   });
   return check;
 }
