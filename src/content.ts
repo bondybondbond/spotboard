@@ -1,5 +1,5 @@
 console.log("🚀 SpotBoard: Content Script Loaded");
-import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset, deriveCrossParentPattern, deriveTwinAlternate, patternsResolveOnMarkup, PATTERN_MIN_MATCHES, PATTERN_MAX_RULES, pickByHeadingFingerprint, hasCardContent } from './utils/dom-cleanup';
+import { cleanupDuplicates, tagSentimentData, isColumnSafeToTarget, applyExclusions, buildExclusionSignatures, normalizeSignatureText, effectiveSrcset, deriveCrossParentPattern, deriveTwinAlternate, patternsResolveOnMarkup, PATTERN_MIN_MATCHES, PATTERN_MAX_RULES, pickByHeadingFingerprint, hasCardContent, isHashedClass } from './utils/dom-cleanup';
 import type { ExclusionPattern } from './utils/dom-cleanup';
 import { ensureLazyContentLoaded } from './utils/lazy-load';
 import { cloneWithShadow, promoteLazyImages, promoteBackgroundImages, promoteVideoPosters, classifyImages, markHiddenElements, HIDDEN_MARK_ATTR } from './utils/dom-snapshot';
@@ -600,6 +600,14 @@ function generateExclusionSelector(el: HTMLElement, root: HTMLElement): string {
     }
   }
 
+  // #221: a classed ancestor inside root + a short class-qualified tail, before the root-anchored
+  // chain. Only reached where the chain would be stored, so every other rule form is unchanged.
+  const anchored = buildAnchoredPath(el, root);
+  if (anchored) {
+    log('🎯 Exclusion selector anchored inside the card:', anchored);
+    return anchored;
+  }
+
   // Last resort: positional path (:nth-child chain) from the capture root. Always unique
   // by construction -- never generalises beyond the single element the user clicked.
   const positional = buildPositionalPath(el, root);
@@ -683,6 +691,76 @@ function buildTableColumnSelector(el: HTMLElement, root: HTMLElement): string | 
   const colIndex = Array.from(row.children).indexOf(cell) + 1;
 
   return `${tableBase} tr > ${cell.tagName.toLowerCase()}:nth-child(${colIndex})`;
+}
+
+// The classes one step of an anchored exclusion path (#221) uses: up to 3, minus `hidden` and responsive
+// variants (`md:block`) -- those flip with the layout, which is exactly what this path must survive -- and
+// the hover/active state classes buildBaseSelector also drops.
+function anchorStepClasses(el: Element): string[] {
+  return Array.from(el.classList)
+    .filter(c => c !== 'hidden' && !c.includes(':') && !c.includes('hover') && !c.includes('active'))
+    .slice(0, 3);
+}
+
+function buildAnchorStep(el: Element): string {
+  const classes = anchorStepClasses(el).map(c => escapeCSSClass(c));
+  const tag = el.tagName.toLowerCase();
+  return classes.length > 0 ? `${tag}.${classes.join('.')}` : tag;
+}
+
+/** #221: `anchor > step:nth-child(i) > ... > step:nth-child(j)` for `el`, or null. The anchor is the nearest
+ *  classed ancestor strictly inside `root` that is a one-off on the page: no other element carries its exact
+ *  class list. A copy of a repeated component (a feed post's text preview, a deal tile's swatch list) is only
+ *  unique by coincidence -- measured: once more posts or tiles rendered, the same path matched 2-3 of them, and
+ *  refresh would have removed all. Kalshi's market block passes: comment rows share some of its classes but
+ *  not the list (`flex w-full min-w-0 ...`), and only it has the strip's path below it. The whole path must
+ *  also be unique on the page and find exactly `el` in the card, and use no build-hash class (`dcr-17m0c6q`):
+ *  those are renamed on a deploy, which the position chain it replaces never depended on.
+ *  Why not the root-anchored chain: a sibling that comes and goes ABOVE the anchor (Kalshi's "Combo" block --
+ *  in the live DOM when the user clicks, stripped as hidden before every refresh) shifted that chain's index
+ *  on every refresh. Every tail step keeps the classes it has: when the layout below the anchor changes, the
+ *  rule matches nothing (the refresh fails visibly) instead of a neighbour -- tag-only steps hit "People are
+ *  also trading" at 1024 px. A step whose element has no usable class stays tag-only, as in the old chain.
+ *  Limit: copies of a component that only appear after capture (more tiles at another width) are invisible
+ *  here, so such a path can later match several elements. Accepted only when it matches exactly `el` on a
+ *  detached clone of `root` (the shape refresh is handed), so no step can lean on an ancestor outside the card (#14). */
+function buildAnchoredPath(el: HTMLElement, root: HTMLElement): string | null {
+  const indexPath: number[] = [];
+  for (let current: Element = el; current !== root; current = current.parentElement!) {
+    if (!current.parentElement) return null;
+    indexPath.unshift(Array.from(current.parentElement.children).indexOf(current));
+  }
+  // the detached copy is made only once a candidate has passed the page checks (most never do)
+  let clone: Element | null = null;
+  let twin: Element | undefined;
+  const classList = (e: Element) => (e.getAttribute('class') || '').trim().split(/\s+/).sort().join(' ');
+  const steps: string[] = [];
+  for (let current: Element = el; current.parentElement && current.parentElement !== root; current = current.parentElement) {
+    const parent = current.parentElement;
+    // every higher candidate repeats this step, so one hashed class ends the search
+    if (anchorStepClasses(current).some(isHashedClass)) return null;
+    steps.unshift(`${buildAnchorStep(current)}:nth-child(${Array.from(parent.children).indexOf(current) + 1})`);
+    const anchor = buildAnchorStep(parent);
+    // root.matches: an anchor that also fits the card root could equal the card selector, which
+    // applyExclusions' scopedFor() rewrites to `:scope` -- the tail would then start at the root.
+    if (!anchor.includes('.') || root.matches(anchor) || anchorStepClasses(parent).some(isHashedClass)) continue;
+    const selector = `${anchor} > ${steps.join(' > ')}`;
+    try {
+      const own = classList(parent);
+      if (Array.from(root.ownerDocument.querySelectorAll(anchor)).some(e => e !== parent && classList(e) === own)) continue;
+      if (root.ownerDocument.querySelectorAll(selector).length !== 1) continue;
+      if (!clone) {
+        clone = root.cloneNode(true) as Element;
+        twin = clone;
+        for (const i of indexPath) twin = twin?.children[i];
+      }
+      const matches = clone.querySelectorAll(selector);
+      if (matches.length === 1 && matches[0] === twin) return selector;
+    } catch {
+      // invalid selector -- keep climbing
+    }
+  }
+  return null;
 }
 
 /** Build a :nth-child chain from `root` down to `el`. Always uniquely identifies `el`

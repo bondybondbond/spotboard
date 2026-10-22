@@ -1,5 +1,11 @@
 # SpotBoard Changelog
 
+## [1.4.7] - Unreleased
+
+### Fixed
+
+- **A block you removed that has no clear label of its own now stays removed when the page shifts, and Re-capture can fix a card stuck on one** (#221): when the part you remove has no name SpotBoard can use (on Kalshi, the "Events / Balance of Power / Margin of Victory" strip), SpotBoard saved it as "the Nth item down this exact chain of positions". Part of that chain counted a block the page hides before every refresh, so the rule found nothing, the card failed on every refresh ("Excluded content came back"), and Re-capture saved the same rule again. SpotBoard now saves such a removal from the nearest clearly named block inside your card, counting only a few steps down, each step checked by its name, so a block appearing or disappearing above it no longer moves the rule. If the page layout under that block changes (for example a narrow window), the rule finds nothing and the refresh fails visibly as before; it never removes a neighbouring part instead. It is not used when the named block is one of many repeated copies on the page (feed posts, deal tiles) or when the names are site-generated codes that change when the site updates; those removals are saved exactly as before. Removals you have already saved are not changed: a card stuck on this needs Re-capture, which resets its other removals too. Captures that never needed a position chain are unchanged.
+
 ## [1.4.6] - Unreleased
 
 ### Fixed

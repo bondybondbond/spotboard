@@ -740,6 +740,11 @@ function foldClassToken(tok: string): string {
   return tok.replace(MODULE_HASH_SUFFIX_RE, '__#')
     .split(/([-_]+)/).map(seg => isHashSegment(seg) ? '#' : seg).join('');
 }
+
+/** A class carrying a build hash (`dcr-17m0c6q`, `Card_title__a-B3x`): renamed on a site deploy (#221). */
+export function isHashedClass(cls: string): boolean {
+  return foldClassToken(cls) !== cls;
+}
 // Classes SpotBoard itself adds while cleaning a capture; they say nothing about which section it is.
 const OWN_CLASS_RE = /^(sb-|spotboard|canvas-link$)/;
 // Below this many distinct element shapes a card is too small to judge by shape (a bare price or score).
