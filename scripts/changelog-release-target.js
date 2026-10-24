@@ -22,6 +22,7 @@ const label = (v) => v.join('.')
 
 export function checkChangelog(text) {
   const blocks = []
+  const unversioned = []
   let current = null // entries under any other `## ` heading belong to no release block
   text.split(/\r?\n/).forEach((line, i) => {
     const m = HEADING.exec(line)
@@ -33,14 +34,18 @@ export function checkChangelog(text) {
       }
       blocks.push(current)
     } else if (/^## /.test(line)) {
+      // Used before 1.4.5; its entries would carry no version to compare, so refuse the heading itself
+      if (/^## \[?unreleased\b/i.test(line)) unversioned.push(i + 1)
       current = null
     } else if (current && /^- /.test(line)) {
       current.entries.push({ line: i + 1, text: line })
     }
   })
 
-  const problems = []
-  const unreleased = blocks.filter((b) => b.unreleased).sort((a, b) => cmp(a.version, b.version))
+  const problems = unversioned.map((n) =>
+    `CHANGELOG.md line ${n} is an Unreleased heading with no version; write it as "## [x.y.z] - Unreleased" so entries can be checked.`
+  )
+  const unreleased =blocks.filter((b) => b.unreleased).sort((a, b) => cmp(a.version, b.version))
   if (!unreleased.length) return problems
 
   const released = blocks.filter((b) => !b.unreleased).map((b) => b.version).sort(cmp)

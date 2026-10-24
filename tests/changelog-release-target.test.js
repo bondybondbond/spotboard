@@ -47,6 +47,12 @@ test('an entry under a non-version heading is not attributed to the block above 
   assert.match(problems[0], /sits under \[1\.4\.7\]/)
 })
 
+test('an Unreleased heading with no version fails instead of hiding its entries', () => {
+  const problems = checkChangelog(doc(`## [Unreleased]\n\n- **Hidden** (#992): no version.\n\n${next}`, released))
+  assert.equal(problems.length, 1)
+  assert.match(problems[0], /Unreleased heading with no version/)
+})
+
 test('a version skipped on purpose passes once it has its own heading', () => {
   assert.deepEqual(checkChangelog(doc(
     '## [1.4.7] - Unreleased\n\n- **Fine** (#998): next.',
