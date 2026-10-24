@@ -5,7 +5,7 @@ permalink: /privacy/
 
 # SpotBoard Privacy Policy
 
-**Effective Date:** [PUBLISH: date]
+**Effective Date:** 24 October 2026
 **Applies to:** SpotBoard 1.4.5 and later
 **Scope:** the SpotBoard extension. It does not cover the SpotBoard website.
 
