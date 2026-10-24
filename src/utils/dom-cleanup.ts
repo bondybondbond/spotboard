@@ -2664,6 +2664,48 @@ function getMaxSourceWidth(img: HTMLImageElement): number {
   return maxW;
 }
 
+/**
+ * #222: reads a small fixed size the page declares on the image itself through Tailwind
+ * utilities (`w-11 h-11`, `size-10`, `w-[44px]`), for images that carry no width/height attrs.
+ * Returns 'icon' / 'small' using the CAPTURE-time boundaries in dom-snapshot.ts (< 40px icon,
+ * < 70px small), or null when there is no clear small size. It is only ever used as a ceiling,
+ * so it can shrink an image the class-name guesses over-sized but never enlarge one.
+ * Null (no opinion) when: a width/height utility is not a plain number (`w-full`, `w-1/2`,
+ * `h-screen`), or any responsive/state variant (`sm:h-24`) is not a small number, since the
+ * image may then render large; or the size is under 8px (spacer/tracker, not a logo).
+ * Spacing scale is the Tailwind default (N * 4px); a custom theme scale is not read.
+ */
+function getTailwindSmallTier(img: Element): 'icon' | 'small' | null {
+  const dims: { axis: string; px: number }[] = [];
+  for (const raw of (img.getAttribute('class') || '').split(/\s+/)) {
+    if (!raw) continue;
+    const variantAt = raw.lastIndexOf(':');
+    const isVariant = variantAt !== -1;
+    const m = raw.slice(variantAt + 1).match(/^!?(w|h|size)-(.+)$/);
+    if (!m) continue;
+    const value = m[2];
+    if (value === 'auto') {
+      if (isVariant) return null; // e.g. md:w-auto: back to natural size on wider screens
+      continue;
+    }
+    let px: number | null = null;
+    if (/^\d+(\.\d+)?$/.test(value)) px = parseFloat(value) * 4;
+    else if (value === 'px') px = 1;
+    else {
+      const arb = value.match(/^\[(\d+(?:\.\d+)?)(px|rem)\]$/);
+      if (arb) px = parseFloat(arb[1]) * (arb[2] === 'rem' ? 16 : 1);
+    }
+    if (px === null || px >= 70) return null;
+    if (!isVariant) dims.push({ axis: m[1], px });
+  }
+  if (dims.length === 0 || dims.some(d => d.px < 8)) return null;
+  const height = dims.find(d => d.axis === 'h' || d.axis === 'size');
+  const width = dims.find(d => d.axis === 'w' || d.axis === 'size');
+  const tierPx = (height || width)!.px;
+  const area = height && width ? height.px * width.px : Infinity;
+  return tierPx < 40 || area < 1600 ? 'icon' : 'small';
+}
+
 export function classifyImagesForRefresh(html: string): string {
   if (!html) return html;
   
@@ -2795,6 +2837,16 @@ export function classifyImagesForRefresh(html: string): string {
       }
     }
     
+    // #222: the image declares a small size through Tailwind utilities -> that is a ceiling on the
+    // class-name guess above (`object-cover` contains "cover", which read as a hero and enlarged
+    // 44px logos to 200px). Lower only: icon/small guesses and every tier the page gives no small
+    // size for are untouched. Sits before HEURISTIC 4/5, which skip icon/small.
+    {
+      const tailwindTier = getTailwindSmallTier(img);
+      const rank: Record<string, number> = { icon: 0, small: 1, thumbnail: 2, medium: 3, preview: 4 };
+      if (tailwindTier && rank[context] > rank[tailwindTier]) context = tailwindTier;
+    }
+
     // HEURISTIC 4: srcset max-width upgrade (thumbnail → preview; medium → preview for pictures)
     // Large editorial images on news sites carry high `w` srcset descriptors but no class names
     // or dimension attrs — they fall to thumbnail by default. A max-width ≥ 400w signals a
