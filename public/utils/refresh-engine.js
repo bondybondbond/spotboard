@@ -206,10 +206,22 @@ function classifyError(errorString) {
 const RECAPTURE_NOTE = "Re-capture resets this card's exclusions."
 const RECAPTURE_LABEL_TAIL = " — re-capture (resets its exclusions)"
 
+// #219: layout_changed / content_lost offer Re-capture too, but it only costs the user something
+// when the card has exclusions (or keeps them on another device), so only those cards get the tail.
+const RECAPTURE_TAIL_IF_EXCLUSIONS = ['layout_changed', 'content_lost']
+function cardMayHaveExclusions(component) {
+  if (!component) return false
+  if (component.excludedSelectors && component.excludedSelectors.length > 0) return true
+  if (component.exclusionPatterns && component.exclusionPatterns.length > 0) return true
+  const ES = typeof window !== 'undefined' ? window.ExclusionStorage : null
+  return !!(ES && ES.exclusionsAreUnknown(component))
+}
+
 /**
- * Get user-friendly error label from error code enum
+ * Get user-friendly error label from error code enum. Pass the card so the Re-capture
+ * reset note (#219) only shows where the card has exclusions to lose.
  */
-function getErrorLabel(errorCode) {
+function getErrorLabel(errorCode, component) {
   const labels = {
     'skeleton': "Site didn't load completely",
     'network': "Network error",
@@ -222,7 +234,10 @@ function getErrorLabel(errorCode) {
     'content_shrunk': "Page shows much less content than your saved card. Kept your last good copy",
     'unknown': "Refresh failed"
   };
-  return labels[errorCode] || "Refresh failed";
+  const label = labels[errorCode] || "Refresh failed";
+  return RECAPTURE_TAIL_IF_EXCLUSIONS.includes(errorCode) && cardMayHaveExclusions(component)
+    ? label + RECAPTURE_LABEL_TAIL
+    : label;
 }
 
 /**

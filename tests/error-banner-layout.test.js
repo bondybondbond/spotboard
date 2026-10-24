@@ -33,3 +33,14 @@ for (const code of ['network', 'skeleton', 'render_degraded', 'content_shrunk', 
     assert.ok(html.includes('error-retry-btn') && html.includes('error-open-btn'))
   })
 }
+
+// #219: the reset note rides on the banner label for the two non-exclusion Re-capture codes, only when the card has exclusions.
+const label = html => html.match(/<strong>([^<]*)<\/strong>/)[1]
+for (const code of ['layout_changed', 'content_lost']) {
+  test(`${code}: banner label says Re-capture resets exclusions only when the card has some (#219)`, () => {
+    const withEx = label(build({ ...comp(code), excludedSelectors: ['div > p'] }, code))
+    assert.match(withEx, /re-capture \(resets its exclusions\)$/)
+    const none = label(build({ ...comp(code), excludedSelectors: [], exclusionPatterns: [] }, code))
+    assert.doesNotMatch(none, /exclusion|re-capture/i)
+  })
+}

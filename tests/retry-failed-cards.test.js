@@ -235,13 +235,57 @@ test('#168 mixed: Re-capture group lists its cards; Retry retries ONLY the retry
   assert.deepEqual(refreshedIds, ['b']) // d (layout) and e (excluded) are not re-run
 })
 
-test('#205 banner labels: only the two exclusion failures tell the user re-capturing resets exclusions', () => {
+test('#205 banner labels: the two exclusion failures always tell the user re-capturing resets exclusions', () => {
   for (const code of ['exclusions_unapplied', 'pattern_unapplied']) {
     assert.ok(g.getErrorLabel(code).endsWith('re-capture (resets its exclusions)'), code)
+    assert.ok(g.getErrorLabel(code, { excludedSelectors: [] }).endsWith('re-capture (resets its exclusions)'), code)
   }
-  for (const code of ['network', 'skeleton', 'layout_changed', 'content_drift', 'content_lost', 'render_degraded', 'content_shrunk', 'unknown']) {
+  for (const code of ['network', 'skeleton', 'content_drift', 'render_degraded', 'content_shrunk', 'unknown']) {
     assert.ok(!/exclusion/i.test(g.getErrorLabel(code)), code)
+    assert.ok(!/exclusion/i.test(g.getErrorLabel(code, { excludedSelectors: ['div'], exclusionPatterns: [{}] })), code) // #219: never added to a code that does not offer Re-capture
   }
+})
+
+// #219: layout_changed / content_lost offer Re-capture too, so their label carries the same tail,
+// but only on a card that has exclusions (or keeps them on another device).
+const TAIL = 're-capture (resets its exclusions)'
+const cardWith = {
+  selectors: { excludedSelectors: ['div > p'], exclusionsStorage: 'sync' },
+  patterns: { excludedSelectors: [], exclusionPatterns: [{ tag: 'div' }], exclusionsStorage: 'sync' },
+  unknown: { exclusionsStorage: 'local' }, // kept on another device, list not readable here
+  none: { excludedSelectors: [], exclusionPatterns: [], exclusionsStorage: 'sync' },
+  legacy: {} // old record with no exclusion fields
+}
+
+test('#219 layout_changed + content_lost labels carry the reset note when the card has exclusions or they are unreadable here', () => {
+  global.window.ExclusionStorage = ES
+  for (const code of ['layout_changed', 'content_lost']) {
+    for (const kind of ['selectors', 'patterns', 'unknown']) {
+      assert.ok(g.getErrorLabel(code, cardWith[kind]).endsWith(TAIL), `${code} / ${kind}`)
+    }
+  }
+  assert.equal(g.getErrorLabel('layout_changed', cardWith.selectors), 'Site layout changed — re-capture (resets its exclusions)')
+  assert.equal(g.getErrorLabel('content_lost', cardWith.selectors), 'Card came back empty — re-capture (resets its exclusions)')
+})
+
+test('#219 negative: a card with no exclusions keeps today\'s label, and so does a call without the card', () => {
+  global.window.ExclusionStorage = ES
+  for (const code of ['layout_changed', 'content_lost']) {
+    for (const kind of ['none', 'legacy']) {
+      assert.ok(!/exclusion|re-capture/i.test(g.getErrorLabel(code, cardWith[kind])), `${code} / ${kind}`)
+    }
+    assert.ok(!/exclusion|re-capture/i.test(g.getErrorLabel(code)), code)
+  }
+})
+
+test('#219 the failure toast still says the reset once, in its hint, never per item', () => {
+  g.showRefreshFailureToast([
+    { id: 'p', name: 'Alpha', errorCode: 'layout_changed' },
+    { id: 'q', name: 'Bravo', errorCode: 'content_lost' }
+  ])
+  const t = toastText()
+  assert.equal(t.split("resets this card's exclusions").length - 1, 1)
+  assert.ok(!t.includes('re-capture ('))
 })
 
 test('#205 Re-capture offering is unchanged', () => {

@@ -24,7 +24,7 @@ function buildErrorBannerHTML(component, errorCode) {
     <div class="card-error-banner${offerRecapture ? ' has-recapture' : ''}">
       <span class="error-icon">⚠️</span>
       <span class="error-message">
-        Refresh failed: <strong>${getErrorLabel(errorCode)}</strong>
+        Refresh failed: <strong>${getErrorLabel(errorCode, component)}</strong>
       </span>
       <div class="error-actions">
         <button class="error-retry-btn" data-component-id="${component.id}">
@@ -2654,7 +2654,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 // Banner already up from a prior failure — refresh its label so a new
                 // failure category (e.g. content_lost) isn't hidden behind a stale message.
                 const label = existingBanner.querySelector('.error-message strong');
-                if (label) label.textContent = getErrorLabel(errorCode);
+                if (label) label.textContent = getErrorLabel(errorCode, component);
                 const existingRecapture = existingBanner.querySelector('.error-recapture-btn');
                 if (shouldOfferRecapture(component) && !existingRecapture) {
                   existingBanner.querySelector('.error-actions')?.insertAdjacentHTML('beforeend', RECAPTURE_BUTTON_HTML);
