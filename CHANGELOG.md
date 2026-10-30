@@ -1,5 +1,11 @@
 # SpotBoard Changelog
 
+## [1.4.7] - Unreleased
+
+### Fixed
+
+- **List format now finds the list on The i Paper's "Most Popular" card** (#228): the card's ⋯ menu said "No list found in this card", so Bullets and Numbered could not be used, and the site's big 1-10 rank numbers (drawn by the page, not saved in your card) could not be put back. SpotBoard only treated rows as one list when their class names matched exactly, and this site adds a different article id and tags to every row. Rows are now also treated as one list when they share the same main class and the same inner layout. Checked against all 30 cards on the owner's board: only this card changes (no list to a 10-item list), and every card that has no list today still has none. Off looks exactly as before.
+
 ## [1.4.6] - 2026-10-24
 
 ### Fixed

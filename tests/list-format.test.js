@@ -123,6 +123,102 @@ test('items with different classes are not grouped', () => {
   assert.equal(applyListFormat(root, 'bullets'), 0)
 })
 
+// #228: The i Paper "Most Popular" shape. Every row carries per-article WordPress classes after the root
+// `inews__post`, so no two class strings match, yet the rows are one template (same inner structure).
+const inewsRow = (id, extra, t) => `<div class="inews__post inews__post-small post-${id} post type-post status-publish category-news ${extra}"><div class="inews__post__image"><img src="x.jpg" alt=""></div><div class="inews__post__content"><div class="inews__post__content__group"><div class="inews__post__content-headline">${t}</div></div></div></div>`
+const INEWS_ROWS = [
+  inewsRow(4855575, 'tag-features tag-food', 'Eight middle-class stockpile meals'),
+  inewsRow(4857786, 'tag-education tag-vat post_label-explained', 'Private schools and VAT'),
+  inewsRow(4852670, 'tag-budget', 'What the Budget means for pensions'),
+  inewsRow(4861432, 'tag-property inews__post-visited', 'Landlords and the Budget'),
+]
+const INEWS = `<div class="inews__post-section__body">${INEWS_ROWS.join('')}</div>`
+
+test('#228 rows with per-item classes but one template are listed, in order (bullets and numbered)', () => {
+  for (const [fmt, tag] of [['bullets', 'ul'], ['numbered', 'ol']]) {
+    const root = parse(INEWS)
+    assert.equal(hasListableItems(root), true)
+    assert.equal(applyListFormat(root, fmt), 1)
+    const lis = root.querySelectorAll(`${tag}.sb-list > li`)
+    assert.equal(lis.length, 4)
+    assert.match(lis[0].textContent, /^Eight middle-class/)
+    assert.match(lis[3].textContent, /^Landlords/)
+  }
+})
+
+test('#228 off still renders the per-item-class rows exactly as captured', () => {
+  const root = parse(INEWS)
+  assert.equal(applyListFormat(root, 'off'), 0)
+  assert.equal(root.innerHTML, INEWS)
+})
+
+test('#228 same first class but different inner structure is not one template', () => {
+  const root = parse('<div>' +
+    '<div class="card a1"><span>one</span></div>' +
+    '<div class="card a2"><span>two</span><em>x</em></div>' +
+    '<div class="card a3"><p>three</p></div></div>')
+  assert.equal(applyListFormat(root, 'bullets'), 0)
+})
+
+test('#228 same top-level structure that diverges deeper is not one template', () => {
+  const row = (inner, t) => `<div class="card x${t}"><div><div><div>${inner}</div></div></div><p>${t}</p></div>`
+  const root = parse('<div>' + row('<span>a</span>', 'a') + row('<a href="#">b</a>', 'b') + row('<span>c</span>', 'c') + '</div>')
+  assert.equal(applyListFormat(root, 'bullets'), 0)
+})
+
+test('#228 button / tab / badge variants are not grouped, with or without an inner element', () => {
+  const leaf = parse('<nav><a class="btn btn-primary" href="#">Buy</a><a class="btn btn-ghost" href="#">Learn</a><a class="btn" href="#">Share</a></nav>')
+  assert.equal(hasListableItems(leaf), false)
+  const withIcon = parse('<nav><a class="btn btn-primary" href="#"><span>Buy</span></a><a class="btn btn-ghost" href="#"><span>Learn</span></a><a class="btn" href="#"><span>Share</span></a></nav>')
+  assert.equal(hasListableItems(withIcon), false)
+  const tabs = parse('<div><div class="tab active"><svg><path></path></svg><span>One</span></div><div class="tab"><svg><path></path></svg><span>Two</span></div><div class="tab disabled"><svg><path></path></svg><span>Three</span></div></div>')
+  assert.equal(hasListableItems(tabs), false)
+})
+
+test('#228 a multi-path svg icon does not make a tab look like a template', () => {
+  const tab = (c, t) => `<div class="${c}"><svg><path></path><path></path><path></path></svg><span>${t}</span></div>`
+  const root = parse('<div>' + tab('tab active', 'One') + tab('tab', 'Two') + tab('tab disabled', 'Three') + '</div>')
+  assert.equal(hasListableItems(root), false)
+})
+
+test('#228 the structure threshold: 4 elements per row stays unlisted, 5 is listed', () => {
+  const rows = inner => '<div>' + [1, 2, 3].map(n => `<div class="item v${n}">${inner}</div>`).join('') + '</div>'
+  assert.equal(hasListableItems(parse(rows('<b>a</b><i>b</i><u>c</u>'))), false)
+  assert.equal(hasListableItems(parse(rows('<b>a</b><i>b</i><u>c</u><s>d</s>'))), true)
+})
+
+test('#228 utility-class chips are not grouped, even when they share the first class', () => {
+  const chip = (c, t) => `<span class="${c}"><b>${t}</b></span>`
+  const root = parse('<div>' +
+    chip('flex items-center gap-1 px-2 rounded-full bg-success-50', '100%') +
+    chip('flex items-center gap-1 px-2 rounded-full bg-warning-50', 'Be first') +
+    chip('flex items-center gap-1 px-2 bg-neutral-50', '35%') + '</div>')
+  assert.equal(applyListFormat(root, 'bullets'), 0)
+})
+
+test('#228 same inner structure but different root class is layout, not a list', () => {
+  const cell = (c, t) => `<div class="${c}"><span>${t}</span></div>`
+  const root = parse('<div>' + cell('left', 'a') + cell('middle', 'b') + cell('right', 'c') + '</div>')
+  assert.equal(applyListFormat(root, 'bullets'), 0)
+})
+
+test('#228 only two per-item-class rows is still layout (MIN_RUN unchanged)', () => {
+  const root = parse(`<div>${INEWS_ROWS.slice(0, 2).join('')}</div>`)
+  assert.equal(applyListFormat(root, 'bullets'), 0)
+})
+
+test('#228 per-item-class rows over the one-liner limit stay prose', () => {
+  const long = 'word '.repeat(60)
+  const root = parse(`<div>${[1, 2, 3].map(n => inewsRow(n, `tag-${n}`, long)).join('')}</div>`)
+  assert.equal(applyListFormat(root, 'bullets'), 0)
+})
+
+test('#228 a run still ends where the template changes', () => {
+  const root = parse(`<div>${INEWS_ROWS.join('')}<div class="inews__post foo-1"><span>odd one</span></div></div>`)
+  assert.equal(applyListFormat(root, 'bullets'), 1)
+  assert.equal(root.querySelectorAll('li').length, 4)
+})
+
 test('hasListableItems is true before formatting, false after (so the menu hint must be read first)', () => {
   const root = parse(DFO)
   assert.equal(hasListableItems(root), true)

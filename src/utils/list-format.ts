@@ -30,20 +30,42 @@ const SKIP_SUBTREE_TAGS = new Set(['UL', 'OL', 'TABLE', 'SELECT', 'SVG', 'SCRIPT
 
 const signature = (el: Element) => `${el.tagName}|${(el.getAttribute('class') || '').trim().replace(/\s+/g, ' ')}`
 
+// #228: sites that stamp per-item ids/taxonomy into class (WordPress post-123, tag-*, category-*) give every
+// row a different class string. Such rows are still one template when they share the root (first) class AND the
+// same inner element structure. Measured on a 30-card board: sharing any class token instead groups unrelated
+// Tailwind chips into dozens of tiny lists; first-class alone also regroups tiles that differ in structure.
+const firstClass = (el: Element) => (el.getAttribute('class') || '').trim().split(/\s+/)[0] || ''
+// An <svg> icon counts as one node: its internal paths say nothing about the row's template.
+const skeleton = (el: Element): string =>
+  el.tagName.toLowerCase() === 'svg' ? 'SVG()' : `${el.tagName}(${Array.from(el.children, skeleton).join(',')})`
+
+// A button / tab / badge (with or without an icon) has 1-4 elements. Structure only counts as evidence of a
+// template when the row has real inner structure: the row plus at least 4 descendants (real i Paper row: 6).
+const MIN_TEMPLATE_NODES = 5
+const nodeCount = (skel: string) => skel.split('(').length - 1
+
+function sameTemplate(head: Element, el: Element): boolean {
+  if (signature(el) === signature(head)) return true
+  const root = firstClass(head)
+  if (!root || firstClass(el) !== root) return false
+  const skel = skeleton(head)
+  return skel === skeleton(el) && nodeCount(skel) >= MIN_TEMPLATE_NODES
+}
+
 function isListableItem(el: Element): boolean {
   if (SKIP_ITEM_TAGS.has(el.tagName)) return false
   const text = (el.textContent || '').trim()
   return text.length > 0 && text.length <= MAX_ITEM_TEXT
 }
 
-// Maximal runs of >=MIN_RUN consecutive element children sharing tag + class, every item listable.
+// Maximal runs of >=MIN_RUN consecutive element children of one template (see sameTemplate), every item listable.
 function findRuns(parent: Element): Element[][] {
   const kids = Array.from(parent.children)
   const runs: Element[][] = []
   let i = 0
   while (i < kids.length) {
     let j = i + 1
-    while (j < kids.length && signature(kids[j]) === signature(kids[i])) j++
+    while (j < kids.length && sameTemplate(kids[i], kids[j])) j++
     const run = kids.slice(i, j)
     if (run.length >= MIN_RUN && run.every(isListableItem)) runs.push(run)
     i = j
