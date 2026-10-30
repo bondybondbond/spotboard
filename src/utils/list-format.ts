@@ -59,13 +59,16 @@ function sameTemplate(head: Element, el: Element): boolean {
   return skel === skeleton(el) && nodeCount(skel) >= MIN_TEMPLATE_NODES
 }
 
+// #231: stored cards keep the page's HTML indentation, so raw textContent can be 7x the visible text (a ~90 character
+// row measured ~700 and was skipped as prose). Every length check here counts whitespace-collapsed text.
+const collapsedLength = (el: Element) => (el.textContent || '').replace(/\s+/g, ' ').trim().length
+
 function isListableItem(el: Element): boolean {
   if (SKIP_ITEM_TAGS.has(el.tagName)) return false
-  const text = (el.textContent || '').trim()
-  return text.length > 0 && text.length <= MAX_ITEM_TEXT
+  const length = collapsedLength(el)
+  return length > 0 && length <= MAX_ITEM_TEXT
 }
 
-const collapsedLength = (el: Element) => (el.textContent || '').replace(/\s+/g, ' ').trim().length
 const isTinyRun = (run: Element[]) => run.reduce((sum, el) => sum + collapsedLength(el), 0) / run.length < MIN_AVG_ITEM_TEXT
 
 // Maximal runs of >=MIN_RUN consecutive element children of one template (see sameTemplate), every item listable.

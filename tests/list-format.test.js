@@ -276,3 +276,47 @@ test('#229 the floor is on the average item text of whitespace-collapsed rows', 
   // one short row among longer ones averages above the floor, so the run stays a list
   assert.equal(hasListableItems(make([10, 30, 40])), true)
 })
+
+// #231: stored cards keep the page's HTML indentation, so lengths are measured on whitespace-collapsed text.
+// A real row is several pieces of text (headline, time, topic) each on its own indented line, so the whitespace
+// between them is interior to the row's textContent and counts toward a raw length.
+const indent = '\n' + ' '.repeat(60)
+const indentedRow = t => '<div class="pt-1 pb-0 w-full">' + indent + '<a href="https://example.com/x">' + t + '</a>' + indent + '<span>2 hours ago</span>' + indent + '<span>Richmond</span>' + indent + '<span>News</span>' + indent + '</div>'
+
+test('#231 an indented row of ~90 visible characters is listed even though its raw text is far over the limit', () => {
+  const heads = [
+    'Empty Richmond unit to be turned into a community hub after council vote',
+    'Residents react to plans for new cycle lanes along the riverside route',
+    'Local school wins national award for its outdoor learning programme',
+  ]
+  const root = parse('<div>' + heads.map(indentedRow).join('') + '</div>')
+  const row = root.firstElementChild.firstElementChild
+  assert.ok(row.textContent.trim().length > 240, 'fixture: one row of raw text is over the one-liner limit')
+  assert.ok(row.textContent.replace(/\s+/g, ' ').trim().length < 120, 'fixture: the same row is a one-liner once collapsed')
+  assert.equal(hasListableItems(root), true)
+  assert.equal(applyListFormat(root, 'numbered'), 1)
+  assert.deepEqual([...root.querySelectorAll('ol.sb-list > li')].map(li => li.querySelector('a').textContent.trim()), heads)
+})
+
+test('#231 indented prose rows (over 240 characters once collapsed) are still not listed', () => {
+  const prose = 'word '.repeat(60)
+  const root = parse('<div>' + [1, 2, 3].map(() => indentedRow(prose)).join('') + '</div>')
+  assert.equal(hasListableItems(root), false)
+  assert.equal(applyListFormat(root, 'numbered'), 0)
+})
+
+test('#231 the one-liner limit is 240 collapsed characters: 240 lists, 241 does not', () => {
+  // each row collapses to exactly n characters: (n - 5) x, one space, "abcd"
+  const row = n => '<div class="r">' + indent + '<a href="#">' + 'x'.repeat(n - 5) + '</a>' + indent + '<span>abcd</span>' + indent + '</div>'
+  const rows = n => '<div>' + [1, 2, 3].map(() => row(n)).join('') + '</div>'
+  assert.equal(hasListableItems(parse(rows(240))), true)
+  assert.equal(hasListableItems(parse(rows(241))), false)
+})
+
+test('#231 off leaves indented rows exactly as captured', () => {
+  const html = '<div>' + [1, 2, 3].map(n => indentedRow('Headline number ' + n + ' is a reasonably long row of text')).join('') + '</div>'
+  const root = parse(html)
+  assert.equal(hasListableItems(root), true, 'fixture: these rows are listable, so Off is really leaving them alone')
+  assert.equal(applyListFormat(root, 'off'), 0)
+  assert.equal(root.innerHTML, parse(html).innerHTML)
+})
