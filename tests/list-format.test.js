@@ -20,6 +20,10 @@ const parse = html => {
   return div
 }
 
+// #229: runs averaging under 25 characters per row are dropped, so a test that pins ANOTHER rule (template matching,
+// MIN_RUN, skip rules) pads its row text; otherwise the floor alone would make it pass whatever that rule does.
+const padded = html => html.replace(/>([^<>]+)</g, (m, t) => '>' + t + ' padded so the row clears the tiny-run floor<')
+
 // Real Daily Faceoff capture shape (sidebar news): wrapper of sibling <a class="canvas-link"> rows
 const dfoRow = t => `<a href="https://www.dailyfaceoff.com/news/x" target="_blank" class="canvas-link"><div class="flex min-h-32 flex-col justify-between border-b border-gray-200 p-2"><span class="text-lg">${t}</span></div></a>`
 const DFO = `\n  <div class="flex w-full shrink-0 flex-col p-2"><div class="static top-0 mb-10 w-full lg:sticky">` +
@@ -74,14 +78,14 @@ test('switching format re-derives from the source html (bullets -> numbered -> o
 })
 
 test('plain text rows (div per row) are listed', () => {
-  const root = parse('<div><div class="row">£4.99 Chicken</div><div class="row">£12 Duvet</div><div class="row">£1 Chocolate</div></div>')
+  const root = parse('<div><div class="row">£4.99 Chicken breast fillets 1kg</div><div class="row">£12 Winter duvet double size</div><div class="row">£1 Dark chocolate bar multipack</div></div>')
   assert.equal(applyListFormat(root, 'bullets'), 1)
   assert.equal(root.querySelectorAll('li').length, 3)
 })
 
 test('image + title + price cards: the whole card stays intact inside the li', () => {
   const card = t => `<div class="deal"><img src="a.jpg" alt=""><a href="#">${t}</a><span>£5</span></div>`
-  const root = parse(`<div>${card('One')}${card('Two')}${card('Three')}</div>`)
+  const root = parse(`<div>${card('Cordless drill with two batteries')}${card('Garden hose with spray nozzle')}${card('Oak shoe rack with three shelves')}</div>`)
   assert.equal(applyListFormat(root, 'bullets'), 1)
   const li = root.querySelector('li')
   assert.ok(li.querySelector('img') && li.querySelector('a') && li.querySelector('span'))
@@ -114,12 +118,12 @@ test('headings and tables are never list items', () => {
 })
 
 test('only two lookalike siblings is layout, not a list', () => {
-  const root = parse('<div><div class="kv">Label</div><div class="kv">Value</div></div>')
+  const root = parse(padded('<div><div class="kv">Label</div><div class="kv">Value</div></div>'))
   assert.equal(applyListFormat(root, 'bullets'), 0)
 })
 
 test('items with different classes are not grouped', () => {
-  const root = parse('<div><div class="a">one</div><div class="b">two</div><div class="c">three</div></div>')
+  const root = parse(padded('<div><div class="a">one</div><div class="b">two</div><div class="c">three</div></div>'))
   assert.equal(applyListFormat(root, 'bullets'), 0)
 })
 
@@ -153,52 +157,52 @@ test('#228 off still renders the per-item-class rows exactly as captured', () =>
 })
 
 test('#228 same first class but different inner structure is not one template', () => {
-  const root = parse('<div>' +
+  const root = parse(padded('<div>' +
     '<div class="card a1"><span>one</span></div>' +
     '<div class="card a2"><span>two</span><em>x</em></div>' +
-    '<div class="card a3"><p>three</p></div></div>')
+    '<div class="card a3"><p>three</p></div></div>'))
   assert.equal(applyListFormat(root, 'bullets'), 0)
 })
 
 test('#228 same top-level structure that diverges deeper is not one template', () => {
   const row = (inner, t) => `<div class="card x${t}"><div><div><div>${inner}</div></div></div><p>${t}</p></div>`
-  const root = parse('<div>' + row('<span>a</span>', 'a') + row('<a href="#">b</a>', 'b') + row('<span>c</span>', 'c') + '</div>')
+  const root = parse(padded('<div>' + row('<span>a</span>', 'a') + row('<a href="#">b</a>', 'b') + row('<span>c</span>', 'c') + '</div>'))
   assert.equal(applyListFormat(root, 'bullets'), 0)
 })
 
 test('#228 button / tab / badge variants are not grouped, with or without an inner element', () => {
-  const leaf = parse('<nav><a class="btn btn-primary" href="#">Buy</a><a class="btn btn-ghost" href="#">Learn</a><a class="btn" href="#">Share</a></nav>')
+  const leaf = parse(padded('<nav><a class="btn btn-primary" href="#">Buy</a><a class="btn btn-ghost" href="#">Learn</a><a class="btn" href="#">Share</a></nav>'))
   assert.equal(hasListableItems(leaf), false)
-  const withIcon = parse('<nav><a class="btn btn-primary" href="#"><span>Buy</span></a><a class="btn btn-ghost" href="#"><span>Learn</span></a><a class="btn" href="#"><span>Share</span></a></nav>')
+  const withIcon = parse(padded('<nav><a class="btn btn-primary" href="#"><span>Buy</span></a><a class="btn btn-ghost" href="#"><span>Learn</span></a><a class="btn" href="#"><span>Share</span></a></nav>'))
   assert.equal(hasListableItems(withIcon), false)
-  const tabs = parse('<div><div class="tab active"><svg><path></path></svg><span>One</span></div><div class="tab"><svg><path></path></svg><span>Two</span></div><div class="tab disabled"><svg><path></path></svg><span>Three</span></div></div>')
+  const tabs = parse(padded('<div><div class="tab active"><svg><path></path></svg><span>One</span></div><div class="tab"><svg><path></path></svg><span>Two</span></div><div class="tab disabled"><svg><path></path></svg><span>Three</span></div></div>'))
   assert.equal(hasListableItems(tabs), false)
 })
 
 test('#228 a multi-path svg icon does not make a tab look like a template', () => {
   const tab = (c, t) => `<div class="${c}"><svg><path></path><path></path><path></path></svg><span>${t}</span></div>`
-  const root = parse('<div>' + tab('tab active', 'One') + tab('tab', 'Two') + tab('tab disabled', 'Three') + '</div>')
+  const root = parse(padded('<div>' + tab('tab active', 'One') + tab('tab', 'Two') + tab('tab disabled', 'Three') + '</div>'))
   assert.equal(hasListableItems(root), false)
 })
 
 test('#228 the structure threshold: 4 elements per row stays unlisted, 5 is listed', () => {
   const rows = inner => '<div>' + [1, 2, 3].map(n => `<div class="item v${n}">${inner}</div>`).join('') + '</div>'
-  assert.equal(hasListableItems(parse(rows('<b>a</b><i>b</i><u>c</u>'))), false)
-  assert.equal(hasListableItems(parse(rows('<b>a</b><i>b</i><u>c</u><s>d</s>'))), true)
+  assert.equal(hasListableItems(parse(rows('<b>alpha item</b><i>beta item</i><u>gamma item</u>'))), false)
+  assert.equal(hasListableItems(parse(rows('<b>alpha item</b><i>beta item</i><u>gamma item</u><s>delta item</s>'))), true)
 })
 
 test('#228 utility-class chips are not grouped, even when they share the first class', () => {
   const chip = (c, t) => `<span class="${c}"><b>${t}</b></span>`
-  const root = parse('<div>' +
+  const root = parse(padded('<div>' +
     chip('flex items-center gap-1 px-2 rounded-full bg-success-50', '100%') +
     chip('flex items-center gap-1 px-2 rounded-full bg-warning-50', 'Be first') +
-    chip('flex items-center gap-1 px-2 bg-neutral-50', '35%') + '</div>')
+    chip('flex items-center gap-1 px-2 bg-neutral-50', '35%') + '</div>'))
   assert.equal(applyListFormat(root, 'bullets'), 0)
 })
 
 test('#228 same inner structure but different root class is layout, not a list', () => {
   const cell = (c, t) => `<div class="${c}"><span>${t}</span></div>`
-  const root = parse('<div>' + cell('left', 'a') + cell('middle', 'b') + cell('right', 'c') + '</div>')
+  const root = parse(padded('<div>' + cell('left', 'a') + cell('middle', 'b') + cell('right', 'c') + '</div>'))
   assert.equal(applyListFormat(root, 'bullets'), 0)
 })
 
@@ -224,4 +228,51 @@ test('hasListableItems is true before formatting, false after (so the menu hint 
   assert.equal(hasListableItems(root), true)
   applyListFormat(root, 'bullets')
   assert.equal(hasListableItems(root), false)
+})
+
+// #229: runs of short labels (job tags, percentages, dates) are incidental, not a list worth offering.
+const tagRow = t => `<div class="flex space-x-1 items-center"><p class="font-bold">${t}</p></div>`
+const headlineRow = t => `<div class="pt-1 pb-0 w-full"><a href="https://example.com/x">${t}</a></div>`
+
+test('#229 a run of short tag labels is not a list, and the menu hint says so', () => {
+  const root = parse('<div>' + ['£40ph', 'London', 'Part-time'].map(tagRow).join('') + '</div>')
+  assert.equal(hasListableItems(root), false)
+  assert.equal(applyListFormat(root, 'numbered'), 0)
+  assert.equal(root.querySelectorAll('ol, ul').length, 0)
+})
+
+test('#229 label / percentage / date runs (Kalshi-style) are not lists', () => {
+  const root = parse('<div>' + ['0%', '12%', '40%', '8%', '1%'].map(tagRow).join('') + '</div>')
+  assert.equal(hasListableItems(root), false)
+  const dates = parse('<div>' + ['Nov 2024', 'Dec 2024', 'Jan 2025', 'Feb 2025', 'Mar 2025'].map(tagRow).join('') + '</div>')
+  assert.equal(hasListableItems(dates), false)
+})
+
+test('#229 a real headline run next to tag runs is the only list formatted', () => {
+  const heads = ['Fresh job opportunities open in Richmond this week', 'Children can profoundly change their world', 'Football For Women - No Experience Needed']
+  // differently tagged wrappers, so the wrappers are not themselves a run of lookalike siblings
+  const root = parse('<div><section>' + heads.map(headlineRow).join('') + '</section>' +
+    '<aside>' + ['£40ph', 'London', 'Part-time'].map(tagRow).join('') + '</aside>' +
+    '<footer>' + ['£35 - £45 ph', 'Wimbledon', 'Part-time'].map(tagRow).join('') + '</footer></div>')
+  assert.equal(applyListFormat(root, 'numbered'), 1)
+  const lis = [...root.querySelectorAll('ol.sb-list > li')]
+  assert.deepEqual(lis.map(li => li.textContent.trim()), heads)
+  assert.equal(root.querySelectorAll('aside li, footer li').length, 0)
+})
+
+test('#229 short real headlines (about 35 characters each) still make a list', () => {
+  const root = parse('<div>' + ['Clayface Review - a mixed bag film', 'Doom: The Dark Ages Review - bold', 'Hades 2 Review - an instant classic'].map(headlineRow).join('') + '</div>')
+  assert.equal(hasListableItems(root), true)
+  assert.equal(applyListFormat(root, 'bullets'), 1)
+})
+
+test('#229 the floor is on the average item text of whitespace-collapsed rows', () => {
+  const pad = '\n        '
+  const at = n => 'xx' + pad + 'x'.repeat(n - 3)
+  // each row is "xx" + whitespace + (n-3) x, i.e. exactly n characters once collapsed; trim-only counts the whitespace and lands on the wrong side of 25
+  const make = lens => parse('<div>' + lens.map(n => `<div class="r">${pad}<span>${pad}${at(n)}${pad}</span>${pad}</div>`).join('') + '</div>')
+  assert.equal(hasListableItems(make([24, 24, 24])), false)
+  assert.equal(hasListableItems(make([25, 25, 25])), true)
+  // one short row among longer ones averages above the floor, so the run stays a list
+  assert.equal(hasListableItems(make([10, 30, 40])), true)
 })

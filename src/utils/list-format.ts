@@ -20,6 +20,13 @@ const MIN_RUN = 3
 // anything longer is prose (article paragraphs) and is left alone.
 const MAX_ITEM_TEXT = 240
 
+// #229: a run of labels (job tags "£40ph / London / Part-time", "0%", "Nov 2024") is incidental, not a list worth
+// offering. Measured on the 30-card board (44 runs): those runs average 3-16 characters per item, the shortest
+// real run (ign.com headlines) averages 35. 25 sits in the gap; 12 / 20 / 30 give the same board result.
+// Known trade-off: a real list of very short rows (bare score lines like "LAL 102 BOS 99") is not offered a list;
+// the board has no such card, so loosen only on a real example.
+const MIN_AVG_ITEM_TEXT = 25
+
 // Items that already carry their own structure, or are not "a row of text".
 const SKIP_ITEM_TAGS = new Set([
   'LI', 'TR', 'TD', 'TH', 'DT', 'DD', 'OPTION', 'SUMMARY', 'IMG', 'PICTURE', 'SVG', 'BR', 'HR',
@@ -58,6 +65,9 @@ function isListableItem(el: Element): boolean {
   return text.length > 0 && text.length <= MAX_ITEM_TEXT
 }
 
+const collapsedLength = (el: Element) => (el.textContent || '').replace(/\s+/g, ' ').trim().length
+const isTinyRun = (run: Element[]) => run.reduce((sum, el) => sum + collapsedLength(el), 0) / run.length < MIN_AVG_ITEM_TEXT
+
 // Maximal runs of >=MIN_RUN consecutive element children of one template (see sameTemplate), every item listable.
 function findRuns(parent: Element): Element[][] {
   const kids = Array.from(parent.children)
@@ -67,7 +77,7 @@ function findRuns(parent: Element): Element[][] {
     let j = i + 1
     while (j < kids.length && sameTemplate(kids[i], kids[j])) j++
     const run = kids.slice(i, j)
-    if (run.length >= MIN_RUN && run.every(isListableItem)) runs.push(run)
+    if (run.length >= MIN_RUN && run.every(isListableItem) && !isTinyRun(run)) runs.push(run)
     i = j
   }
   return runs
