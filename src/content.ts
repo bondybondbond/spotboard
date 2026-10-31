@@ -3110,6 +3110,11 @@ function getPreviewCSS(): string {
       max-width: 280px !important; max-height: 200px !important;
       object-fit: contain; display: inline-block; vertical-align: middle;
     }
+    /* #233: a link holding only a hero-size picture stands on its own line -- keep in sync with dashboard.html */
+    a:has(> img[data-scale-context="medium"]:only-child),
+    a:has(> img[data-scale-context="preview"]:only-child) {
+      display: block;
+    }
     img:not([data-scale-context]) {
       max-width: 25px !important; max-height: 25px !important;
       object-fit: contain; display: inline-block; vertical-align: middle;

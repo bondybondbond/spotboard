@@ -1073,7 +1073,17 @@
       display: inline-block;
       vertical-align: middle;
     }
-    
+
+    /* #233: a link that holds a hero-size picture (medium/preview) and no other element stands on its own
+       line, so the headline after it sits underneath. The site's flex-col that stacked them (Cricbuzz:
+       <div flex flex-col><a><img></a><a>headline</a>) is a Tailwind class that does not exist on this page,
+       so both links were inline and the headline flowed beside the picture. Keep in sync with getPreviewCSS in
+       src/content.ts (tests/same-size-hero-tier.test.js compares the two rules). */
+    .component-content a:has(> img[data-scale-context="medium"]:only-child),
+    .component-content a:has(> img[data-scale-context="preview"]:only-child) {
+      display: block;
+    }
+
     /* Fallback for old captures without classification — use icon tier (25px) */
     .component-content img:not([data-scale-context]) {
       max-width: 25px !important;

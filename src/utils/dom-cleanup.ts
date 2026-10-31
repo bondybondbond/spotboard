@@ -2897,7 +2897,45 @@ export function classifyImagesForRefresh(html: string): string {
     img.setAttribute('data-scale-context', context);
   });
 
+  harmonizeDeclaredSizeRuns(temp);
   return temp.innerHTML;
+}
+
+/**
+ * #233: pictures a page declares at the same size, in the same role, are one tier. Capture measures the
+ * rendered layout (a 360x202 Cricbuzz story fills its card -> preview); a refresh has no layout, so a story
+ * that is new since the capture falls to the height ladder above (202px -> medium) while the older stories keep
+ * their captured preview -- one card with two picture sizes for identical markup. Within one card, images that
+ * already hold a hero tier (medium/preview) and share declared width x height and role (same class + 3 ancestor
+ * tag.class chain, as imageRoleSignature in dom-snapshot.ts) all take the highest of those tiers.
+ * Only hero tiers are compared, so a same-size small/thumbnail image is never promoted (the live board's one
+ * other mixed group is a CNN 1920x1080 picture that is thumbnail next to a preview). Brand/sponsor/icon roles skip.
+ */
+const HERO_TIERS = ['medium', 'preview']; // lowest -> highest
+const DECLARED_RUN_EXCLUDED_ROLE_RE = /logo|sponsor|icon|avatar|badge|flag|emoji|sprite/i;
+
+function harmonizeDeclaredSizeRuns(root: ParentNode): void {
+  const groups = new Map<string, HTMLImageElement[]>();
+  root.querySelectorAll<HTMLImageElement>('img[data-scale-context]').forEach(img => {
+    if (!HERO_TIERS.includes(img.getAttribute('data-scale-context')!)) return;
+    const w = parseInt(img.getAttribute('width')!) || 0;
+    const h = parseInt(img.getAttribute('height')!) || 0;
+    if (w <= 0 || h <= 0) return;
+    const role = [String(img.className)];
+    let el = img.parentElement;
+    for (let i = 0; i < 3 && el; i++, el = el.parentElement) role.push(el.tagName + '.' + String(el.className));
+    const roleKey = role.join('|');
+    if (DECLARED_RUN_EXCLUDED_ROLE_RE.test(roleKey + ' ' + (img.getAttribute('alt') || ''))) return;
+    const key = `${w}x${h}|${roleKey}`;
+    const list = groups.get(key);
+    if (list) list.push(img);
+    else groups.set(key, [img]);
+  });
+  groups.forEach(members => {
+    if (members.length < 2) return;
+    const top = Math.max(...members.map(m => HERO_TIERS.indexOf(m.getAttribute('data-scale-context')!)));
+    members.forEach(m => m.setAttribute('data-scale-context', HERO_TIERS[top]));
+  });
 }
 
 
