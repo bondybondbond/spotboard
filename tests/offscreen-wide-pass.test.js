@@ -3,13 +3,13 @@
 // tryOffscreenWindow now takes the same wide pass: widen once (1 s settle), re-extract, keep the wide capture unless it is
 // empty or collapsed the list structure, skip it when Chrome did not give a desktop-width popup. The #101 / #152 gates
 // then judge the ONE capture chosen here (tabBasedRefresh, unchanged). jsdom != Chrome: the real-site proof is the e2e.
-import { test, beforeEach } from 'node:test'
+import { test, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { loadRefreshEngine } from './helpers/refresh-engine-env.js'
+import { installFastTimers, restoreFastTimers } from './helpers/fast-timers.js'
 
 const g = await loadRefreshEngine()
 window.LazyLoad = await import('../.test-build/utils/lazy-load.js') // loaded by dashboard.html in production
-const realSetTimeout = globalThis.setTimeout
 const NARROW = '<div id="list"><p>narrow capture with Combo</p></div>'
 const WIDE = '<div id="list"><p>wide capture</p></div>'
 const LIST = n => '<ul>' + '<li>item</li>'.repeat(n) + '</ul>'
@@ -22,8 +22,7 @@ beforeEach(() => {
   updates = []
   extractResults = []
   innerWidth = 1384
-  waits = []
-  globalThis.setTimeout = (fn, ms, ...a) => { waits.push(ms); return (ms === 1000 || ms === 2000 || ms === 3000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, ms, ...a) }
+  waits = installFastTimers()
   globalThis.screen = { availLeft: 0, availWidth: 1920, availTop: 0, availHeight: 1040 }
   globalThis.chrome = {
     windows: {
@@ -46,9 +45,9 @@ beforeEach(() => {
     }
   }
 })
-const run = async (meta = {}) => {
-  try { return { html: await g.tryOffscreenWindow('https://example.com/', '#list', null, meta), meta } } finally { globalThis.setTimeout = realSetTimeout }
-}
+afterEach(restoreFastTimers)
+
+const run = async (meta = {}) => ({ html: await g.tryOffscreenWindow('https://example.com/', '#list', null, meta), meta })
 
 test('#186: the offscreen window widens once to 1400 after the first extraction and returns the wide capture', async () => {
   extractResults = [NARROW, WIDE]

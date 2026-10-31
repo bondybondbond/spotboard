@@ -4,15 +4,15 @@
 // image scroll never stacks with it; repeated extraction (30 steps of it) is idempotent; and the walk follows a block the
 // site replaced. jsdom has no layout and no site (a scroll handler stands in for the lazy loader); the real-site proof
 // is the e2e. The loop itself is tested in structure-settle.test.js.
-import { test, beforeEach } from 'node:test'
+import { test, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { loadRefreshEngine } from './helpers/refresh-engine-env.js'
+import { installFastTimers, restoreFastTimers } from './helpers/fast-timers.js'
 
 const g = await loadRefreshEngine()
 const LL = await import('../.test-build/utils/lazy-load.js')
 window.DomSnapshot = await import('../.test-build/utils/dom-snapshot.js')
 
-const realSetTimeout = globalThis.setTimeout
 let scrollCalls, scrollTops, ensureCalls, onScroll
 
 beforeEach(() => {
@@ -27,7 +27,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'scrollX', { configurable: true, get: () => 0 })
   window.scrollTo = (arg) => { scrollCalls++; scrollTops.push(arg && arg.top); onScroll(scrollCalls) }
   // the fixed 2s/3s/4s popup waits are not under test; the settle's own 350 ms / 500 ms waits shrink to 1 ms
-  globalThis.setTimeout = (fn, ms, ...a) => (ms === 1000 || ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, ms === 350 || ms === 500 ? 1 : ms, ...a)
+  installFastTimers({ shrink: [350, 500] })
   globalThis.screen = { availLeft: 0, availWidth: 1920, availTop: 0, availHeight: 1040 }
   globalThis.chrome = {
     windows: { create: async () => ({ id: 1, tabs: [{ id: 7 }] }), getLastFocused: async () => ({ id: 99 }), update: async () => {}, remove: async () => {} },
@@ -41,6 +41,7 @@ beforeEach(() => {
     }
   }
 })
+afterEach(restoreFastTimers)
 
 const page = (inner = '') => { document.body.innerHTML = `<div id="b"><h2>Breaking News</h2><ul id="l">${inner}</ul></div>` }
 const lis = n => '<li>story</li>'.repeat(n)
@@ -48,9 +49,7 @@ const mountOnScroll = (n) => (calls) => { if (calls >= 2) document.getElementByI
 const cleaned = html => (html.match(/<li>/g) || []).length
 // the check _tabRefreshForComponent builds, without a pipeline: every <li> counts
 const check = expected => html => { const count = cleaned(html); return { count, ok: LL.structureRecovered(count, expected) } }
-const run = async (meta) => {
-  try { return await g.tryActiveTab('https://example.com/', '#b', null, meta) } finally { globalThis.setTimeout = realSetTimeout }
-}
+const run = (meta) => g.tryActiveTab('https://example.com/', '#b', null, meta)
 
 test('0 cleaned structure vs a structured saved copy: the real extraction settles, then returns the mounted list', async () => {
   page()
@@ -78,7 +77,6 @@ test('#218 no reason is recorded when the capture passes, or when the page staye
   assert.ok(await run(meta))
   assert.equal(meta.structureStub, undefined, 'passed the floor')
 
-  globalThis.setTimeout = (fn, ms, ...a) => (ms === 1000 || ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, ms === 350 || ms === 500 ? 1 : ms, ...a)
   page()
   onScroll = () => {} // nothing ever mounts: count stays 0
   meta = { expectedStructure: 8, structureCheck: check(8) }
@@ -127,7 +125,6 @@ test('#72 image scroll never stacks with the settle: a settled card pays none, a
   await run({ expectedStructure: 4, structureCheck: check(4) })
   assert.equal(ensureCalls, 0, 'saved structure + empty block: the first extraction holds #72 back, the settle steps and the widen retry skip it')
   ensureCalls = 0
-  globalThis.setTimeout = (fn, ms, ...a) => (ms === 1000 || ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, ms === 350 || ms === 500 ? 1 : ms, ...a)
   onScroll = () => {}
   page(lis(3))
   document.getElementById('b').insertAdjacentHTML('beforeend', slots)
@@ -179,7 +176,7 @@ test('repeated extraction is idempotent: the same unchanged page extracted 30 ti
   let fn
   const real = globalThis.chrome.scripting.executeScript
   globalThis.chrome.scripting.executeScript = async (o) => { if (Array.isArray(o.args)) fn = o.func; return real(o) }
-  try { await g.tryActiveTab('https://example.com/', '#b', null, {}) } finally { globalThis.setTimeout = realSetTimeout }
+  await g.tryActiveTab('https://example.com/', '#b', null, {})
   const first = (await fn('#b', null, { skipLazy: true })).html
   for (let i = 0; i < 29; i++) assert.equal((await fn('#b', null, { skipLazy: true })).html, first, 'extraction ' + (i + 2))
 })
@@ -194,7 +191,7 @@ test('a user input that arrives BETWEEN steps stops the next scroll: the walk do
   globalThis.chrome.scripting.executeScript = async (o) => { if (Array.isArray(o.args)) fn = o.func; return real(o) }
   try {
     await g.tryActiveTab('https://example.com/', '#b', null, {})
-    globalThis.setTimeout = realSetTimeout
+    restoreFastTimers() // the in-tab walk ops below run on real timers, as before
     await fn('#b', null, { walk: { op: 'begin' } })
     const callsBefore = scrollCalls
     assert.deepEqual(await fn('#b', null, { walk: { op: 'scroll', y: 100 } }), { aborted: false })

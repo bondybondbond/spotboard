@@ -18,9 +18,10 @@
 //   countStructure (raw, in-tab) -> removed with the raw loop; the cleaned measure is covered by the wiring tests.
 //   tryActiveTab wiring (recovered / stalled / zero / shrunken healthy / widen retry / saved-structure count) -> kept,
 //     rebuilt on the walk ops. New: raw-lie both directions, one-measure drift, failed walk is fail-closed.
-import { test, beforeEach } from 'node:test'
+import { test, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { loadRefreshEngine } from './helpers/refresh-engine-env.js'
+import { installFastTimers, restoreFastTimers } from './helpers/fast-timers.js'
 
 const g = await loadRefreshEngine()
 const LL = await import('../.test-build/utils/lazy-load.js')
@@ -205,7 +206,6 @@ test('a throwing step propagates (the caller fails closed) and the listeners are
 })
 
 // ── tryActiveTab / _tabRefreshForComponent wiring ─────────────────────────────────────────────────
-const realSetTimeout = globalThis.setTimeout
 const ONE_DIV = inner => `<div id="list">${inner}</div>`
 const li = n => '<li>item</li>'.repeat(n)
 const xli = n => '<li class="x">raw</li>'.repeat(n)
@@ -215,7 +215,7 @@ let execCalls, site
 beforeEach(() => {
   execCalls = []
   site = { first: ONE_DIV(''), after: () => null, scrolls: 0, hasEmptyImageSlots: false, failScroll: false, widened: false, wide: null, scrollsAtWiden: 0, retryOpts: null, retryIdx: -1 }
-  globalThis.setTimeout = (fn, ms, ...a) => (ms === 1000 || ms === 2000 || ms === 3000 || ms === 4000) ? (queueMicrotask(fn), 0) : realSetTimeout(fn, (ms === 350 || ms === 500) ? 1 : ms, ...a)
+  installFastTimers({ shrink: [350, 500] }) // the settle's own 350 / 500 ms waits shrink to 1 ms
   globalThis.screen = { availLeft: 0, availWidth: 1920, availTop: 0, availHeight: 1040 }
   globalThis.chrome = {
     windows: { create: async () => ({ id: 1, tabs: [{ id: 7 }] }), getLastFocused: async () => ({ id: 99 }), update: async (id, info) => { if (info && info.width) { site.widened = true; site.scrollsAtWiden = site.scrolls } }, remove: async () => {} },
@@ -245,9 +245,8 @@ beforeEach(() => {
     }
   }
 })
-const run = async (meta) => {
-  try { return await g.tryActiveTab('https://example.com/', '#list', null, meta) } finally { globalThis.setTimeout = realSetTimeout }
-}
+afterEach(restoreFastTimers)
+const run = (meta) => g.tryActiveTab('https://example.com/', '#list', null, meta)
 // the check _tabRefreshForComponent builds: counts the CLEANED capture against the saved copy
 const checkFor = expected => html => { const count = cleanedCount(html); return { count, ok: structureRecovered(count, expected) } }
 const walkOps = () => execCalls.filter(o => o.walk).map(o => o.walk.op)
