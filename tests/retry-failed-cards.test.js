@@ -1,11 +1,12 @@
 // #164: "Retry failed cards" must retry exactly the cards listed as failed in the banner —
 // by id, through refreshAll(), without touching the cards that already worked and without
 // counting as a fresh Refresh All click in GA4.
-import { test, beforeEach } from 'node:test'
+import { test, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
 import { loadRefreshEngine } from './helpers/refresh-engine-env.js'
+import { installFastTimers, restoreFastTimers } from './helpers/fast-timers.js'
 
 const g = await loadRefreshEngine()
 const out = await build({ entryPoints: ['src/utils/exclusion-storage.ts'], bundle: true, write: false, format: 'esm', platform: 'node' })
@@ -16,7 +17,7 @@ const nativeSetTimeout = global.setTimeout
 const html = '<div class="card"><h2>T</h2><p>Content that is long enough to matter for the card here.</p></div>'
 const okResult = { success: true, html_cache: html, last_refresh: '2026-10-05T00:00:00.000Z', rawCaptureLength: 999 }
 
-let sync, local, session, refreshedIds, clickCount, ga4Events
+let sync, local, session, refreshedIds, clickCount, ga4Events, waits
 // Cards that fail; a Set so a test can change who fails on the retry.
 let failing
 
@@ -72,7 +73,11 @@ beforeEach(() => {
   btn.addEventListener('click', () => { clickCount += 100 }) // a full Refresh All via the button
   document.body.appendChild(btn)
   installStorage()
+  // #235: the 2 s button reset, 3.5 s reload and 10 s banner dismiss are logged, not run (the last two kept the process alive ~12 s; holding the 2 s reset keeps the "Nothing to retry" label readable)
+  waits = installFastTimers({ hold: [2000, 3500, 10000] })
 })
+
+afterEach(restoreFastTimers)
 
 // The five-card board: a + b("Same") + c("Same") + d + e — b and c share a name on purpose
 function seedBoard() {
@@ -92,6 +97,15 @@ test('Refresh All stashes the failed card ids (not just names) for the banner', 
   assert.deepEqual(stash.failed.map(f => f.id).sort(), ['b', 'd'])
   assert.equal(stash.successCount, 3)
   assert.equal(clickCount, 1) // the real Refresh All counted once
+})
+
+test('#235 timing guards: Refresh All reloads after 3.5 s, and the failure banner auto-dismisses after 10 s', async () => {
+  seedBoard()
+  const stash = await firstRunWithFailures(['b'])
+  assert.ok(waits.includes(3500), 'refreshAll schedules its reload at REFRESH_RELOAD_DELAY_MS (3.5 s)')
+  waits.length = 0
+  g.showRefreshFailureToast(stash.failed, stash.successCount)
+  assert.deepEqual(waits, [10000], 'the banner schedules exactly one 10 s auto-dismiss')
 })
 
 test('retry refreshes only the failed ids; the cards that worked are not touched', async () => {

@@ -4,6 +4,7 @@
 // test wait the real 6-12 s. Every requested wait is logged, so a test can still assert WHICH wait the code asked for.
 //
 //   beforeEach(() => { waits = installFastTimers() })      // optional { shrink: [350, 500] } -> real 1 ms timers
+//                                                          // optional { hold: [3500, 10000] } -> logged, never scheduled (#235)
 //   afterEach(restoreFastTimers)
 //
 // restoreFastTimers throws if a wait of 1 s or more reached a real timer, so a new wait value the stub does not cover fails
@@ -13,11 +14,14 @@ const INSTANT_MS = [1000, 2000, 3000, 4000]
 
 let realLongWaits = []
 
-export function installFastTimers({ shrink = [] } = {}) {
+export function installFastTimers({ shrink = [], hold = [] } = {}) {
   const waits = []
   realLongWaits = []
   globalThis.setTimeout = (fn, ms, ...args) => {
     waits.push(ms)
+    // #235: the reload (3.5 s) and banner auto-dismiss (10 s) timers run page-level side effects no test wants, so they are
+    // recorded for assertions but never fire, and never keep the process alive.
+    if (hold.includes(ms)) return 0
     if (INSTANT_MS.includes(ms)) { queueMicrotask(fn); return 0 }
     if (ms >= 1000) realLongWaits.push(ms)
     return realSetTimeout(fn, shrink.includes(ms) ? 1 : ms, ...args)

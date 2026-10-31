@@ -12,6 +12,7 @@
 ### Changed
 
 - **Behind the scenes: SpotBoard's own automatic checks run faster** (#234): some of the checks that guard the refresh windows waited in real time (several seconds each) whenever a single check refreshed a page more than once, which made the whole set take about 50 seconds. They now use a shared stand-in clock for those waits, so the set takes about 35 to 40 seconds. No check was removed, and the checks still confirm which waits SpotBoard asks for. Nothing changes in the extension itself.
+- **Behind the scenes: the "retry failed cards" checks no longer wait out two real timers** (#235): those checks finished in a third of a second but then sat for about 12 seconds until SpotBoard's 3.5-second reload and 10-second banner timers expired. The shared stand-in clock now records those two waits without running them, so the file takes about 2.5 seconds (most of that is loading), and a new check confirms SpotBoard still asks for the 3.5-second reload and 10-second banner waits. No check was removed. Nothing changes in the extension itself.
 
 ## [1.4.6] - 2026-10-24
 
