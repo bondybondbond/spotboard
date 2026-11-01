@@ -27,7 +27,9 @@
       --surface-card: #ffffff;
       --surface-raised: #EEEEEE;      /* card header strip */
       --surface-menu: #ffffff;        /* dropdowns, pickers, resize menu, modals-in-scope */
-      --surface-inset: #f8f9fa;       /* empty-state cards, menu hover fill */
+      --surface-inset: #f8f9fa;       /* empty-state cards, favicon chips */
+      --menu-hover-bg: rgba(0,0,0,0.12);   /* #236: card ⋯ menu row hover fill, 1.32:1 on --surface-menu */
+      --menu-hover-frame: #8a8a8a;         /* #236: card ⋯ menu row hover frame, 3.45:1 on --surface-menu */
       --title-hover-bg: rgba(0,0,0,0.10); /* #79: card-title hover — --surface-inset is too close to --surface-raised (#EEEEEE) to read as a hover cue in light mode */
       --surface-content: #ffffff;     /* captured-content well — SAME in both themes */
       /* #22: the white evidence panel is inset from the SpotBoard-owned card shell.
@@ -117,6 +119,8 @@
       --surface-raised: #3a3a4f;
       --surface-menu: #26263a;
       --surface-inset: #26263a;
+      --menu-hover-bg: rgba(255,255,255,0.10);   /* #236: KEEP IN SYNC with the @media dark block below; 1.37:1 on --surface-menu */
+      --menu-hover-frame: #8b8b99;               /* #236: 4.40:1 on --surface-menu */
       --title-hover-bg: #26263a;      /* #79: card-title hover — KEEP IN SYNC with the @media dark block below */
       --surface-content: #161621;     /* unchanged — evidence stays on a light well */
       --content-inset: 0;
@@ -194,6 +198,8 @@
         --surface-raised: #3a3a4f;
         --surface-menu: #26263a;
         --surface-inset: #26263a;
+        --menu-hover-bg: rgba(255,255,255,0.10);   /* #236: KEEP IN SYNC with :root[data-theme="dark"] above */
+        --menu-hover-frame: #8b8b99;               /* #236 */
         --title-hover-bg: #26263a;      /* #79: KEEP IN SYNC with :root[data-theme="dark"] above */
         --surface-content: #161621;
         --content-inset: 0;
@@ -571,7 +577,12 @@
       cursor: pointer;
     }
     .card-menu-seg button + button { border-left: 1px solid var(--border-subtle); }
-    .card-menu-seg button:hover { background: var(--surface-inset); }
+    /* #236: menu row hover = fill + 1px inset frame (the fill alone is ~1.3:1; the frame carries the cue). Declared before :focus-visible so the focus ring wins. */
+    .card-menu-seg button:hover {
+      background: var(--menu-hover-bg);
+      outline: 1px solid var(--menu-hover-frame);
+      outline-offset: -1px;
+    }
     .card-menu-seg button[aria-checked="true"] {
       background: var(--pill-active);
       color: #1a1a2e; /* dark ink on the golden pill in both themes (design.md: pill active = #FFCC67 + #1a1a2e) */
@@ -585,7 +596,7 @@
       opacity: 0.4;
       cursor: not-allowed;
     }
-    .card-menu-seg button:disabled:hover { background: none; }
+    .card-menu-seg button:disabled:hover { background: none; outline: none; }
     /* Nothing to format: the remembered choice is shown muted grey, not gold */
     .card-menu-seg button[aria-checked="true"]:disabled {
       background: var(--surface-inset);
@@ -633,13 +644,18 @@
       color: var(--text-primary);
       width: 100%;
     }
-    .card-menu-action:hover { background: var(--surface-inset); }
+    .card-menu-action:hover {
+      background: var(--menu-hover-bg);
+      outline: 1px solid var(--menu-hover-frame);
+      outline-offset: -1px;
+    }
     .card-menu-action:focus-visible {
       outline: 2px solid var(--accent-strong);
       outline-offset: -2px;
     }
     .card-menu-delete { color: var(--danger); }
     .card-menu-delete:hover { background: var(--danger-tint); }
+    .card-menu-delete:hover:not(:focus-visible) { outline-color: var(--danger); } /* keep the focus ring's own colour when both apply */
     button.card-menu-meta {
       display: block;
       width: 100%;
@@ -654,9 +670,16 @@
       cursor: pointer;
       opacity: 0.85;
       margin-top: 6px;
-      padding: 8px 4px 2px;
+      padding: 8px 4px 6px;
     }
-    button.card-menu-meta:hover { opacity: 1; text-decoration: underline; }
+    button.card-menu-meta:hover {
+      opacity: 1;
+      text-decoration: underline;
+      background: var(--menu-hover-bg);
+      outline: 1px solid var(--menu-hover-frame);
+      outline-offset: -1px;
+      border-radius: 6px;
+    }
     button.card-menu-meta:focus-visible {
       outline: 2px solid var(--accent-strong);
       outline-offset: 2px;

@@ -106,6 +106,10 @@ const TEXT = [
   ['add-board glyph on page',         '--pill-add-text',      '--bg-page',             null,             3.0],
   ['card-header icon glyph',          '--iconbtn-ink',        '--iconbtn-bg',          '--surface-raised', 3.0],
   ['ghost-card label on page',        '--ghost-label',        '--bg-page',             null,             4.5],
+  // --- #236 card ⋯ menu row hover: fill + frame, both must read against the menu surface ---
+  ['menu hover fill vs menu surface', '--menu-hover-bg',      '--surface-menu',        null,             1.3],
+  ['menu hover frame vs menu surface (UI)', '--menu-hover-frame', '--surface-menu',    null,             3.0],
+  ['menu text on hover fill',         '--text-primary',       '--menu-hover-bg',       '--surface-menu', 4.5],
   // --- #105 first-run example board (cards sit on the content well) ---
   ['example card text on content well', '--text-heading',   '--surface-content',     null,             4.5],
   ['example gain on content well',    '--example-up',         '--surface-content',     null,             4.5],
