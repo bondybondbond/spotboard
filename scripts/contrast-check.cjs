@@ -92,19 +92,28 @@ const TEXT = [
   ['chrome link on card',             '--link-chrome',        '--surface-card',        null,             4.5],
   ['focus ring on card',              '--accent',             '--surface-card',        null,             3.0],
   ['focus ring on page',              '--accent',             '--bg-page',             null,             3.0],
-  ['text on accent fill',             '--accent-text',        '--accent',              null,             4.5],
+  ['text on accent-strong fill (modal buttons, #237)', '--accent-text', '--accent-strong', null,           4.5],
   ['danger text on card',             '--danger',             '--surface-card',        null,             4.5],
   ['danger text on menu',             '--danger',             '--surface-menu',        null,             4.5],
+  // light 2.16 is accepted (decorative rule, #237); light never gates the exit code, dark still does
   ['warn accent rule (UI)',           '--warn-accent',        '--surface-card',        null,             3.0],
   ['text on warn-accent button',      '--warn-accent-text',   '--warn-accent',         null,             4.5],
-  ['warn banner text',                '--warn-banner-text',   '--warn-banner-bg',      '--surface-card', 4.5],
+  ['text on warn-accent button hover', '--warn-accent-text',  '--warn-accent-hover',   null,             4.5],  // #237
+  ['warn ink text on card (Open site)', '--warn-accent-ink',  '--surface-card',        null,             4.5],  // #237
+  ['warn ink text on open-btn hover', '--warn-accent-ink',    '--warn-open-bg',        '--surface-card', 4.5],  // #237
+  // #237 light fixes. INFO = light-only: dark was not changed here (dark 4.48 on the delete hover tint, pre-existing;
+  // the practice footer sits in the always-light modal island, so dark faint-on-card never renders).
+  ['danger text on hover tint',       '--danger',             '--danger-tint',         '--surface-menu', 4.5, true],
+  ['faint text on card/white (practice footer)', '--text-faint', '--surface-card',     null,             4.5, true],
+  ['warn banner text',              '--warn-banner-text',   '--warn-banner-bg',      '--surface-card', 4.5],
   ['tooltip text',                    '--tooltip-text',       '--tooltip-bg',          null,             4.5],
   ['inactive pill label',             '--pill-inactive-text', '--pill-inactive',       null,             4.5],
   ['inactive pill label (hover)',     '--pill-inactive-text', '--pill-inactive-hover', null,             4.5],
   ['active pill label (gold)',        '--pill-active-text',   '--pill-active',          null,             4.5],
   ['pill count text',                 '--pill-inactive-text', '--pill-count-bg',       null,             4.5],
   ['add-board glyph on page',         '--pill-add-text',      '--bg-page',             null,             3.0],
-  ['card-header icon glyph',          '--iconbtn-ink',        '--iconbtn-bg',          '--surface-raised', 3.0],
+  ['add-board glyph on page (hover, #237)', '--pill-add-hover',  '--bg-page',             null,             3.0],
+  ['card-header icon glyph',         '--iconbtn-ink',        '--iconbtn-bg',          '--surface-raised', 3.0],
   ['ghost-card label on page',        '--ghost-label',        '--bg-page',             null,             4.5],
   // --- #236 card ⋯ menu row hover: fill + frame, both must read against the menu surface ---
   ['menu hover fill vs menu surface', '--menu-hover-bg',      '--surface-menu',        null,             1.3],

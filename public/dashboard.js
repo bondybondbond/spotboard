@@ -216,7 +216,7 @@ function showImportConfirmModal(payload) {
     <div id="importSummaryText" style="margin-bottom: 20px; color: var(--text-muted);"></div>
     <div style="display: flex; gap: 10px;">
       <button id="cancelImportBtn" style="flex: 1; padding: 10px; background: var(--surface-inset); color: var(--text-primary); border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Cancel</button>
-      <button id="confirmImportBtn" style="flex: 1; padding: 10px; background: var(--accent); color: var(--accent-text); border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Replace board</button>
+      <button id="confirmImportBtn" style="flex: 1; padding: 10px; background: var(--accent-strong); color: var(--accent-text); border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Replace board</button>
     </div>
   `;
   // Dynamic values via textContent, not innerHTML interpolation — avoids any
@@ -2905,7 +2905,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
               <div style="font-weight: 600; margin-bottom: 4px;">Last updated:</div>
               <div style="color: var(--text-muted);">${currentTimestampText}</div>
             </div>
-            <button id="closeInfoModal" style="width: 100%; padding: 10px; background: var(--accent); color: var(--accent-text); border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+            <button id="closeInfoModal" style="width: 100%; padding: 10px; background: var(--accent-strong); color: var(--accent-text); border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
               OK
             </button>
           `;

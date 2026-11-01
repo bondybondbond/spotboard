@@ -53,7 +53,7 @@
       --text-primary: #1a1a2e;
       --text-heading: #1a1a1a;
       --text-muted: #5f6368;
-      --text-faint: #888888;
+      --text-faint: #6b6b6b;          /* #237: was #888888 (3.10:1 on page) */
       --text-on-content: #1a1a1a;     /* RESERVED (not wired in v1) — captured text keeps the UA default; option C only */
       --link-content: #1a56db;        /* RESERVED (not wired in v1) — captured links keep the UA default; option C only */
       /* accent / links */
@@ -63,11 +63,12 @@
       --accent-tint: rgba(102,126,234,0.06);
       --link-chrome: #1a73e8;
       /* semantic */
-      --danger: #e04040;
+      --danger: #c53030;              /* #237: was #e04040 (4.22:1 on white) */
       --danger-tint: #fff0f0;
       --warn-accent: #FF9800;
       --warn-accent-hover: #F57C00;
-      --warn-accent-text: #ffffff;    /* text on a --warn-accent fill (dark theme flips to ink for legibility) */
+      --warn-accent-text: #1a1a1a;    /* text on a --warn-accent fill (#237: ink in light too, white was 2.16:1) */
+      --warn-accent-ink: #A04A00;     /* #237: orange as TEXT/border on a light surface (fill keeps --warn-accent); dark = --warn-accent */
       --warn-banner-bg: #FFEECC;
       --warn-banner-text: #5D4037;
       --warn-open-bg: #FFF3E0;
@@ -87,8 +88,8 @@
       --pill-active-glow: rgba(255,204,103,0.45);
       --pill-count-bg: #ffffff;
       --pill-add-border: #bbbbd0;
-      --pill-add-text: #aaaabc;
-      --pill-add-hover: #9b8cd4;
+      --pill-add-text: #767690;       /* #237: was #aaaabc (2.00:1 on page) */
+      --pill-add-hover: #6a5acd;      /* #237: was #9b8cd4 (2.59:1), which made hover paler than the new resting glyph */
       /* elevation / misc */
       --card-shadow: rgba(0,0,0,0.1);
       --card-shadow-hover: rgba(0,0,0,0.15);
@@ -150,6 +151,7 @@
       --warn-accent: #fbbf24;
       --warn-accent-hover: #f59e0b;
       --warn-accent-text: #1a1a1a;
+      --warn-accent-ink: #fbbf24;
       --warn-banner-bg: rgba(251,191,36,0.12);
       --warn-banner-text: #e6d6b8;
       --warn-open-bg: rgba(251,191,36,0.16);
@@ -229,6 +231,7 @@
         --warn-accent: #fbbf24;
         --warn-accent-hover: #f59e0b;
         --warn-accent-text: #1a1a1a;
+        --warn-accent-ink: #fbbf24;
         --warn-banner-bg: rgba(251,191,36,0.12);
         --warn-banner-text: #e6d6b8;
         --warn-open-bg: rgba(251,191,36,0.16);
@@ -288,7 +291,7 @@
       --text-primary: #1a1a2e;
       --text-heading: #1a1a1a;
       --text-muted: #5f6368;
-      --text-faint: #888888;
+      --text-faint: #6b6b6b;          /* #237: keep in step with the light :root value */
       --accent: #667eea;
       --accent-text: #ffffff;
       --accent-tint: rgba(102,126,234,0.06);
@@ -783,8 +786,8 @@
     .card-error-banner .error-open-btn,
     .card-error-banner.has-recapture .error-retry-btn {
       background: var(--surface-card);
-      color: var(--warn-accent);
-      border: 1px solid var(--warn-accent);
+      color: var(--warn-accent-ink);
+      border: 1px solid var(--warn-accent-ink);
     }
 
     .card-error-banner .error-open-btn:hover,
@@ -800,8 +803,8 @@
       white-space: nowrap;
       cursor: pointer;
       background: var(--surface-card);
-      color: var(--warn-accent);
-      border: 1px solid var(--warn-accent);
+      color: var(--warn-accent-ink);
+      border: 1px solid var(--warn-accent-ink);
     }
 
     .error-recapture-btn:hover {
