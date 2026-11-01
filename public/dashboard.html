@@ -72,6 +72,11 @@
       --warn-banner-bg: #FFEECC;
       --warn-banner-text: #5D4037;
       --warn-open-bg: #FFF3E0;
+      /* failure toast (#238): a fixed orange overlay in BOTH themes, so these are declared here only and the dark blocks inherit them */
+      --toast-warn-bg: #FF9800;
+      --toast-retry-bg: #4338CA;      /* white text 7.9:1, 3.67:1 against the orange (it is a UI control) */
+      --toast-retry-bg-hover: #3730A3;
+      --toast-retry-text: #ffffff;
       /* header */
       --header-grad-a: #667eea;
       --header-grad-b: #764ba2;
@@ -835,8 +840,8 @@
     }
 
     .toast-retry-btn {
-      background: #667eea;
-      color: white;
+      background: var(--toast-retry-bg);
+      color: var(--toast-retry-text);
       border: none;
       padding: 6px 12px;
       border-radius: 4px;
@@ -847,7 +852,7 @@
     }
 
     .toast-retry-btn:hover {
-      background: #5568d3;
+      background: var(--toast-retry-bg-hover);
     }
 
     /* ===== GRID SIZE PRESETS ===== */
@@ -1944,7 +1949,7 @@
 
     /* Warning Toast - Full orange for failures (matches single-card toast style) */
     .refresh-toast--warning {
-      background: #FF9800;
+      background: var(--toast-warn-bg);
       border: none;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
       color: #1a1a1a;

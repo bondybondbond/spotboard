@@ -105,6 +105,11 @@ const TEXT = [
   // the practice footer sits in the always-light modal island, so dark faint-on-card never renders).
   ['danger text on hover tint',       '--danger',             '--danger-tint',         '--surface-menu', 4.5, true],
   ['faint text on card/white (practice footer)', '--text-faint', '--surface-card',     null,             4.5, true],
+  // #238 failure toast: fixed orange in both themes. Retry label on its fill, and the fill as a control against the toast (UI 3.0)
+  ['toast Retry text on its fill',    '--toast-retry-text',   '--toast-retry-bg',      null,             4.5],
+  ['toast Retry text on its hover',   '--toast-retry-text',   '--toast-retry-bg-hover', null,            4.5],
+  ['toast Retry fill vs toast (UI)',  '--toast-retry-bg',     '--toast-warn-bg',       null,             3.0],
+  ['toast Retry hover fill vs toast (UI)', '--toast-retry-bg-hover', '--toast-warn-bg', null,            3.0],
   ['warn banner text',              '--warn-banner-text',   '--warn-banner-bg',      '--surface-card', 4.5],
   ['tooltip text',                    '--tooltip-text',       '--tooltip-bg',          null,             4.5],
   ['inactive pill label',             '--pill-inactive-text', '--pill-inactive',       null,             4.5],
