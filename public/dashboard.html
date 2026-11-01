@@ -936,8 +936,11 @@
       border-bottom: none;
     }
 
+    /* #239: #236 hover pair. The active (selected) row keeps its own fill (declared below) and shows the frame only. */
     .resize-menu-option:hover {
-      background: var(--surface-inset);
+      background: var(--menu-hover-bg);
+      outline: 1px solid var(--menu-hover-frame);
+      outline-offset: -1px;
     }
 
     .resize-menu-option.active {
@@ -2139,7 +2142,12 @@
       font-size: 13px;
       color: var(--text-primary);
     }
-    #advanced-menu-dropdown button:hover { background: var(--surface-inset); }
+    /* #239: same hover pair as the card ⋯ menu (#236); declared before :focus-visible so the ring wins */
+    #advanced-menu-dropdown button:hover {
+      background: var(--menu-hover-bg);
+      outline: 1px solid var(--menu-hover-frame);
+      outline-offset: -1px;
+    }
     #advanced-menu-dropdown button:focus-visible { outline: 2px solid var(--link-chrome); outline-offset: -2px; }
     #advanced-menu-dropdown .sb-menu-divider { height: 1px; margin: 4px 0; background: var(--border-subtle); }
 
@@ -2611,9 +2619,15 @@
       gap: 8px;
       width: 100%;
     }
-    .sb-board-menu button:hover { background: var(--surface-inset); }
+    /* #239: Sort, Filter and board-tab menus use the #236 hover pair; the frame is skipped while the button has a keyboard focus ring so the ring is not replaced */
+    .sb-board-menu button:hover { background: var(--menu-hover-bg); }
+    .sb-board-menu button:hover:not(:focus-visible) {
+      outline: 1px solid var(--menu-hover-frame);
+      outline-offset: -1px;
+    }
     .sb-board-menu button.sb-danger { color: var(--danger); }
     .sb-board-menu button.sb-danger:hover { background: var(--danger-tint); }
+    .sb-board-menu button.sb-danger:hover:not(:focus-visible) { outline-color: var(--danger); }
     .sb-board-empty {
       font-size: 14px;
       color: var(--text-primary);
@@ -2687,7 +2701,11 @@
       line-height: 1;
       transition: background 0.1s;
     }
-    .sb-emoji-picker button:hover { background: var(--surface-inset); }
+    .sb-emoji-picker button:hover { background: var(--menu-hover-bg); } /* #239 */
+    .sb-emoji-picker button:hover:not(:focus-visible) {
+      outline: 1px solid var(--menu-hover-frame);
+      outline-offset: -1px;
+    }
   </style>
 </head>
 <body>

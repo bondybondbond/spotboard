@@ -204,9 +204,51 @@ function runSep(name, tokens) {
   return fail;
 }
 
+// ---------- 3. MENU HOVER RULES (#239 tripwire) ----------
+// Reads every menu/dropdown/picker `:hover` rule out of the stylesheet and checks that a token-coloured
+// background is visibly different from BOTH surfaces a menu can sit on. #236/#237/#239 were each the same
+// defect (hover token ~= menu surface) found by eye per menu; this makes the next one fail here instead.
+// Only the --danger-tint fill is exempt (a state colour; the row also gets a danger frame). A non-token background is
+// printed as a skip; a token that does not resolve is a failure.
+const MENU_HOVER_FLOOR = 1.3;
+function runMenuHover(name, tokens) {
+  console.log('\n=== MENU HOVER RULES — ' + name + ' (each token fill vs --surface-menu and --surface-card, floor ' + MENU_HOVER_FLOOR + ') ===');
+  const css = html.slice(html.indexOf('<style'), html.indexOf('</style>'));
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+  let fail = 0, seen = 0;
+  for (const [, selRaw, body] of rules) {
+    const sel = selRaw.replace(/\/\*[\s\S]*?\*\//g, '').trim().replace(/\s+/g, ' ');
+    // menu-btn = the ☰ trigger sitting on the purple header, not a row inside a menu
+    if (!/:hover\b/.test(sel) || !/menu|dropdown|picker/.test(sel) || /menu-btn\b/.test(sel)) continue;
+    const bg = body.match(/(?:^|[\s;])background(?:-color)?\s*:\s*([^;]+)/);
+    if (!bg) continue;
+    const value = bg[1].replace(/!important/i, '').trim();
+    const isVar = value.startsWith('var(')
+    const token = isVar ? value.slice(4).split(/[,)]/)[0].trim() : null;
+    if (token === '--danger-tint') continue; // state colour; the row also gets a danger frame
+    let fill = null;
+    try { fill = isVar ? resolve(token, tokens) : parse(value, tokens); } catch (e) { /* keyword such as none / transparent */ }
+    if (!fill && !isVar) { console.log('  --   skip   no colour to measure  ' + sel + '  ' + value); continue; }
+    seen++;
+    if (!fill) { fail++; console.log('  !! FAIL   token not resolvable (browser would drop it)  ' + sel + '  ' + value); continue; }
+    const m = [null, value];
+    const worst = Math.min(...['--surface-menu', '--surface-card'].map(s => {
+      const base = resolve(s, tokens);
+      return ratio(fill[3] < 1 ? over(fill, base) : fill, base);
+    }));
+    const ok = worst >= MENU_HOVER_FLOOR;
+    if (!ok) fail++;
+    console.log('  ' + MENU_HOVER_FLOOR.toFixed(1) + '  ' + worst.toFixed(2).padStart(6) + '  ' + (ok ? ' ok ' : 'FAIL') + '   ' + sel + '  ' + m[1]);
+  }
+  if (!seen) { console.log('  !! no menu :hover rules found — the scan itself is broken'); fail++; }
+  console.log('  -> ' + fail + ' fail over ' + seen + ' rules');
+  return fail;
+}
+
 const lf = runText('LIGHT', LIGHT);
-let df = 0, ds = 0;
-if (Object.keys(DARK).length) { df = runText('DARK', DARK); ds = runSep('DARK', DARK); }
+let df = 0, ds = 0, mhl = 0, mhd = 0;
+mhl = runMenuHover('LIGHT', LIGHT);
+if (Object.keys(DARK).length) { df = runText('DARK', DARK); ds = runSep('DARK', DARK); mhd = runMenuHover('DARK', DARK); }
 console.log('\nTOTAL — light text/ui fail: ' + lf + '   dark text/ui fail: ' + df +
-  '   dark separation thin: ' + ds + '   dark-block drift: ' + SYNC_FAIL);
-process.exit(df + ds + SYNC_FAIL > 0 ? 1 : 0);
+  '   dark separation thin: ' + ds + '   dark-block drift: ' + SYNC_FAIL + '   menu-hover thin: ' + (mhl + mhd));
+process.exit(df + ds + SYNC_FAIL + mhl + mhd > 0 ? 1 : 0);
