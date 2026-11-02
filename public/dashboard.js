@@ -3448,7 +3448,7 @@ function showStyledToast(title, message, type = 'info') {
       </div>
       <div style="flex: 1;">
         <div style="font-weight: 600; margin-bottom: 2px;">${title}</div>
-        <div style="font-size: 13px; opacity: 0.9;">${message}</div>
+        <div style="font-size: 13px; opacity: ${type === 'success' ? 0.95 : 0.9};">${message}</div>
       </div>
     </div>
   `;
@@ -3458,8 +3458,8 @@ function showStyledToast(title, message, type = 'info') {
     position: fixed;
     bottom: 24px;
     right: 24px;
-    background: ${type === 'success' ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.95) 0%, rgba(22, 163, 74, 0.95) 100%)' : 
-                 type === 'info' ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.90) 0%, rgba(220, 38, 38, 0.90) 100%)' :
+    background: ${type === 'success' ? 'linear-gradient(135deg, #15803d 0%, #166534 100%)' :
+                 type === 'info' ? 'linear-gradient(135deg, #b91c1c 0%, #991b1b 100%)' :
                  'linear-gradient(135deg, rgba(25, 35, 55, 0.95) 0%, rgba(35, 45, 65, 0.95) 100%)'};
     color: white;
     padding: 16px 20px;

@@ -90,6 +90,7 @@ const TEXT = [
   ['template badge text',             '--text-muted',         '--surface-inset',       '--surface-card', 4.5],
   ['chrome link on menu',             '--link-chrome',        '--surface-menu',        null,             4.5],
   ['chrome link on card',             '--link-chrome',        '--surface-card',        null,             4.5],
+  ['card size label (11px, #240)',    '--accent-strong',      '--surface-menu',        null,             4.5],
   ['focus ring on card',              '--accent',             '--surface-card',        null,             3.0],
   ['focus ring on page',              '--accent',             '--bg-page',             null,             3.0],
   ['text on accent-strong fill (modal buttons, #237)', '--accent-text', '--accent-strong', null,           4.5],

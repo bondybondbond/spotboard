@@ -887,7 +887,7 @@
       padding: 4px 8px;
       font-size: 11px;
       font-weight: 600;
-      color: var(--accent);
+      color: var(--accent-strong);   /* #240: --accent (#667eea) was 3.66:1 on white at 11px; --accent-strong is #4F46E5 light, same as --accent in dark */
       cursor: pointer;
       z-index: 10;
       opacity: 1.0; /* Fully solid - maximum visibility */
@@ -2573,8 +2573,8 @@
       line-height: 1;
     }
     .sb-tab:hover .sb-tab-kebab,
-    .sb-tab.active .sb-tab-kebab { opacity: 0.45; }   /* #22: opacity-of-currentColor reproduces the pre-#22 rgba(0,0,0,0.45) glyph on light, and themes on dark */
-    .sb-tab-kebab:hover { opacity: 0.75; }
+    .sb-tab.active .sb-tab-kebab { opacity: 0.6; }   /* #22: opacity-of-currentColor themes itself. #240: 0.45 was 2.46:1 light / 2.60 dark on the only route to Rename/Delete board; 0.6 = ~3.5:1 both */
+    .sb-tab .sb-tab-kebab:hover { opacity: 0.75; }   /* #240: was `.sb-tab-kebab:hover`, which lost to `.sb-tab:hover .sb-tab-kebab` on specificity, so the dots never brightened under the pointer */
     .sb-tab-add {
       padding: 7px 14px;
       border-radius: 99px;
