@@ -18,21 +18,42 @@ const RECAPTURE_BUTTON_HTML = '<button type="button" class="error-recapture-btn"
 
 // #118: one template for the failure banner (first render + live failure). Message row on top,
 // action row below; `has-recapture` makes Re-capture the primary button (Retry can't fix those failures).
+// #226: recovery ladder for content_shrunk only. Step 0 = every other failure (banner as before), 1 = Retry only,
+// 2 = Retry + Fetch latest, offered after that card's own banner Retry ended in content_shrunk again. The marker is a runtime Set in
+// this open dashboard: never stored, so a reload (Refresh All reloads too), a delete or a re-capture always returns the card to step 1.
+const shrunkRetryIds = new Set()
+const FETCH_LATEST_WARNING = "Fetches the page again and replaces your saved copy with whatever it shows now. This may contain fewer items and can't be undone."
+function shrunkLadderStep(component, errorCode) {
+  if (errorCode !== 'content_shrunk') return 0
+  return shrunkRetryIds.has(component.id) ? 2 : 1
+}
+
+// Keeps the marker honest after any outcome: set only by the card's own banner Retry failing with content_shrunk AGAIN (the failure it
+// retried was already content_shrunk); cleared by anything else.
+function updateShrunkMarker(component, { fromBannerRetry = false, previousCode = null } = {}) {
+  const stillShrunk = component.lastOutcome === 'failed' && component.lastErrorCode === 'content_shrunk'
+  if (stillShrunk && fromBannerRetry && previousCode === 'content_shrunk') shrunkRetryIds.add(component.id)
+  else if (!stillShrunk) shrunkRetryIds.delete(component.id)
+}
+
 function buildErrorBannerHTML(component, errorCode) {
   const offerRecapture = shouldOfferRecapture(component)
+  const step = shrunkLadderStep(component, errorCode)
   return `
     <div class="card-error-banner${offerRecapture ? ' has-recapture' : ''}">
       <span class="error-icon">⚠️</span>
       <span class="error-message">
         Refresh failed: <strong>${getErrorLabel(errorCode, component)}</strong>
       </span>
+      ${step === 2 ? `<p class="error-fetch-warning">${FETCH_LATEST_WARNING}</p>` : ''}
       <div class="error-actions">
         <button class="error-retry-btn" data-component-id="${component.id}">
           Retry
         </button>
-        <a href="${component.url}" target="_blank" class="error-open-btn">
+        ${step === 2 ? `<button class="error-fetch-btn" data-component-id="${component.id}">Fetch latest and replace</button>` : ''}
+        ${step === 0 ? `<a href="${component.url}" target="_blank" class="error-open-btn">
           Open site
-        </a>
+        </a>` : ''}
         ${offerRecapture ? RECAPTURE_BUTTON_HTML : ''}
       </div>
     </div>`
@@ -2585,9 +2606,13 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
 
           const isRetry = refreshSingleBtn.dataset.retry === '1';
           delete refreshSingleBtn.dataset.retry;
+          const previousCode = component.lastOutcome === 'failed' ? component.lastErrorCode : null; // #226: read before this refresh overwrites it
+          // #226: the banner's "Fetch latest" has its own one-shot flag (not `retry`, which also feeds the marker below)
+          const isFetchLatest = refreshSingleBtn.dataset.fetchLatest === '1';
+          delete refreshSingleBtn.dataset.fetchLatest;
 
           try {
-            const result = await refreshComponent(component);
+            const result = await refreshComponent(component, { fetchLatest: isFetchLatest });
 
             // Shared safe apply path — same helper refreshAll() uses. Enforces
             // "a failed refresh never overwrites last-known-good html_cache".
@@ -2606,6 +2631,11 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
 
             const attemptTimestamp = syncEntry.lastAttemptAt;
             const errorCode = syncEntry.lastErrorCode;
+
+            // #226: Fetch latest is consumed whatever its outcome; only the card's own banner Retry can arm step 2
+            if (isFetchLatest) shrunkRetryIds.delete(component.id);
+            updateShrunkMarker(component, { fromBannerRetry: isRetry, previousCode });
+            // (before the write below: a storage error must not leave a stale marker behind)
 
             // Persist — one write path for every outcome (#116): only refresh-owned fields are
             // written, onto freshly-read records, so nothing else on the card is disturbed. Then
@@ -2629,14 +2659,22 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
               showToast(`"${displayName}" refreshed`);
             } else if (!result.success) {
               // ---- FAILURE UI ---- (refreshComponent said failure; content-loss lands here too)
-              trackRefreshFailure(component, result, isRetry);
+              trackRefreshFailure(component, result, isRetry || isFetchLatest); // Fetch latest is a user retry: same existing param, no new event
 
               // 1. Menu status line shows when the last attempt failed
               setCardMenuStatus(card, `Last attempt failed ${formatRelativeTime(attemptTimestamp)}`, true);
 
               // 2. Add error banner if not already present
               const cardHeader = card.querySelector('.card-header');
-              const existingBanner = card.querySelector('.card-error-banner');
+              let existingBanner = card.querySelector('.card-error-banner');
+              // #226: the content_shrunk ladder changes the banner's buttons (Open site out, Fetch latest in), so a banner
+              // that is entering, leaving or moving within the ladder is rebuilt instead of relabelled
+              let restoreBannerFocus = false;
+              if (existingBanner && (shrunkLadderStep(component, errorCode) !== 0 || !existingBanner.querySelector('.error-open-btn'))) {
+                restoreBannerFocus = existingBanner.contains(document.activeElement); // the relabel path kept keyboard focus; so does the rebuild
+                existingBanner.remove();
+                existingBanner = null;
+              }
               if (!existingBanner && cardHeader) {
                 // Insert after card header
                 cardHeader.insertAdjacentHTML('afterend', buildErrorBannerHTML(component, errorCode));
@@ -2646,10 +2684,21 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
                 const retryBtn = errorBanner.querySelector('.error-retry-btn');
                 retryBtn.addEventListener('click', (e) => {
                   e.stopPropagation();
+                  if (refreshSingleBtn.disabled) return; // a click on a disabled button does nothing, so its one-shot flag would be left set for the NEXT refresh (#226)
                   refreshSingleBtn.dataset.retry = '1';
                   refreshSingleBtn.click();
                 });
+                const fetchBtn = errorBanner.querySelector('.error-fetch-btn');
+                if (fetchBtn) {
+                  fetchBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (refreshSingleBtn.disabled) return; // same: never leave the waiver flag set for a later ordinary refresh
+                    refreshSingleBtn.dataset.fetchLatest = '1';
+                    refreshSingleBtn.click();
+                  });
+                }
                 wireRecaptureButtons(errorBanner, component);
+                if (restoreBannerFocus) retryBtn.focus();
               } else if (existingBanner) {
                 // Banner already up from a prior failure — refresh its label so a new
                 // failure category (e.g. content_lost) isn't hidden behind a stale message.
@@ -2682,6 +2731,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
             console.error('Single card refresh error:', err);
             showToast(`"${displayName}" refresh error`);
           } finally {
+            if (isFetchLatest) shrunkRetryIds.delete(component.id); // #226: consumed whatever the outcome, a throw included
             refreshSingleBtn.disabled = false;
             refreshSingleBtn.classList.remove('spinning');
           }
@@ -2695,8 +2745,21 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
           e.stopPropagation();
           // Trigger single card refresh by simulating click on refresh button
           const refreshBtn = card.querySelector('.refresh-single-btn');
-          if (refreshBtn) {
+          if (refreshBtn && !refreshBtn.disabled) {
             refreshBtn.dataset.retry = '1';
+            refreshBtn.click();
+          }
+        });
+      }
+      // #226: a banner built at first render never shows Fetch latest (the marker is empty after a load), but wire it anyway so a
+      // later render without a reload cannot leave a dead button
+      const errorFetchBtn = card.querySelector('.error-fetch-btn');
+      if (errorFetchBtn) {
+        errorFetchBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const refreshBtn = card.querySelector('.refresh-single-btn');
+          if (refreshBtn && !refreshBtn.disabled) {
+            refreshBtn.dataset.fetchLatest = '1';
             refreshBtn.click();
           }
         });
@@ -2714,6 +2777,7 @@ function showCategoryPickerOverlay(container, { clearContainer = true, showCance
         const shouldDelete = confirm(`Delete "${component.customLabel || component.name}"? This cannot be undone.`);
         if (!shouldDelete) card.querySelector('.card-menu-btn').focus();
         if (shouldDelete) {
+          shrunkRetryIds.delete(component.id); // #226
           // GA4: Track component deletion
           const cardAgeDays = window.GA4.ageBandFromDays(Math.floor((Date.now() - new Date(component.created_at || component.last_refresh || Date.now()).getTime()) / (1000 * 60 * 60 * 24)));
           sendEvent('component_deleted', {

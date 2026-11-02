@@ -1429,9 +1429,13 @@ async function _tabRefreshForComponent(component, fingerprint, expectedImgCount,
   // #202: after a structure settle in the focused popup, is the CLEANED capture comparable to the saved copy? Same
   // pipeline as the saved copy, so the counts are like-for-like (the raw block holds hidden/excluded items it lost).
   const expectedStructure = _countStructure(component.html_cache);
+  // #226: "Fetch latest" waives the size RATIO for this one refresh: the capture is judged against a baseline of 0, which leaves
+  // structureRecovered's own 3-item minimum. expectedStructure itself stays (it gates the settle scroll), and the baseline judged
+  // against is reported back so _wideCaptureBetter follows the same rule.
+  const judgedBaseline = _fetchLatestComponents.has(component) ? 0 : expectedStructure;
   const structureCheck = html => {
     const count = _countStructure(applySanitizationPipeline(html, component));
-    return { count, ok: window.LazyLoad ? window.LazyLoad.structureRecovered(count, expectedStructure) : count > 0 };
+    return { count, expected: judgedBaseline, ok: window.LazyLoad ? window.LazyLoad.structureRecovered(count, judgedBaseline) : count > 0 };
   };
   const run = () => tabBasedRefresh(component.url, component.selector, fingerprint, expectedImgCount, expectedLargeImgCount,
     flagged && !probes && !quietOnly, probes || component.requiresFixedCaptureWidth === true,
@@ -1457,6 +1461,10 @@ async function _tabRefreshForComponent(component, fingerprint, expectedImgCount,
   _probeOutcome.set(component, result && result.html ? 'accepted' : 'rejected');
   return result;
 }
+
+// #226: components whose current refreshComponent call is a "Fetch latest" (size ratio waived once). Keyed by the component
+// object: refreshAll builds its own objects from storage, so no other refresh can inherit it. Runtime only, never stored.
+const _fetchLatestComponents = new WeakSet();
 
 // #152: which lane refreshAll has a flagged card in: 'probe' = quiet attempt only (concurrent pool), 'focus' = straight to
 // the focused popup (serial lane). WeakMaps, not properties on the component: nothing here may ever reach storage.
@@ -1720,12 +1728,19 @@ function _wideCaptureBetter(narrowHtml, wideHtml, meta = {}) {
     const LL = window.LazyLoad;
     const narrow = meta.structureCheck(narrowHtml).count;
     if (narrow < LL.MIN_SAVED_STRUCTURE) return true;
-    const wide = meta.structureCheck(wideHtml).count;
-    const expected = meta.expectedStructure || 0;
-    if (expected >= LL.MIN_SAVED_STRUCTURE && LL.structureRecovered(narrow, expected)) {
-      return LL.structureRecovered(wide, expected) && wide >= Math.min(narrow, expected); // a narrow capture that already passes is only replaced by one at least as complete as the saved copy (narrow-only list items must not make the correct wide capture look smaller)
-    }
-    return LL.structureRecovered(wide, narrow);
+    const wideCheck = meta.structureCheck(wideHtml);
+    const wide = wideCheck.count;
+    const decide = expected => {
+      if (expected >= LL.MIN_SAVED_STRUCTURE && LL.structureRecovered(narrow, expected)) {
+        return LL.structureRecovered(wide, expected) && wide >= Math.min(narrow, expected); // a narrow capture that already passes is only replaced by one at least as complete as the saved copy (narrow-only list items must not make the correct wide capture look smaller)
+      }
+      return LL.structureRecovered(wide, narrow);
+    };
+    const ordinary = meta.expectedStructure || 0;
+    const judged = typeof wideCheck.expected === 'number' ? wideCheck.expected : ordinary;
+    // #226: under "Fetch latest" the saved copy is not the baseline (judged = 0), but the choice must never be stricter than an
+    // ordinary refresh: it takes the wide capture when either rule would
+    return decide(judged) || (judged !== ordinary && decide(ordinary));
   } catch (_) { return false; }
 }
 
@@ -2762,7 +2777,17 @@ async function tryActiveTab(url, selector, fingerprint = null, meta = {}) {
  * 
  * Used in: dashboard.js refreshAll() loop
  */
-async function refreshComponent(component) {
+async function refreshComponent(component, { fetchLatest = false } = {}) {
+  // #226: fetchLatest = the banner's "Fetch latest" (size ratio waived for this one call; see _tabRefreshForComponent).
+  if (fetchLatest) _fetchLatestComponents.add(component);
+  try {
+    return await _refreshComponentCore(component);
+  } finally {
+    _fetchLatestComponents.delete(component);
+  }
+}
+
+async function _refreshComponentCore(component) {
   try {
         // Check if this site requires tab-based refresh (session-dependent content)
     // Count images in original for fallback detection

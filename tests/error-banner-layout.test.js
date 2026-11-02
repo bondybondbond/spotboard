@@ -8,7 +8,7 @@ import { loadRefreshEngine } from './helpers/refresh-engine-env.js'
 
 const g = await loadRefreshEngine()
 const src = readFileSync(new URL('../public/dashboard.js', import.meta.url), 'utf8')
-const start = src.indexOf('function buildErrorBannerHTML')
+const start = src.indexOf('const shrunkRetryIds') // #226: the ladder helpers sit right above the banner template
 const body = src.slice(start, src.indexOf('function startRecapture'))
 const RECAPTURE_BUTTON_HTML = '<button type="button" class="error-recapture-btn">Re-capture</button>'
 const build = new Function('getErrorLabel', 'shouldOfferRecapture', 'RECAPTURE_BUTTON_HTML', body + '; return buildErrorBannerHTML')(g.getErrorLabel, g.shouldOfferRecapture, RECAPTURE_BUTTON_HTML)
@@ -25,7 +25,7 @@ for (const code of ['layout_changed', 'content_lost', 'exclusions_unapplied', 'p
   })
 }
 
-for (const code of ['network', 'skeleton', 'render_degraded', 'content_shrunk', 'unknown']) {
+for (const code of ['network', 'skeleton', 'render_degraded', 'unknown']) {
   test(`${code} (negative): no Re-capture, no has-recapture, Retry stays the only primary`, () => {
     const html = build(comp(code), code)
     assert.doesNotMatch(html, /has-recapture/)
@@ -33,6 +33,17 @@ for (const code of ['network', 'skeleton', 'render_degraded', 'content_shrunk', 
     assert.ok(html.includes('error-retry-btn') && html.includes('error-open-btn'))
   })
 }
+
+// #226 (declared test edit, invariant 6): content_shrunk moved out of the list above because the owner-approved recovery ladder
+// drops Open site on this failure only. It still never offers Re-capture and Retry stays the only primary; the ladder itself
+// (step 1 / step 2) is pinned in fetch-latest-waiver.test.js.
+test('content_shrunk (negative): no Re-capture, no has-recapture, Retry stays the only primary; Open site is not offered (#226)', () => {
+  const html = build(comp('content_shrunk'), 'content_shrunk')
+  assert.doesNotMatch(html, /has-recapture/)
+  assert.doesNotMatch(html, /error-recapture-btn/)
+  assert.doesNotMatch(html, /error-open-btn/)
+  assert.ok(html.includes('error-retry-btn'))
+})
 
 // #219: the reset note rides on the banner label for the two non-exclusion Re-capture codes, only when the card has exclusions.
 const label = html => html.match(/<strong>([^<]*)<\/strong>/)[1]

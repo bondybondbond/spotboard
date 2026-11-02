@@ -789,6 +789,7 @@
     }
 
     .card-error-banner .error-open-btn,
+    .card-error-banner .error-fetch-btn,
     .card-error-banner.has-recapture .error-retry-btn {
       background: var(--surface-card);
       color: var(--warn-accent-ink);
@@ -796,8 +797,19 @@
     }
 
     .card-error-banner .error-open-btn:hover,
+    .card-error-banner .error-fetch-btn:hover,
     .card-error-banner.has-recapture .error-retry-btn:hover {
       background: var(--warn-open-bg);
+    }
+
+    /* #226: the warning above Retry + Fetch latest on the second content_shrunk failure; the irreversible action is the
+       quieter (outlined) button, the safe one stays the loud one. */
+    .card-error-banner .error-fetch-warning {
+      flex: 1 0 100%;
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--warn-banner-text);
     }
 
     /* #52: Re-capture outside the banner (empty placeholder) keeps the outlined look */
