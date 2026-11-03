@@ -2,7 +2,16 @@
 
 > **Dev/bug work runs the ai-dev-kit loop.** For any code change or bug: read `AGENTS.md` first, use `/plan` then `/deliver`. **GitHub Issues is the change record — not `BUGS.md`.** Non-dev routines (metrics, tester feedback, CWS submission prep) still use the skills in `spotboard-private/.claude/` from that folder.
 
-> **Autonomy and stop rule.** Ordinary tasks: run `/plan` through implementation and verification to a build ready for the owner's approval; don't ask permission for routine engineering choices. Stop earlier only if the owner limits scope ("diagnosis only", "approval required", "stop before implementation", in their message or a brief they relay: then no source edits, builds, commits, branches, issue/board updates or release actions, and an approved diagnosis or plan is not approval to implement) or a genuine owner-level decision (strategy, product taste, material risk) blocks progress. Push, publish and release always need explicit approval. Work on `main`; no branches or PRs unless the owner approves a concrete exception. If scope is unclear, ask one concise question.
+@AGENTS.md
+
+## Order of authority (ai-dev-kit shim; applies even if AGENTS.md is missing)
+
+- **The human's explicit instruction comes first.** It outranks skills, agents, the CPO, project docs and any brief the human pastes.
+- **Default: full autonomy.** Take a change from understanding to verified delivery without asking permission for ordinary technical decisions. A failed test or plain uncertainty is something to resolve, not a reason to ask.
+- **An explicit restriction narrows that** ("assess only", "diagnosis only", "plan but don't implement", "approve first") until the human lifts it. Allowed: read, reproduce in a throwaway environment, verify read-only, research, report. Not allowed: source edits, builds, commits, branches, issue/board updates, merges, pushes, releases, unless the human names them. An approved diagnosis or plan is not approval to implement.
+- **Valid stops:** a restriction, a strategic decision that is the human's, genuine taste, a material blocker you cannot resolve yourself, and the final push/close approval. Push, publish and release always need the human's explicit say-so.
+- If `AGENTS.md` did not load (nothing from it is in your context), say so in your first reply and work from this block. Canonical text: kit `AGENTS.md` §4; if the two differ, follow the more restrictive.
+- **SpotBoard additions:** run `/plan` through implementation and verification to a build ready for the owner's approval. Material risk is a valid stop. Work on `main`; no branches or PRs unless the owner approves a concrete exception. If scope is unclear, ask one concise question.
 
 Chrome extension that captures live website sections (news, deals, scores) into a personal dashboard. Manual refresh model — designed for 2-3 daily check-ins.
 
