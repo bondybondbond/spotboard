@@ -257,3 +257,73 @@ test('#214 a structure-marker rescue that is accepted still moves the card finge
     assert.notEqual(component.headingFingerprint, 'Original saved heading')
   } finally { g._tabRefreshForComponent = realTab }
 })
+
+// ─── #243: per-item class tokens in a repeated template ─────────────────────────────────────────────────────────────
+// The i Paper "Most Popular" card: ten rows, each carrying per-article WordPress classes (category-*, tag-*, post_label-*,
+// inews__section--*), so the ten row shapes change whenever the ranking rotates. Strict score of the owner's saved copy
+// vs the live section on 6 Nov 2026: 0.47 / 0.47 -> "Site layout changed" although nothing changed. Fixtures are the real
+// saved copy and the real live section (text and attributes other than class removed).
+const IPAPER_SAVED = fixture('ipaper-243-saved.html')
+const rowsOf = (html, n) => { const d = document.createElement('div'); d.innerHTML = html; [...d.firstElementChild.children].slice(n).forEach(r => r.remove()); return d.innerHTML }
+
+test('#243: i Paper live section vs the saved copy is the same section (strict was 0.47 / 0.47)', () => {
+  const live = fixture('ipaper-243-live.html')
+  const m = sectionMatch(live, IPAPER_SAVED)
+  assert.equal(m.folded, true, 'rescued by the per-item fold, not by moving a bar')
+  assert.ok(m.kept >= 0.62 && m.own >= 0.60, `CPO bar: the guard's documented legit minima, got ${m.kept} / ${m.own}`)
+  assert.equal(isDifferentSection(live, IPAPER_SAVED), false)
+})
+
+test('#243: a rotated ranking (ten other articles in the same template) is the same section', () => {
+  const rotated = fixture('ipaper-243-rotated.html')
+  const m = sectionMatch(rotated, IPAPER_SAVED)
+  assert.equal(m.folded, true)
+  assert.ok(m.kept >= 0.62 && m.own >= 0.60, `got ${m.kept} / ${m.own}`)
+  assert.equal(isDifferentSection(rotated, IPAPER_SAVED), false)
+})
+
+test('#243: fewer rows is still the same section down to 3 (a template group); 2 rows is judged strictly as before', () => {
+  const live = fixture('ipaper-243-live.html')
+  for (const n of [5, 3]) assert.equal(isDifferentSection(rowsOf(live, n), IPAPER_SAVED), false, `${n} rows`)
+  assert.equal(isDifferentSection(rowsOf(live, 2), IPAPER_SAVED), true, 'under 3 rows there is no template group: status quo')
+})
+
+test('#243: a different block of the same site (the lead story) is still a different section', () => {
+  const lead = fixture('ipaper-243-lead-block.html')
+  const m = sectionMatch(lead, IPAPER_SAVED)
+  assert.equal(m.folded, undefined)
+  assert.equal(isDifferentSection(lead, IPAPER_SAVED), true)
+})
+
+// Known limit, pinned so a change to it is deliberate: the check recognises the TEMPLATE, not the instance. Another
+// list of the same site built from the same row template (4 rows) looks like the card by shape, as any two uniform-class
+// feeds always have. The card's own selector is data-type scoped (one match), so nothing hands refresh this block.
+test('#243: residual limit - a different list built from the same row template passes by shape', () => {
+  assert.equal(isDifferentSection(fixture('ipaper-243-sibling-list.html'), IPAPER_SAVED), false)
+})
+
+const tplRow = (cls) => `<div class="${cls}"><div class="a"><span class="b"><i class="c"></i><i class="c"></i></span><span class="b"></span></div></div>`
+const tplCard = (...classes) => `<section>${classes.map(tplRow).join('')}</section>`
+
+test('#243: a token every row carries stays in the shape; only tokens missing from some row are per-item', () => {
+  const saved = tplCard('r k1 shared', 'r k2 shared', 'r k3 shared', 'r k4 shared', 'r k5 shared')
+  assert.equal(isDifferentSection(tplCard('r k6 shared', 'r k7 shared', 'r k8 shared', 'r k9 shared', 'r k0 shared'), saved), false)
+  // the shared token is part of the identity: rows that lost it are not the same template
+  assert.equal(isDifferentSection(tplCard('r k6', 'r k7', 'r k8', 'r k9', 'r k0'), saved), true)
+})
+
+test('#243: the 8-shape floor is counted before folding, so folding never switches the guard off', () => {
+  const saved = tplCard('r k1', 'r k2', 'r k3', 'r k4', 'r k5')
+  const m = sectionMatch(tplCard('r k6', 'r k7', 'r k8', 'r k9', 'r k0'), saved)
+  assert.notEqual(m, null, '3 inner + 5 row shapes = 8 before folding, 4 after: still judged')
+  assert.equal(m.folded, true)
+  // a wrong block is still rejected on such a thin card
+  assert.equal(isDifferentSection(feed(10), saved), true)
+})
+
+test('#243: stage 2 never touches a result that passes stage 1, and a card with no template group is judged as before', () => {
+  assert.deepEqual(sectionMatch(IPAPER_SAVED, IPAPER_SAVED), { kept: 1, own: 1 })
+  assert.equal(sectionMatch(feed(30), feed(10)).folded, undefined)
+  assert.equal(isDifferentSection(WRONG, SAVED), true)
+  assert.equal(sectionMatch(WRONG, SAVED).folded, undefined)
+})

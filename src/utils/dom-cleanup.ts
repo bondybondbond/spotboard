@@ -1,3 +1,5 @@
+import { MIN_RUN, templateKey } from './list-format';
+
 /**
  * DOM Cleanup Utilities for SpotBoard
  * Handles HTML sanitization, duplicate removal, URL fixing, and CSS injection
@@ -762,20 +764,66 @@ const SECTION_KEPT_MIN = 0.5;
 //    third = more than three times as many kinds of element as the card has.
 const SECTION_OWN_MIN = 1 / 3;
 
-function elementShapes(html: string): Set<string> {
+// #243: a class token that identifies ONE ITEM of a repeated row, not the section: WordPress stamps `category-*`, `tag-*`,
+// `post_label-*`, `post-<id>` onto every article row, so ten rows give ten different shapes and the set rotates with the
+// ranking. Definition (no site or prefix list): in a TEMPLATE GROUP -- >= 3 sibling elements under one parent that share
+// list-format.ts's `templateKey` (root class + inner skeleton) -- a token on some member but not on every member is per-item.
+// Differences from the list detector, on purpose: siblings need not be consecutive, and only the member's own class list
+// is looked at. A token every member carries (`category-news` on a 3-row group) stays.
+function templateGroupDrops(root: ParentNode): Map<Element, Set<string>> {
+  const drops = new Map<Element, Set<string>>();
+  const parents: ParentNode[] = [root, ...Array.from(root.querySelectorAll('*'))];
+  for (const parent of parents) {
+    if (parent.children.length < MIN_RUN) continue;
+    const groups = new Map<string, Element[]>();
+    for (const kid of Array.from(parent.children)) {
+      const key = templateKey(kid);
+      if (key === null) continue;
+      (groups.get(key) || groups.set(key, []).get(key)!).push(kid);
+    }
+    for (const members of groups.values()) {
+      if (members.length < MIN_RUN) continue;
+      const lists = members.map(el => new Set(shapeTokens(el)));
+      const common = new Set([...lists[0]].filter(tok => lists.every(l => l.has(tok))));
+      members.forEach((el, i) => drops.set(el, new Set([...lists[i]].filter(tok => !common.has(tok)))));
+    }
+  }
+  return drops;
+}
+
+function shapeTokens(el: Element): string[] {
+  return (el.getAttribute('class') || '').split(/\s+/)
+    .filter(tok => tok && !OWN_CLASS_RE.test(tok))
+    .map(foldClassToken);
+}
+
+interface ShapeSet { shapes: Set<string>; templates: Set<string> }
+
+// `templates` = the shapes of template-group members, per-item tokens dropped. Only filled when `foldPerItem`.
+function elementShapes(html: string, foldPerItem = false): ShapeSet {
   // <template>: inert (no image loads) and keeps a <tbody>/<tr>-rooted region's table tags (#171)
   const t = document.createElement('template');
   t.innerHTML = html;
+  const drops = foldPerItem ? templateGroupDrops(t.content) : new Map<Element, Set<string>>();
   const shapes = new Set<string>();
+  const templates = new Set<string>();
   for (const el of Array.from(t.content.querySelectorAll('*'))) {
-    const tokens = (el.getAttribute('class') || '').split(/\s+/)
-      .filter(tok => tok && !OWN_CLASS_RE.test(tok))
-      .map(foldClassToken)
-      .sort();
-    shapes.add(el.tagName.toLowerCase() + (tokens.length ? '.' + tokens.join('.') : ''));
+    const drop = drops.get(el);
+    const tokens = shapeTokens(el).filter(tok => !drop || !drop.has(tok)).sort();
+    const shape = el.tagName.toLowerCase() + (tokens.length ? '.' + tokens.join('.') : '');
+    shapes.add(shape);
+    if (drop) templates.add(shape);
   }
-  return shapes;
+  return { shapes, templates };
 }
+
+function shapeScores(saved: Set<string>, fresh: Set<string>): { kept: number; own: number } {
+  let shared = 0;
+  for (const shape of saved) if (fresh.has(shape)) shared++;
+  return { kept: shared / saved.size, own: fresh.size ? shared / fresh.size : 0 };
+}
+
+const sectionPasses = (m: { kept: number; own: number }) => m.kept >= SECTION_KEPT_MIN && m.own >= SECTION_OWN_MIN;
 
 /**
  * How a refresh candidate compares with the saved copy by element shape (tag + class tokens), never by text: a feed
@@ -784,16 +832,26 @@ function elementShapes(html: string): Set<string> {
  * - own: share of the candidate's shapes that the saved copy has (low = the candidate is mostly other parts of the page;
  *   the "largest match containing the fingerprint" tiebreakers lean toward exactly those containers)
  *
- * @returns null when there is nothing to judge: no saved copy, or fewer than SECTION_MIN_SHAPES shapes in it
+ * Two stages (#243). Stage 1 is the strict comparison above. Only when it rejects, and the saved copy holds a template
+ * group, stage 2 repeats it with per-item class tokens dropped on both sides (see templateGroupDrops): it counts only if it
+ * clears the SAME bars AND the candidate holds every template the saved copy holds, as a group of >= 3 rows. A result
+ * that passes stage 1 is never touched, and a rejection that stage 2 cannot rescue reports its stage 1 numbers.
+ *
+ * @returns null when there is nothing to judge: no saved copy, or fewer than SECTION_MIN_SHAPES shapes in it (counted
+ *   before any folding, so the set of judged cards is the one #212 measured). `folded: true` = rescued by stage 2.
  */
-export function sectionMatch(newHtml: string, cachedHtml?: string): { kept: number; own: number } | null {
+export function sectionMatch(newHtml: string, cachedHtml?: string): { kept: number; own: number; folded?: true } | null {
   if (!cachedHtml) return null;
   const saved = elementShapes(cachedHtml);
-  if (saved.size < SECTION_MIN_SHAPES) return null;
-  const fresh = elementShapes(newHtml || '');
-  let shared = 0;
-  for (const shape of saved) if (fresh.has(shape)) shared++;
-  return { kept: shared / saved.size, own: fresh.size ? shared / fresh.size : 0 };
+  if (saved.shapes.size < SECTION_MIN_SHAPES) return null;
+  const strict = shapeScores(saved.shapes, elementShapes(newHtml || '').shapes);
+  if (sectionPasses(strict)) return strict;
+  const savedFolded = elementShapes(cachedHtml, true);
+  if (!savedFolded.templates.size) return strict;
+  const freshFolded = elementShapes(newHtml || '', true);
+  if (![...savedFolded.templates].every(shape => freshFolded.templates.has(shape))) return strict;
+  const folded = shapeScores(savedFolded.shapes, freshFolded.shapes);
+  return sectionPasses(folded) ? { ...folded, folded: true } : strict;
 }
 
 /**
@@ -803,7 +861,7 @@ export function sectionMatch(newHtml: string, cachedHtml?: string): { kept: numb
  */
 export function isDifferentSection(newHtml: string, cachedHtml?: string): boolean {
   const m = sectionMatch(newHtml, cachedHtml);
-  return m !== null && (m.kept < SECTION_KEPT_MIN || m.own < SECTION_OWN_MIN);
+  return m !== null && !sectionPasses(m);
 }
 
 // ─── Responsive Card Dedup Helpers ───────────────────────────────────────────

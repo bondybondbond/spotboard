@@ -14,7 +14,7 @@ export function normaliseListFormat(value: unknown): ListFormat {
 
 // A run needs 3+ rows: two lookalike siblings are usually layout (label/value, left/right), not a list.
 // Measured on real cards: at 2, a homepage-style card got 23 tiny lists; at 3, none.
-const MIN_RUN = 3
+export const MIN_RUN = 3
 
 // A run item is a one-liner (headline / deal / row). ~240 chars is 2-3 lines in a 1x1 card;
 // anything longer is prose (article paragraphs) and is left alone.
@@ -51,12 +51,20 @@ const skeleton = (el: Element): string =>
 const MIN_TEMPLATE_NODES = 5
 const nodeCount = (skel: string) => skel.split('(').length - 1
 
+// One definition of "the same row template", shared with the #212 section check in dom-cleanup.ts (#243): the root
+// (first) class plus the inner element skeleton, and only when the row has real inner structure. Rows that differ
+// only by per-item classes (WordPress post-123, tag-*, category-*) still share a key.
+export const templateKey = (el: Element): string | null => {
+  const root = firstClass(el)
+  if (!root) return null
+  const skel = skeleton(el)
+  return nodeCount(skel) >= MIN_TEMPLATE_NODES ? `${root}\n${skel}` : null
+}
+
 function sameTemplate(head: Element, el: Element): boolean {
   if (signature(el) === signature(head)) return true
-  const root = firstClass(head)
-  if (!root || firstClass(el) !== root) return false
-  const skel = skeleton(head)
-  return skel === skeleton(el) && nodeCount(skel) >= MIN_TEMPLATE_NODES
+  const key = templateKey(head)
+  return key !== null && key === templateKey(el)
 }
 
 // #231: stored cards keep the page's HTML indentation, so raw textContent can be 7x the visible text (a ~90 character
