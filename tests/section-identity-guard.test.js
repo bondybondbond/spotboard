@@ -428,3 +428,22 @@ test('#244 cold review: stage 2 is symmetric too - a result bringing an extra re
   assert.equal(isDifferentSection(nextDay, saved), false, 'the next normal (rotated) day still passes against the untouched copy')
   assert.equal(isDifferentSection(nextDay, grownDay), true, 'had the grown day been stored, the normal day would fail: the trap the rule prevents')
 })
+
+// Review note on #244, pinned so a change to it is deliberate (owner, 7 Nov 2026: document, do not solve now). Stage 2
+// needs the same repeated-row templates both ways, so on a ranking card whose articles rotate, a result where one row
+// gains a block of 3+ structured items the saved copy never had (here a "related" strip) is not rescued: the card keeps
+// its last copy for that refresh. One row with an extra tag chip still passes (it adds one shape, not a new template).
+// Minimal pair: the same strip with 2 items (same new shapes, no group of 3) is rescued, so the template group is the cause.
+test('#244 KNOWN LIMIT: a rotated ranking where one row gains a new nested repeated block is refused, not rescued', () => {
+  const rel = '<div class="rel"><a class="rel__a"><img class="rel__img"><span class="rel__t"><b class="rel__b"></b></span></a></div>'
+  const row = (cls, chips, related) => `<div class="${cls}"><div class="a"><span class="b"><i class="c"></i><i class="c"></i></span>` +
+    `<span class="tags">${'<em class="chip"></em>'.repeat(chips)}</span>${related ? `<div class="related">${rel.repeat(related)}</div>` : ''}</div></div>`
+  const ranking = (prefix, rowFn) => `<section>${Array.from({ length: 10 }, (_, i) => rowFn(`r ${prefix}${i}`, i)).join('')}</section>`
+  const saved = ranking('k', cls => row(cls, 2, 0))
+  assert.equal(sectionMatch(ranking('j', cls => row(cls, 2, 0)), saved).folded, true, 'control: a plain rotation is rescued')
+  assert.equal(sectionMatch(ranking('j', (cls, i) => row(cls, i === 4 ? 3 : 2, 0)), saved).folded, true, 'one extra tag chip: rescued by stage 2')
+  assert.equal(sectionMatch(ranking('j', (cls, i) => row(cls, 2, i === 4 ? 2 : 0)), saved).folded, true, 'minimal pair: a 2-item strip (no template group) is rescued')
+  const nested = ranking('j', (cls, i) => row(cls, 2, i === 4 ? 3 : 0))
+  assert.equal(sectionMatch(nested, saved).folded, undefined, 'stage 2 does not rescue it')
+  assert.equal(isDifferentSection(nested, saved), true, 'refused: the card keeps its last copy for this refresh')
+})
