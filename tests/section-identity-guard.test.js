@@ -327,3 +327,29 @@ test('#243: stage 2 never touches a result that passes stage 1, and a card with 
   assert.equal(isDifferentSection(WRONG, SAVED), true)
   assert.equal(sectionMatch(WRONG, SAVED).folded, undefined)
 })
+
+// #243 follow-up (cold-review note): stage 2 drops a class token that is NOT on every row of a group. A token that only
+// some rows carry (`featured`, `col-span-2`) is folded on purpose: one featured row does not make another section. A
+// token EVERY row carries (the group's layout, `flex-col`) stays in the shape, so a block with another layout is not accepted.
+test('#243: a different group-wide layout is not accepted just because per-row classes are ignored', () => {
+  const saved = tplCard('r flex-col k1', 'r flex-col k2', 'r flex-col k3', 'r flex-col k4', 'r flex-col k5')
+  const otherLayout = tplCard('r flex-row k6', 'r flex-row k7', 'r flex-row k8', 'r flex-row k9', 'r flex-row k0')
+  assert.equal(sectionMatch(otherLayout, saved).folded, undefined, 'stage 2 did not rescue it')
+  assert.equal(isDifferentSection(otherLayout, saved), true)
+})
+
+test('#243: modifiers on only some rows (featured, col-span-2) are per-item and folded: still the same section', () => {
+  const saved = tplCard('r flex-col k1', 'r flex-col k2 featured', 'r flex-col k3', 'r flex-col k4', 'r flex-col k5 col-span-2')
+  const later = tplCard('r flex-col k6', 'r flex-col k7', 'r flex-col k8 col-span-2', 'r flex-col k9', 'r flex-col k0 featured')
+  assert.equal(sectionMatch(later, saved).folded, true)
+  assert.equal(isDifferentSection(later, saved), false)
+})
+
+// Real second day (7 Nov 2026, fetched from inews.co.uk the day after the saved copy): the ranking rotated again. Strict
+// scored 0.53 / 0.53 against the 6 Nov copy: over the 0.5 bar by one shared row shape, the margin that failed (0.47) on 6 Nov.
+test('#243: the real next-day ranking is accepted against the saved copy, in both directions', () => {
+  const day2 = fixture('ipaper-243-day2-live.html')
+  assert.equal(isDifferentSection(day2, IPAPER_SAVED), false)
+  assert.equal(isDifferentSection(fixture('ipaper-243-live.html'), day2), false)
+  assert.equal(isDifferentSection(IPAPER_SAVED, day2), false)
+})
