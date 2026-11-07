@@ -760,9 +760,16 @@ const SECTION_MIN_SHAPES = 8;
 const SECTION_KEPT_MIN = 0.5;
 // 2. Is the result mostly something else? Share of the result's shapes that the saved copy has. Legit: >= 0.60 across
 //    55 judged real refreshes / snapshot changes; a first refresh after a fresh Kalshi capture kept the whole card and
-//    gained a section the page mounts while loading (#202): 0.56, so growth is normal. Page-scale containers that hold the card: 0.17 (page wrapper), 0.32 (header + card). Below a
-//    third = more than three times as many kinds of element as the card has.
-const SECTION_OWN_MIN = 1 / 3;
+//    gained a section the page mounts while loading (#202): 0.56, so growth is normal. Page-scale containers that hold the
+//    card: 0.17 (page wrapper), 0.32 (header + card).
+// #244: the definition is SYMMETRIC -- a result is the same section only if each copy would accept the other. An
+// accepted result becomes the saved copy, and the next refresh's kept is this refresh's own read backwards, so a result
+// passing at own < 0.5 is a reference the page it replaced can no longer pass against: Product Hunt served a one-day
+// larger section (own 0.36), it was stored, and the normal page then scored kept 0.34 against it every day after. Hence
+// the same bar both ways. Census (4 board snapshots, 98 same-card pairs): only the 2 oversized PH pairs move; lowest
+// legit own 0.58; 550 cross-card pairs still 0 passes. Guarantees only that ONE oversized result cannot become the
+// saved copy: growth in steps each under 2x is not caught (pinned as a known limit in the test file).
+const SECTION_OWN_MIN = SECTION_KEPT_MIN;
 
 // #243: a class token that identifies ONE ITEM of a repeated row, not the section: WordPress stamps `category-*`, `tag-*`,
 // `post_label-*`, `post-<id>` onto every article row, so ten rows give ten different shapes and the set rotates with the
@@ -834,7 +841,8 @@ const sectionPasses = (m: { kept: number; own: number }) => m.kept >= SECTION_KE
  *
  * Two stages (#243). Stage 1 is the strict comparison above. Only when it rejects, and the saved copy holds a template
  * group, stage 2 repeats it with per-item class tokens dropped on both sides (see templateGroupDrops): it counts only if it
- * clears the SAME bars AND the candidate holds every template the saved copy holds, as a group of >= 3 rows. A result
+ * clears the SAME bars AND the candidate holds exactly the templates the saved copy holds, each as a group of >= 3 rows
+ * (both ways since #244: a candidate with an extra template group is not rescued). A result
  * that passes stage 1 is never touched, and a rejection that stage 2 cannot rescue reports its stage 1 numbers.
  *
  * @returns null when there is nothing to judge: no saved copy, or fewer than SECTION_MIN_SHAPES shapes in it (counted
@@ -849,7 +857,10 @@ export function sectionMatch(newHtml: string, cachedHtml?: string): { kept: numb
   const savedFolded = elementShapes(cachedHtml, true);
   if (!savedFolded.templates.size) return strict;
   const freshFolded = elementShapes(newHtml || '', true);
-  if (![...savedFolded.templates].every(shape => freshFolded.templates.has(shape))) return strict;
+  // #244: both ways, like the bars -- a result that brings a repeated-row group the saved copy lacks would, once stored,
+  // turn away the page without it (the reverse check's stage 2 needs every stored template present).
+  const sameTemplates = (a: Set<string>, b: Set<string>) => [...a].every(shape => b.has(shape));
+  if (!sameTemplates(savedFolded.templates, freshFolded.templates) || !sameTemplates(freshFolded.templates, savedFolded.templates)) return strict;
   const folded = shapeScores(savedFolded.shapes, freshFolded.shapes);
   return sectionPasses(folded) ? { ...folded, folded: true } : strict;
 }

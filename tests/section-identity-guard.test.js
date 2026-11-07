@@ -50,7 +50,7 @@ test('#212 real Kalshi first refresh after a fresh capture: the whole card plus 
   const saved = fixture('kalshi-202-fresh-capture.html'), grown = fixture('kalshi-202-first-refresh-grown.html')
   const m = sectionMatch(grown, saved)
   assert.equal(m.kept, 1)
-  assert.ok(m.own > 0.5 && m.own < 0.6, `own ${m.own}: the near-miss that set the second bar below 0.5`)
+  assert.ok(m.own > 0.5 && m.own < 0.6, `own ${m.own}: the lowest legit own measured; passes the symmetric 0.5 bar (#244) by about 0.06`)
   assert.equal(isDifferentSection(grown, saved), false)
   assert.equal(_finalizeSuccess(grown, { name: 'Kalshi', html_cache: saved }).success, true)
 })
@@ -149,15 +149,18 @@ test('#212 grow then shrink back: the real Kalshi card refreshed without its lat
   assert.equal(classifyError(r.error), 'content_lost')
 })
 
-test('#212 KNOWN LIMIT: grow then shrink back fails when the late-loaded block has more kinds of element than the card', () => {
-  // Accepted 20 Oct 2026 (owner): growth is accepted while N <= 2S, but a later refresh without the block keeps only
-  // S/(S+N) < 0.5 once N > S -> "Site layout changed", last good copy kept, recovers when the block loads again.
-  // Revisit trigger on #212. If a redesign fixes this, flip the expectation here deliberately.
+// Flipped deliberately by #244 (owner approved 7 Nov 2026). Until then this was "#212 KNOWN LIMIT: grow then shrink back
+// fails": growth of N > S new kinds of element was accepted (own S/(S+N) >= 1/3), became the saved copy, and the next
+// refresh without the block kept only S/(S+N) < 0.5 -> stuck on "Site layout changed" (the Product Hunt card, #244).
+// The bar is now the same both ways, so that growth is rejected at the start and the saved copy stays the card.
+test('#244 grow then shrink back: growth the old copy could not pass against is rejected, so the shrink-back has nothing to fail', () => {
   const shapes = (prefix, n) => Array.from({ length: n }, (_, i) => `<div class="${prefix}-${'abcdefghijklmnop'[i]}"></div>`).join('')
   const card = shapes('card', 8), grown = card + shapes('lazy', 9)
-  assert.equal(isDifferentSection(grown, card), false, 'the growth itself is accepted (own 8/17)')
-  assert.equal(isDifferentSection(card, grown), true, 'the shrink-back is the stated false failure')
-  assert.equal(isDifferentSection(card, card + shapes('lazy', 8)), false, 'N = S still passes (kept 0.5)')
+  assert.equal(isDifferentSection(grown, card), true, 'own 8/17 < 0.5: not adopted as the saved copy')
+  assert.equal(isDifferentSection(card, card), false, 'the card itself, next day, still matches the untouched saved copy')
+  const even = card + shapes('lazy', 8)
+  assert.equal(isDifferentSection(even, card), false, 'N = S passes (own 0.5)')
+  assert.equal(isDifferentSection(card, even), false, '... and so does the shrink-back against it (kept 0.5)')
 })
 
 test('#212 the direct-fetch drift check does not write a baseline onto the card before the result is judged', async () => {
@@ -203,7 +206,7 @@ test('#212 a page-level container that wraps the real card plus much more is a d
     `<section class="trending"><h2 class="trending__title">T</h2>${feed(4, 'trend', 'Trending')}</section><div class="newsletter"><form class="newsletter__form"><input class="newsletter__email"><button class="newsletter__go">Go</button></form></div></div>`
   const m = sectionMatch(page, feed(10))
   assert.equal(m.kept, 1, 'the card is inside it')
-  assert.ok(m.own < 1 / 3, `own ${m.own}`)
+  assert.ok(m.own < 1 / 3, `own ${m.own}: well under the 0.5 bar (#244; the bar was 1/3 when this was measured)`)
   assert.equal(isDifferentSection(page, feed(10)), true)
 })
 
@@ -352,4 +355,76 @@ test('#243: the real next-day ranking is accepted against the saved copy, in bot
   assert.equal(isDifferentSection(day2, IPAPER_SAVED), false)
   assert.equal(isDifferentSection(fixture('ipaper-243-live.html'), day2), false)
   assert.equal(isDifferentSection(IPAPER_SAVED, day2), false)
+})
+
+// ─── #244: a one-day larger section must not become the saved copy ─────────────────────────────────────────────────
+// The owner's Product Hunt "Top Products Launching Today" card. Real copies (the card's own capture pipeline output):
+// the 22 Oct saved copy, the 6 Nov copy a refresh stored on a day the site served a much larger section (Hypership Day:
+// 60 sections, product-update rows), and the live section on 7 Nov (throwaway headed profile). Text replaced with x's,
+// attributes other than class removed (img src / a href set to placeholders): every element and class is kept, so the
+// scores are the originals'. Before #244 the 6 Nov copy
+// was accepted (0.89 / 0.36) and every normal day after it failed (kept 0.34). A rule that holds both ways rejects it.
+const PH_22OCT = fixture('producthunt-244-saved-22oct.html')
+const PH_6NOV = fixture('producthunt-244-saved-6nov-oversized.html')
+const PH_LIVE = fixture('producthunt-244-live-7nov.html')
+
+test('#244 real Product Hunt cycle: normal saved, oversized day rejected with nothing stored, next normal day accepted', () => {
+  const card = { name: 'Top Products Launching Today', html_cache: PH_22OCT, excludedSelectors: ['section.relative.rounded-xl.border[data-test="newsletter-banner"]'], rawCaptureLength: 47856 }
+  const before = structuredClone(card)
+  const m = sectionMatch(PH_6NOV, PH_22OCT)
+  assert.ok(m.kept > 0.8 && m.own < 0.4, `the larger day keeps the card but is mostly other parts: ${m.kept} / ${m.own}`)
+  const oversized = _finalizeSuccess(PH_6NOV, card, { rawCaptureLength: 320143 })
+  assert.equal(oversized.success, false)
+  assert.equal(oversized.keepOriginal, true)
+  assert.equal(oversized.html_cache, undefined, 'nothing to store')
+  assert.equal(oversized.rawCaptureLength, undefined, 'the size baseline does not move')
+  assert.equal(classifyError(oversized.error), 'layout_changed')
+  assert.deepEqual(card, before, 'the card, its saved copy and its exclusions are untouched')
+  const nextDay = _finalizeSuccess(PH_LIVE, card)
+  assert.equal(nextDay.success, true, 'the normal page passes against the untouched saved copy')
+  assert.equal(isDifferentSection(PH_22OCT, PH_LIVE), false, 'and both ways round (0.83 / 1.00)')
+})
+
+test('#244 known residual: a card that already holds an oversized copy stays stuck until re-capture (no automatic repair)', () => {
+  assert.equal(isDifferentSection(PH_LIVE, PH_6NOV), true, 'kept 0.34: the state the owner card and 1.4.6 users can be in')
+})
+
+test('#244 KNOWN LIMIT: growth in steps, each under 2x, can still trap a card (the rule compares consecutive copies only)', () => {
+  // Accepted 7 Nov 2026 (owner). Each step passes both ways, but the first and last copies do not. Revisit if a real card
+  // is seen stuck this way; the principled fix is a pinned reference (a stored-schema change, T3).
+  const shapes = (prefix, n) => Array.from({ length: n }, (_, i) => `<div class="${prefix}-${'abcdefghijklmnop'[i]}"></div>`).join('')
+  const card = shapes('card', 8), mid = card + shapes('more', 5), big = mid + shapes('most', 7)
+  for (const [a, b] of [[mid, card], [card, mid], [big, mid], [mid, big]]) assert.equal(isDifferentSection(a, b), false)
+  assert.equal(isDifferentSection(card, big), true, 'the return to normal fails against the twice-grown copy')
+})
+
+test('#244 shapes are counted once each: a section repeating its own parts many more times is the same section', () => {
+  assert.deepEqual(sectionMatch(feed(40), feed(10)), { kept: 1, own: 1 })
+  assert.deepEqual(sectionMatch(feed(10), feed(40)), { kept: 1, own: 1 })
+})
+
+test('#244 two page variants that alternate (an A/B block) keep refreshing in either order', () => {
+  const base = feed(10), a = base + '<aside class="promo-a"><b class="promo-a__x">A</b></aside>', b = base + '<aside class="promo-b"><b class="promo-b__x">B</b></aside>'
+  for (const [x, y] of [[a, base], [b, a], [a, b], [base, b]]) assert.equal(isDifferentSection(x, y), false)
+})
+
+test('#244 the #243 per-item fold cannot admit an oversized result: the same bar applies in stage 2', () => {
+  const saved = tplCard('r k1', 'r k2', 'r k3', 'r k4', 'r k5')
+  const rotated = tplCard('r k6', 'r k7', 'r k8', 'r k9', 'r k0')
+  assert.equal(sectionMatch(rotated, saved).folded, true, 'control: a rotation alone is rescued')
+  const extra = Array.from({ length: 6 }, (_, i) => `<p class="extra-${'abcdef'[i]}"></p>`).join('')
+  const oversized = rotated.replace('</section>', extra + '</section>')
+  const m = sectionMatch(oversized, saved)
+  assert.equal(m.folded, undefined, 'folded own 5/11 used to clear 1/3; it does not clear 0.5')
+  assert.equal(isDifferentSection(oversized, saved), true)
+})
+
+test('#244 cold review: stage 2 is symmetric too - a result bringing an extra repeated-row group is not rescued, so it cannot lock out the normal page', () => {
+  const saved = tplCard('r k1', 'r k2', 'r k3', 'r k4', 'r k5')
+  const extraGroup = ['q m1', 'q m2', 'q m3'].map(tplRow).join('')
+  const grownDay = tplCard('r k6', 'r k7', 'r k8', 'r k9', 'r k0').replace('</section>', extraGroup + '</section>')
+  assert.equal(isDifferentSection(grownDay, saved), true, 'the day with an extra group is not stored')
+  const nextDay = tplCard('r j1', 'r j2', 'r j3', 'r j4', 'r j5')
+  assert.equal(isDifferentSection(nextDay, saved), false, 'the next normal (rotated) day still passes against the untouched copy')
+  assert.equal(isDifferentSection(nextDay, grownDay), true, 'had the grown day been stored, the normal day would fail: the trap the rule prevents')
 })
