@@ -1,6 +1,6 @@
 # SpotBoard - Chrome Extension
 
-> **Dev/bug work runs the ai-dev-kit loop.** For any code change or bug: read `AGENTS.md` first, use `/plan` then `/deliver`. **GitHub Issues is the change record — not `BUGS.md`.** Non-dev routines (metrics, tester feedback, CWS submission prep) still use the skills in `spotboard-private/.claude/` from that folder.
+> **Dev/bug work runs the ai-dev-kit loop.** For any code change or bug: use `/plan` then `/deliver`. **`AGENTS.md` is already in your context** (the `@AGENTS.md` import below): do not open it again with a file read; read it once only if nothing from it is in context. **GitHub Issues is the change record — not `BUGS.md`.** Non-dev routines (metrics, tester feedback, CWS submission prep) still use the skills in `spotboard-private/.claude/` from that folder.
 
 @AGENTS.md
 
@@ -10,7 +10,7 @@
 - **Default: full autonomy.** Take a change from understanding to verified delivery without asking permission for ordinary technical decisions. A failed test or plain uncertainty is something to resolve, not a reason to ask.
 - **An explicit restriction narrows that** ("assess only", "diagnosis only", "plan but don't implement", "approve first") until the human lifts it. Allowed: read, reproduce in a throwaway environment, verify read-only, research, report. Not allowed: source edits, builds, commits, branches, issue/board updates, merges, pushes, releases, unless the human names them. An approved diagnosis or plan is not approval to implement.
 - **Valid stops:** a restriction, a strategic decision that is the human's, genuine taste, a material blocker you cannot resolve yourself, and the final push/close approval. Push, publish and release always need the human's explicit say-so.
-- If `AGENTS.md` did not load (nothing from it is in your context), say so in your first reply and work from this block. Canonical text: kit `AGENTS.md` §4; if the two differ, follow the more restrictive.
+- If `AGENTS.md` did not load (nothing from it is in your context), say so in your first reply and work from this block. Canonical text: kit `templates/AGENTS.md` §4; if the two differ, follow the more restrictive.
 - **SpotBoard additions:** run `/plan` through implementation and verification to a build ready for the owner's approval. Material risk is a valid stop. Work on `main`; no branches or PRs unless the owner approves a concrete exception. If scope is unclear, ask one concise question.
 
 Chrome extension that captures live website sections (news, deals, scores) into a personal dashboard. Manual refresh model — designed for 2-3 daily check-ins.
@@ -83,6 +83,6 @@ When adding HTML enrichment (data attributes, classes), apply it in **all three 
 ## Git
 
 - Public repo — no API keys, no strategy docs, no private docs
-- Branch naming: `feature/`, `fix/`, `refactor/`
+- Work on `main`. A branch exists only as an owner-approved exception (see Order of authority); name it `feature/`, `fix/` or `refactor/`
 - Commits focused and atomic · Version tags: `v1.x.x`
 - Dev traffic filter: GA4 events send `user_id: "owner"` (v1.3.1+) — filter in BigQuery with `WHERE user_id != 'owner'`
