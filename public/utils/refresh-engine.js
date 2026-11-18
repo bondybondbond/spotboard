@@ -2903,7 +2903,9 @@ async function _refreshComponentCore(component) {
     const doc = parser.parseFromString(fullHtml, 'text/html');
     
     let extractedHtml = null;
-    
+    // #246: the saved selector (and its observer-normalised form) matched nothing in the fetched HTML
+    let selectorMatchedNothing = false;
+
     // Only try to extract if we have a specific selector
     // Generic selectors like "div" or "section" will match wrong elements
     const isGenericSelector = ['div', 'section', 'article', 'main', 'aside', 'header', 'footer', 'nav'].includes(component.selector?.toLowerCase());
@@ -2926,6 +2928,7 @@ async function _refreshComponentCore(component) {
           }
         }
         if (matches.length === 0) {
+          selectorMatchedNothing = true;
           console.warn(`[SpotBoard] Dead selector: "${component.selector}" on ${component.url}`);
         }
       }
@@ -3380,7 +3383,18 @@ async function _refreshComponentCore(component) {
     // exists to police.
     if (extractedHtml) {
       const _driftResult = await _runDriftGuard(extractedHtml, component, originalImgCount, originalLargeImgCount);
-      if (_driftResult) return _driftResult;
+      if (_driftResult) {
+        // #246: this extractedHtml came from the heading fallback because the saved selector matched nothing (a stored
+        // :nth-of-type position CNN moved). The cause is knowable, so name it: classifyError reads 'selector' as
+        // layout_changed ("Site layout changed", which offers Re-capture; Retry can never fix this card). The drift
+        // wording stays in the text for logs. No rescue by position: the candidates cannot be told apart (see #246).
+        // The drift guard's own failure strings only ("Content drift ..." and "No-baseline proxy check failed ..."): other
+        // failures (render degraded, content lost, section rejected) keep their own meaning and wording.
+        if (selectorMatchedNothing && _driftResult.success === false && /drift|proxy check/i.test(_driftResult.error || '')) {
+          _driftResult.error += '; saved selector matched nothing';
+        }
+        return _driftResult;
+      }
     }
 
     // If extraction failed, DON'T use the full page - keep original HTML
