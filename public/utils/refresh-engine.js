@@ -720,7 +720,13 @@ function _finalizeSuccess(sanitizedHtml, component, extras = {}) {
   // probe to the focused lane, as before): "layout_changed" + Re-capture, last good copy kept.
   if (typeof isDifferentSection === 'function' && component && isDifferentSection(sanitizedHtml, component.html_cache)) {
     const _sm = sectionMatch(sanitizedHtml, component.html_cache);
-    console.warn(`[SB-REFRESH] Section-identity guard rejected refresh for ${component.name}: kept ${_sm.kept.toFixed(2)} of the saved card's shapes, own ${_sm.own.toFixed(2)} of the result's`);
+    // #248: the identity veto can reject a result whose shapes match (or a saved copy too small for sectionMatch).
+    const _byIds = typeof contradictsSectionIdentity === 'function' && contradictsSectionIdentity(sanitizedHtml, component.html_cache);
+    console.warn(_byIds
+      ? `[SB-REFRESH] Section-identity guard rejected refresh for ${component.name}: no zone id in common with the saved copy`
+      : _sm
+      ? `[SB-REFRESH] Section-identity guard rejected refresh for ${component.name}: kept ${_sm.kept.toFixed(2)} of the saved card's shapes, own ${_sm.own.toFixed(2)} of the result's`
+      : `[SB-REFRESH] Section-identity guard rejected refresh for ${component.name}: no zone id in common with the saved copy`);
     return {
       success: false,
       error: 'Refresh found a different element on the page',

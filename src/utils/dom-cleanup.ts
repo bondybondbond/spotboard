@@ -871,8 +871,45 @@ export function sectionMatch(newHtml: string, cachedHtml?: string): { kept: numb
  * the card's fingerprint text, so neither the fingerprint nor isContentLost catches it.
  */
 export function isDifferentSection(newHtml: string, cachedHtml?: string): boolean {
+  if (contradictsSectionIdentity(newHtml, cachedHtml)) return true;
   const m = sectionMatch(newHtml, cachedHtml);
   return m !== null && !sectionPasses(m);
+}
+
+// #248: two zones built from one template (CNN's lead zone and "More top stories") pass the shape check both ways, so a
+// card whose position now lands on the neighbour was stored as a success. Positive identity signal, read from the saved
+// copy itself (no stored field): the CMS instance ids of its zones/stacks. Clay CMS only (CNN); measured identical in 5
+// dated copies over ~5.5 weeks while card-level ids churn daily. Generic `id=` attributes are NOT used: they rotate or are
+// absent (Hacker News 0/30 shared across 3 weeks, Product Hunt 0/75, NPR 69/176).
+const CLAY_ZONE_ID = /^[a-z0-9.-]+\/_components\/(?:stack|zone)\/instances\/[A-Za-z0-9_-]+$/;
+
+/** Distinct Clay zone/stack instance ids in `html` (`@published` version stripped, malformed values ignored). */
+export function sectionIdentityIds(html?: string): Set<string> {
+  const ids = new Set<string>();
+  if (!html) return ids;
+  for (const m of html.matchAll(/\bdata-uri="([^"]*)"/g)) {
+    const id = m[1].replace(/@[^/]*$/, '');
+    if (CLAY_ZONE_ID.test(id)) ids.add(id);
+  }
+  return ids;
+}
+
+/**
+ * #248: the candidate is contradicted as the saved section when the saved copy holds >= 3 zone/stack ids, the candidate
+ * holds >= 1 and they share none. Unknown is not different: a saved copy with < 3 ids, or a candidate with none, leaves
+ * the shape check to decide as before. Checked on the saved copy (the last accepted result); a rejected result is never
+ * stored, so a wrong zone cannot become the reference. Limit: it enforces consistency, not correctness, and a candidate
+ * without ids that is accepted leaves a saved copy the rule can no longer judge.
+ */
+export function contradictsSectionIdentity(newHtml: string, cachedHtml?: string): boolean {
+  const saved = sectionIdentityIds(cachedHtml);
+  // 3: one or two shared-by-chance ids are a weak signal; CNN's zones hold exactly 3 stack ids each (real saved copy, 5
+  // dated copies identical). Cards with fewer are not judged this way. Only real same-site data may lower it.
+  if (saved.size < 3) return false;
+  const fresh = sectionIdentityIds(newHtml);
+  if (!fresh.size) return false;
+  for (const id of fresh) if (saved.has(id)) return false;
+  return true;
 }
 
 // ─── Responsive Card Dedup Helpers ───────────────────────────────────────────
