@@ -47,8 +47,9 @@ test('#246: saved selector matches nothing (product zone is first) -> fails clos
   assert.equal(r.success, false)
   assert.equal(r.keepOriginal, true)
   assert.equal(r.html_cache, undefined, 'the last good copy is untouched')
-  assert.match(r.error, /^Content drift detected but tab refresh failed/, 'the original technical reason stays in the error text (the drift guard branch where the browser tiers found nothing)')
-  assert.match(r.error, /saved selector matched nothing/)
+  // #247: the fingerprint's trailing "Show all" (no-break space) no longer selects CNN's unrelated "Show all" block, so the
+  // heading fallback finds nothing and the card ends here instead of in the drift guard. The user sees the same label.
+  assert.match(r.error, /^Cannot extract component - selector too generic or not found$/)
   assert.equal(g.classifyError(r.error), 'layout_changed')
   assert.equal(g.getErrorLabel('layout_changed', card(SEL_1)), 'Site layout changed')
   assert.equal(g.shouldOfferRecapture({ lastOutcome: 'failed', lastErrorCode: g.classifyError(r.error) }), true)
@@ -119,9 +120,10 @@ test('#246: the same drift with a DEAD selector reads "Site layout changed" (the
 })
 
 test('#246: a dead-selector card with no stored baseline (older capture) fails through the no-baseline branch with the same label', async () => {
-  serve(PAGE_PRODUCT_ZONE_FIRST)
+  // Reaches the no-baseline branch via a moved block with a real heading (#247: CNN's "Show all" no longer gets there).
+  serve(MOVED)
   noBrowserTier()
-  const r = await g.refreshComponent(card(SEL_1, { rawCaptureLength: undefined }))
+  const r = await g.refreshComponent(smallCard('div.moved-block', { headingFingerprint: 'Moved heading', rawCaptureLength: undefined }))
   assert.equal(r.success, false)
   assert.match(r.error, /^No-baseline proxy check failed and tab refresh failed; saved selector matched nothing$/)
   assert.equal(g.classifyError(r.error), 'layout_changed')

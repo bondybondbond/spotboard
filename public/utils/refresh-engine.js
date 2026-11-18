@@ -139,6 +139,27 @@ function _hasGenuineHeadingClass(el) {
   return /(^|[-_\s])(heading|title|header)([-_\s]|$)/i.test(stripped);
 }
 
+// #247: generic button/link text that is not a section's identity. Whole phrases only (never "more" inside "Kenmore").
+const _GENERIC_UI_PHRASES = /\b(?:show all|see all|view all|show more|see more|view more|read more|load more|more)\b/gi
+
+/**
+ * Heading-fallback match rule. Forward (heading contains fingerprint) is unchanged.
+ * Reverse (fingerprint contains heading) additionally refuses a heading made ONLY of generic UI phrases, so a bare
+ * "Show all" can't match a fingerprint that merely ends in "Show all" (#247). Any other word keeps it eligible.
+ */
+function _headingMatchesFingerprint(headingText, fingerprint) {
+  const headingLower = headingText.toLowerCase()
+  const fingerprintLower = fingerprint.toLowerCase()
+  if (headingLower.includes(fingerprintLower)) return true
+  if (headingText.length < 8 || !fingerprintLower.includes(headingLower)) return false
+  // \s also folds the no-break space CNN puts inside "Show all". A phrase plus only punctuation or a count
+  // ("See all ›", "View all (24)") is still generic: after stripping, a letter must remain.
+  const spaced = headingLower.replace(/\s+/g, ' ').trim()
+  const rest = spaced.replace(_GENERIC_UI_PHRASES, ' ')
+  if (rest.replace(/\s+/g, ' ').trim() === spaced) return true // no generic phrase in it
+  return /\p{L}/u.test(rest)
+}
+
 function _queryHeadingCandidates(root) {
   const raw = root.querySelectorAll(
     'h1,h2,h3,h4,caption,[class*="heading"],[class*="title"],[class*="header"],[data-testid*="heading"],[data-testid*="title"]'
@@ -3242,11 +3263,8 @@ async function _refreshComponentCore(component) {
             
             // CASE-INSENSITIVE bidirectional match: either heading contains fingerprint OR fingerprint contains heading
             // This handles cases where fingerprint has duplicated text (e.g., "Top offersTop offers")
-            const headingLower = headingText.toLowerCase();
-            const fingerprintLower = fingerprint.toLowerCase();
-            
-            if (headingLower.includes(fingerprintLower) || 
-                (headingText.length >= 8 && fingerprintLower.includes(headingLower))) {
+            // Generic UI text ("Show all") never counts as the reverse match (#247)
+            if (_headingMatchesFingerprint(headingText, fingerprint)) {
               targetHeading = heading;
               // Found heading match
               break;
